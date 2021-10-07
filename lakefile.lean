@@ -1,5 +1,7 @@
-import Lake.Package
+import Lake
 
-def package : Lake.PackageConfig := {
+open Lake DSL
+
+package {
   name := "mathlib"
 }
