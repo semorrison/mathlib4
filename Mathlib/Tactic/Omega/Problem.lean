@@ -1,7 +1,11 @@
 import Std
 import Mathlib.Tactic.Simps.Basic
 import Mathlib.Tactic.LibrarySearch
+import Mathlib.Tactic.Rewrites
 import Mathlib.Tactic.Have
+import Mathlib.Tactic.SplitIfs
+import Mathlib.Logic.Basic -- yuck!
+import Mathlib.Tactic.NthRewrite
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -15,6 +19,8 @@ These are abstract descriptions of integer linear programming problems.
 In particular, they are intended to be easy to reason about,
 but need not be fast to compute with.
 
+Later we will define variants carrying additional data required to run Omega efficiently,
+and transfer the proofs from these simpler versions.
 -/
 
 @[simp]
@@ -35,6 +41,24 @@ theorem List.zipWith_foldr_eq_zip_foldr {f : α → β → γ} (i : δ):
 theorem List.zipWith_foldl_eq_zip_foldl {f : α → β → γ} (i : δ):
     (List.zipWith f l₁ l₂).foldl g i = (List.zip l₁ l₂).foldl (fun r p => g r (f p.1 p.2)) i := by
   induction l₁ generalizing i l₂ <;> cases l₂ <;> simp_all
+
+-- theorem List.partitionMap_fst {f : α → β ⊕ γ} :
+--     (List.partitionMap f l).fst =
+--       l.filterMap fun a => match f a with | .inl b => some b | .inr _ => none := by
+--   induction l <;> simp_all
+--   sorry -- FIXME missing simp lemmas
+--   sorry
+
+-- theorem List.partitionMap_snd {f : α → β ⊕ γ} :
+--     (List.partitionMap f l).snd =
+--       l.filterMap fun a => match f a with | .inl _ => none | .inr c => some c := by
+--   induction l <;> simp_all
+--   sorry -- FIXME missing simp lemmas
+--   sorry
+
+-- This is in Mathlib.Data.List.Basic
+theorem List.mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
+  sorry
 
 theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
     a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
@@ -59,14 +83,11 @@ def List.zipWithAll (f : Option α → Option β → γ) : List α → List β �
 @[simp] theorem List.zipWithAll_cons_cons :
     List.zipWithAll f (a :: as) (b :: bs) = f (some a) (some b) :: zipWithAll f as bs := rfl
 
--- @[simp] theorem List.zipWithAll_get? :
---     (List.zipWithAll f as bs).get? n =
-
 @[ext]
 structure LinearCombo where
   const : Int
   coeffs : List Int
-deriving DecidableEq, Inhabited
+deriving DecidableEq, Inhabited, Repr
 
 namespace LinearCombo
 
@@ -178,11 +199,12 @@ structure Problem where
   possible : Bool := true
   equalities : List LinearCombo := []
   inequalities : List LinearCombo := []
+deriving Repr
 
 namespace Problem
 
 structure sat (p : Problem) (values : List Int) : Prop where
-  possible : p.possible = true
+  possible : p.possible = true := by rfl
   equalities : lc ∈ p.equalities → lc.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
@@ -190,7 +212,6 @@ structure sat (p : Problem) (values : List Int) : Prop where
 def trivial : Problem where
 
 theorem trivial_sat (values : List Int) : trivial.sat values where
-  possible := rfl
   equalities := by simp
   inequalities := by simp
 
@@ -220,6 +241,17 @@ instance : CoeSort Problem Type where
   coe := solutions
 
 def unsat (p : Problem) : Prop := p → False
+
+theorem unsat_of_impossible {p : Problem} (h : p.possible = false) : p.unsat :=
+  fun ⟨v, s⟩ => by
+    rw [s.possible] at h
+    simp at h
+
+@[simps]
+def impossible : Problem where
+  possible := false
+
+theorem impossible_unsat : impossible.unsat := unsat_of_impossible rfl
 
 /-- A solution to a problem consists either of a witness, or a proof of unsatisfiability. -/
 inductive Solution (p : Problem)
@@ -273,6 +305,14 @@ def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
 def eraseInequality_map (p : Problem) (lc : LinearCombo) : p → p.eraseInequality lc :=
   fun ⟨v, s⟩ => ⟨v, { s with
     inequalities := fun m => s.inequalities (by simp at m; apply List.mem_of_mem_erase m) }⟩
+
+def filterEqualities_map (p : Problem) : p → { p with equalities := p.equalities.filter f } :=
+  fun ⟨v, s⟩ => ⟨v, { s with
+    equalities := fun m  => s.equalities (by simp at m; exact List.mem_of_mem_filter m) }⟩
+
+def filterInequalities_map (p : Problem) : p → { p with inequalities := p.inequalities.filter f } :=
+  fun ⟨v, s⟩ => ⟨v, { s with
+    inequalities := fun m  => s.inequalities (by simp at m; exact List.mem_of_mem_filter m) }⟩
 
 end Problem
 
@@ -404,7 +444,7 @@ and show that `a < b.neg` gives a contradition.
 namespace LinearCombo
 
 theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
-    (ma : a ∈ p.inequalities) (mb : b ∈ p.inequalities) (w : a < b.neg) : p → False := by
+    (ma : a ∈ p.inequalities) (mb : b ∈ p.inequalities) (w : a < b.neg) : p.unsat := by
   rintro ⟨v, s⟩
   have := LinearCombo.eval_lt_of_lt w v
   simp only [neg_eval] at this
@@ -414,7 +454,119 @@ theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
 /--
 We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
 -/
-example : let p : Problem := { inequalities := [⟨-1, [1]⟩, ⟨0, [-1]⟩] }; p → False := by
+example : let p : Problem := { inequalities := [⟨-1, [1]⟩, ⟨0, [-1]⟩] }; p.unsat := by
   apply contradiction_of_neg_lt (a := ⟨-1, [1]⟩) (b := ⟨0, [-1]⟩) <;> simp
 
 end LinearCombo
+
+
+@[simp] theorem ite_some_none_eq_none [Decidable P] :
+    (if P then some x else none) = none ↔ ¬ P := by
+  split_ifs <;> simp_all
+
+@[simp] theorem ite_some_none_eq_some [Decidable P] :
+    (if P then some x else none) = some y ↔ P ∧ x = y := by
+  split_ifs <;> simp_all
+
+namespace LinearCombo
+
+def constant? (lc : LinearCombo) : Option Int :=
+  if lc.coeffs.all (· = 0) then
+    some lc.const
+  else
+    none
+
+theorem eval_eq_of_constant (lc : LinearCombo) (h : lc.constant? = some c) : lc.eval v = c := by
+  simp [constant?] at h
+  rcases h with ⟨h, rfl⟩
+  rcases lc with ⟨c, coeffs⟩
+  simp [eval]
+  nth_rewrite 2 [← Int.add_zero c]
+  congr
+  induction coeffs generalizing v with
+  | nil => simp
+  | cons x coeffs ih =>
+    cases v with
+    | nil => simp
+    | cons v vs =>
+      simp_all [ih]
+
+end LinearCombo
+
+namespace Problem
+
+def processConstants (p : Problem) : Problem :=
+  let equalityConstants := p.equalities.filterMap LinearCombo.constant?
+  let inequalityConstants := p.inequalities.filterMap LinearCombo.constant?
+  if equalityConstants.all (· = 0) ∧ inequalityConstants.all (· ≥ 0) then
+    { possible := p.possible
+      equalities := p.equalities.filter fun lc => lc.constant?.isNone
+      inequalities := p.inequalities.filter fun lc => lc.constant?.isNone }
+  else
+    impossible
+
+def processConstants_map (p : Problem) : p → p.processConstants := by
+  dsimp [processConstants]
+  split_ifs with w
+  · exact (filterEqualities_map _) ∘ (filterInequalities_map _)
+  · simp only [not_and_or] at w
+    simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
+      and_imp, not_forall, exists_prop, exists_and_left] at w
+    intro ⟨v, s⟩
+    exfalso
+    rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
+    · have := s.equalities w
+      simp [eq.eval_eq_of_constant m] at this
+      exact ne this
+    · have := s.inequalities w
+      simp [eq.eval_eq_of_constant m] at this
+      exact ne this
+
+example : processConstants { equalities := [⟨1, []⟩] } = impossible := rfl
+example : processConstants { equalities := [⟨1, []⟩] } |>.unsat := impossible_unsat
+example : Problem.unsat { equalities := [⟨1, []⟩] } := impossible_unsat ∘ processConstants_map _
+example : Problem.unsat { inequalities := [⟨-1, []⟩] } := impossible_unsat ∘ processConstants_map _
+
+def processConstants_inv (p : Problem) : p.processConstants → p := sorry
+
+def processConstants_equiv (p : Problem) : p.equiv p.processConstants where
+  mp := p.processConstants_map
+  mpr := p.processConstants_inv
+
+end Problem
+namespace LinearCombo
+
+def coeffGCD (lc : LinearCombo) : Nat := lc.coeffs.foldr (fun x g => Nat.gcd x.natAbs g) 0
+
+def normalizeInequality (lc : LinearCombo) : LinearCombo :=
+  let gcd := lc.coeffGCD
+  { coeffs := lc.coeffs.map fun c => c / gcd
+    -- Recall `Int.fdiv` is division with floor rounding.
+    const := Int.fdiv lc.const gcd }
+
+def normalizeEquality (lc : LinearCombo) : LinearCombo :=
+  let gcd := lc.coeffGCD
+  if (gcd : Int) ∣ lc.const then
+    { coeffs := lc.coeffs.map fun c => c / gcd
+      const := lc.const / gcd }
+  else
+    { coeffs := []
+      const := 1 }
+
+end LinearCombo
+namespace Problem
+
+def normalize (p : Problem) : Problem where
+  possible := p.possible
+  equalities := p.equalities.map LinearCombo.normalizeEquality
+  inequalities := p.equalities.map LinearCombo.normalizeInequality
+
+def normalize_map (p : Problem) : p → p.normalize := sorry
+
+def normalize_inv (p : Problem) : p.normalize → p := sorry
+
+def normalize_equiv (p : Problem) : p.equiv p.normalize where
+  mp := p.normalize_map
+  mpr := p.normalize_inv
+
+end Problem
