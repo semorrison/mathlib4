@@ -17,6 +17,21 @@ but need not be fast to compute with.
 
 -/
 
+theorem List.zip_map_left (l₁ : List α) (l₂ : List β) (f : α → γ) :
+    List.zip (l₁.map f) l₂ = (List.zip l₁ l₂).map fun p => (f p.1, p.2) := by
+  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
+
+theorem List.zip_map_right (l₁ : List α) (l₂ : List β) (f : β → γ) :
+    List.zip l₁ (l₂.map f) = (List.zip l₁ l₂).map fun p => (p.1, f p.2) := by
+  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
+
+theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
+    a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
+  by_cases h : a = b
+  · subst h
+    simp [or_iff_right_of_imp List.mem_of_mem_erase]
+  · simp_all
+
 structure LinearCombo where
   const : Int
   coeffs : List Int
@@ -53,9 +68,19 @@ instance : CoeSort Problem Type where
 
 def unsat (p : Problem) : Prop := p → False
 
+/-- A solution to a problem consists either of a witness, or a proof of unsatisfiability. -/
 inductive Solution (p : Problem)
-| sat : p.solutions → Solution p
+| sat : p → Solution p
 | unsat : p.unsat → Solution p
+
+/--
+Two problems are equivalent if a solution to one gives an solution to the other.
+We don't care that this is bijective,
+just that the solution sets are either both empty or both non-empty.
+-/
+structure equiv (p q : Problem) where
+  mp : p → q
+  mpr : q → p
 
 end Problem
 
@@ -115,6 +140,15 @@ a < b → a ∈ p.inequalities → p.eraseInequality b → p
 
 namespace LinearCombo
 
+/--
+Define `a ≤ b` on linear combinations to mean that the coefficients are identical,
+and the constant terms satisfy `≤`.
+
+If `a ≤ b`, then the non-negative set for `a` is a subset of the non-negative set for `b`.
+
+(Note this is only a preorder, not even a partial order,
+as we don't allow for rescaling when comparing coefficients.)
+-/
 def le (a b : LinearCombo) : Prop :=
   a.coeffs = b.coeffs ∧ a.const ≤ b.const
 
@@ -141,6 +175,12 @@ theorem eval_le_of_le {a b : LinearCombo} (h : a ≤ b) (v : List Int) : a.eval 
 theorem evalNonneg_of_le {a b : LinearCombo} (h : a ≤ b) : a.eval v ≥ 0 → b.eval v ≥ 0 :=
   fun w => Int.le_trans w (eval_le_of_le h v)
 
+/--
+Define `a < b` on linear combinations to mean that the coefficients are identical,
+and the constant terms satisfy `<`.
+
+If `a < b`, then the non-negative set for `a` is a strict subset of the non-negative set for `b`.
+-/
 def lt (a b : LinearCombo) : Prop :=
   a ≤ b ∧ a ≠ b
 
@@ -180,15 +220,11 @@ end LinearCombo
 
 namespace Problem
 
--- TODO find a home
-theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
-    a ∈ l ↔ (a ∈ l.erase b ∨ (a = b ∧ b ∈ l)) := by
-  by_cases h : a = b
-  · subst h
-    simp [or_iff_right_of_imp List.mem_of_mem_erase]
-  · simp_all
-
-def eraseRedundantInequality
+/--
+If `a < b` is a strict comparison between inequality constraints,
+in any problems containing `a`, we can discard `b`.
+-/
+def eraseRedundantInequality_map
     (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) :
     p.eraseInequality b → p :=
   fun ⟨v, s⟩ => ⟨v, { s with
@@ -202,18 +238,25 @@ def eraseRedundantInequality
         apply s.inequalities
         simpa using (List.mem_erase_of_ne ne).mpr m }⟩
 
+/--
+If `a < b` is a strict comparison between inequality constraints,
+in any problems containing `a`, we can discard `b` to obtain an equivalent problem.
+-/
+def eraseRedundantInequality_equiv
+    (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) :
+    p.equiv (p.eraseInequality b) where
+  mp := p.eraseInequality_map b
+  mpr := p.eraseRedundantInequality_map lt m
+
 end Problem
 
-theorem List.zip_map_left (l₁ : List α) (l₂ : List β) (f : α → γ) :
-    List.zip (l₁.map f) l₂ = (List.zip l₁ l₂).map fun p => (f p.1, p.2) := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zip_map_right (l₁ : List α) (l₂ : List β) (f : β → γ) :
-    List.zip l₁ (l₂.map f) = (List.zip l₁ l₂).map fun p => (p.1, f p.2) := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
+/-!
+We define negation of a linear combination,
+and show that `a < b.neg` gives a contradition.
+-/
 namespace LinearCombo
 
+/-- Negating a linear combination means negating the constant term and the coefficients. -/
 @[simps]
 def neg (lc : LinearCombo) : LinearCombo where
   const := -lc.const
