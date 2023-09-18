@@ -147,7 +147,7 @@ def lt (a b : LinearCombo) : Prop :=
 instance instLinearComboLT : LT LinearCombo := ⟨lt⟩
 
 @[simp]
-theorem lt_def (a b : LinearCombo) : a < b ↔ (a.coeffs = b.coeffs ∧ a.const < b.const) := by
+theorem lt_def (a b : LinearCombo) : a < b ↔ a.coeffs = b.coeffs ∧ a.const < b.const := by
   dsimp [instLinearComboLT, lt]
   rw [le_def]
   rcases a with ⟨a, as⟩; rcases b with ⟨b, bs⟩
@@ -160,7 +160,21 @@ theorem lt_def (a b : LinearCombo) : a < b ↔ (a.coeffs = b.coeffs ∧ a.const 
     simp only [true_and, and_true]
     exact ⟨Int.le_of_lt lt, Int.ne_of_lt lt⟩
 
-theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v < b.eval v := sorry
+theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v < b.eval v := by
+  simp [LinearCombo.eval]
+  rcases a with ⟨a, coeffs⟩; rcases b with ⟨b, bcoeffs⟩
+  rw [lt_def] at h
+  rcases h with ⟨rfl, h⟩
+  simp_all
+  generalize List.zip _ _ = p
+  -- This should be some general fact, but we can just bash it out.
+  -- Perhaps might be easier with alternative formulas for `eval`.
+  induction p generalizing a b h with
+  | nil => simpa
+  | cons x p ih =>
+    simp only [List.foldl_cons]
+    apply ih
+    apply Int.add_lt_add_right h
 
 end LinearCombo
 
