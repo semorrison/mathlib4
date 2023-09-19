@@ -19,6 +19,9 @@ open Lean Elab Tactic Mathlib.Tactic Meta
 theorem Int.add_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a + c = b + d := by
   subst h₁; subst h₂; rfl
 
+theorem Int.mul_congr_right (a : Int) {c d : Int} (h₂ : c = d) : a * c = a * d := by
+  subst h₂; rfl
+
 theorem Int.sub_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a - c = b - d := by
   subst h₁; subst h₂; rfl
 
@@ -51,6 +54,10 @@ def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : AtomM Expr := do
     e (← mkAppM ``Option.getD #[← mkAppM ``List.get? #[← atomsList, toExpr n], toExpr (0 : Int)])
   mkEqTrans eq (← mkEqSymm (← mkAppM ``LinearCombo.coordinate_eval #[toExpr n, ← atomsList]))
 
+def mkAtomLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
+  let n ← AtomM.addAtom e
+  return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n⟩
+
 /--
 Given an expression `e`, express it as a linear combination `lc : LinearCombo`
 of the atoms seen so far,
@@ -72,7 +79,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
       mkEqTrans
         (← mkAppM ``Int.add_congr #[← prf₁, ← prf₂])
         (← mkEqSymm add_eval)
-    pure (l₁.add l₂, prf)
+    pure (l₁ + l₂, prf)
   | (``HSub.hSub, #[_, _, _, _, e₁, e₂]) => do
     let (l₁, prf₁) ← asLinearCombo e₁
     let (l₂, prf₂) ← asLinearCombo e₂
@@ -81,19 +88,27 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
       mkEqTrans
         (← mkAppM ``Int.sub_congr #[← prf₁, ← prf₂])
         (← mkEqSymm sub_eval)
-    pure (l₁.sub l₂, prf)
-  | (``Neg.neg, #[_, _, e]) => do
-    let (l, prf) ← asLinearCombo e
+    pure (l₁ - l₂, prf)
+  | (``Neg.neg, #[_, _, e']) => do
+    let (l, prf) ← asLinearCombo e'
     let prf' : AtomM Expr := do
       let neg_eval ← mkAppM ``LinearCombo.neg_eval #[toExpr l, ← atomsList]
       mkEqTrans
         (← mkAppM ``Int.neg_congr #[← prf])
         (← mkEqSymm neg_eval)
-    pure (l.neg, prf')
-    -- TODO scalar multiplication
-  | _ =>
-    let n ← AtomM.addAtom e
-    return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n⟩
+    pure (-l, prf')
+  | (``HMul.hMul, #[_, _, _, _, n, e']) =>
+    match n.int? with
+    | some n' =>
+      let (l, prf) ← asLinearCombo e'
+      let prf' : AtomM Expr := do
+        let smul_eval ← mkAppM ``LinearCombo.smul_eval #[toExpr l, n, ← atomsList]
+        mkEqTrans
+          (← mkAppM ``Int.mul_congr_right #[n, ← prf])
+          (← mkEqSymm smul_eval)
+      pure (l.smul n', prf')
+    | none => mkAtomLinearCombo e
+  | _ => mkAtomLinearCombo e
 
 attribute [simp] Int.sub_self
 

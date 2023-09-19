@@ -132,6 +132,17 @@ theorem sub_def (xs ys : IntList) :
     xs - ys = List.zipWithAll (fun x y => x.getD 0 - y.getD 0) xs ys :=
   rfl
 
+def smul (xs : IntList) (i : Int) : IntList :=
+  xs.map fun x => i * x
+
+instance : HMul Int IntList IntList where
+  hMul i xs := xs.smul i
+
+theorem smul_def (xs : IntList) (i : Int) : i * xs = xs.map fun x => i * x := rfl
+
+@[simp] theorem smul_nil {i : Int} : i * ([] : IntList) = [] := rfl
+@[simp] theorem smul_cons {i : Int} : i * (x::xs : IntList) = i * x :: i * xs := rfl
+
 attribute [local simp] add_def mul_def in
 theorem mul_distrib_left (xs ys zs : IntList) : (xs + ys) * zs = xs * zs + ys * zs := by
   induction xs generalizing ys zs with
@@ -167,6 +178,14 @@ theorem sub_eq_add_neg (xs ys : IntList) : xs - ys = xs + (-ys) := by
     | nil => simp
     | cons y ys => simp_all [Int.sub_eq_add_neg]
 
+@[simp] theorem mul_smul_left {i : Int} {xs ys : IntList} : (i * xs) * ys = i * (xs * ys) := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.mul_assoc]
+
 def sum (xs : IntList) : Int := xs.foldr (· + ·) 0
 
 @[simp] theorem sum_nil : sum ([] : IntList) = 0 := rfl
@@ -187,6 +206,12 @@ theorem sum_neg (xs : IntList) : (-xs).sum = -(xs.sum) := by
   | nil => simp
   | cons x xs ih => simp_all [Int.neg_add]
 
+@[simp]
+theorem sum_smul (i : Int) (xs : IntList) : (i * xs).sum = i * (xs.sum) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih => simp_all [Int.mul_add]
+
 def dot (xs ys : IntList) : Int := (xs * ys).sum
 
 @[simp] theorem dot_nil_left : dot ([] : IntList) ys = 0 := rfl
@@ -198,6 +223,10 @@ theorem dot_distrib_left (xs ys zs : IntList) : (xs + ys).dot zs = xs.dot zs + y
 
 @[simp] theorem dot_neg_left (xs ys : IntList) : (-xs).dot ys = -(xs.dot ys) := by
   simp [dot, mul_neg_left]
+
+@[simp] theorem dot_smul_left (xs ys : IntList) (i : Int) : (i * xs).dot ys = i * xs.dot ys := by
+  simp [dot]
+
 
 theorem dot_of_left_zero (w : ∀ x, x ∈ xs → x = 0) : dot xs ys = 0 := by
   induction xs generalizing ys with
@@ -306,7 +335,6 @@ theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
       have w : d ∣ (IntList.gcd xs : Int) := Int.dvd_trans h (gcd_cons_div_right')
       simp_all [Int.add_ediv_of_dvd_left, Int.mul_ediv_assoc']
 
-
 @[simp] theorem dot_sdiv_gcd_left (xs ys : IntList) :
     dot (xs.sdiv xs.gcd) ys = (dot xs ys) / xs.gcd :=
   dot_sdiv_left xs ys (by exact Int.dvd_refl _)
@@ -384,6 +412,15 @@ theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ :=
   · simp [Int.sub_eq_add_neg]
   · simp [IntList.sub_eq_add_neg]
 
+def smul (lc : LinearCombo) (i : Int) : LinearCombo where
+  const := i * lc.const
+  coeffs := lc.coeffs.smul i
+
+instance : HMul Int LinearCombo LinearCombo := ⟨fun i lc => lc.smul i⟩
+
+@[simp] lemma smul_const {lc : LinearCombo} {i : Int} : (i * lc).const = i * lc.const := rfl
+@[simp] lemma smul_coeffs {lc : LinearCombo} {i : Int} : (i * lc).coeffs = i * lc.coeffs := rfl
+
 @[simp]
 theorem add_eval (l₁ l₂ : LinearCombo) (v : List Int) : (l₁ + l₂).eval v = l₁.eval v + l₂.eval v := by
   rcases l₁ with ⟨r₁, c₁⟩; rcases l₂ with ⟨r₂, c₂⟩
@@ -400,6 +437,12 @@ theorem neg_eval (lc : LinearCombo) (v : List Int) : (-lc).eval v = - lc.eval v 
 theorem sub_eval (l₁ l₂ : LinearCombo) (v : List Int) :
     (l₁ - l₂).eval v = l₁.eval v - l₂.eval v := by
   simp [sub_eq_add_neg, Int.sub_eq_add_neg]
+
+@[simp]
+theorem smul_eval (lc : LinearCombo) (i : Int) (v : List Int) :
+    (i * lc).eval v = i * lc.eval v := by
+  rcases lc with ⟨a, coeffs⟩
+  simp [eval, Int.mul_add]
 
 end LinearCombo
 
