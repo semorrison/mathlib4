@@ -201,7 +201,7 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
 def omega_algorithm (p : Problem) : (q : Problem) × (p → q) :=
   let p' := p.normalize
   let q := p'.processConstants
-  ⟨q, p'.processConstants_map ∘ p.normalize_map⟩
+  ⟨q, p'.processConstants_map ∘ p.normalize_equiv.mp⟩
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.

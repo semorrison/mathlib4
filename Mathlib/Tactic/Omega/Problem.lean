@@ -24,21 +24,21 @@ and transfer the proofs from these simpler versions.
 -/
 
 @[simp]
-theorem List.map_id' (l : List α) : l.map (fun a => a) = l := l.map_id
+theorem List.map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
 
-theorem List.zip_map_left (l₁ : List α) (l₂ : List β) (f : α → γ) :
+theorem List.zip_map_left' (l₁ : List α) (l₂ : List β) (f : α → γ) :
     List.zip (l₁.map f) l₂ = (List.zip l₁ l₂).map fun p => (f p.1, p.2) := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
 
-theorem List.zip_map_right (l₁ : List α) (l₂ : List β) (f : β → γ) :
+theorem List.zip_map_right' (l₁ : List α) (l₂ : List β) (f : β → γ) :
     List.zip l₁ (l₂.map f) = (List.zip l₁ l₂).map fun p => (p.1, f p.2) := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
 
-theorem List.zipWith_map_left (l₁ : List α) (l₂ : List β) (f : α → α') (g : α' → β → γ) :
+theorem List.zipWith_map_left' (l₁ : List α) (l₂ : List β) (f : α → α') (g : α' → β → γ) :
     List.zipWith g (l₁.map f) l₂ = List.zipWith (fun a b => g (f a) b) l₁ l₂ := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
 
-theorem List.zipWith_map_right (l₁ : List α) (l₂ : List β) (f : β → β') (g : α → β' → γ) :
+theorem List.zipWith_map_right' (l₁ : List α) (l₂ : List β) (f : β → β') (g : α → β' → γ) :
     List.zipWith g l₁ (l₂.map f) = List.zipWith (fun a b => g a (f b)) l₁ l₂ := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
 
@@ -50,7 +50,7 @@ theorem List.zipWith_foldl_eq_zip_foldl {f : α → β → γ} (i : δ):
     (List.zipWith f l₁ l₂).foldl g i = (List.zip l₁ l₂).foldl (fun r p => g r (f p.1 p.2)) i := by
   induction l₁ generalizing i l₂ <;> cases l₂ <;> simp_all
 
-theorem List.mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
+theorem List.mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
   (mem_filter.mp h).1
 
 theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
@@ -457,8 +457,11 @@ namespace Problem
 instance : ToString Problem where
   toString p :=
     if p.possible then
-      String.join (p.equalities.map fun e => s!"{e} = 0\n") ++
-      String.join (p.inequalities.map fun e => s!"{e} ≥ 0\n")
+      if p.equalities = [] ∧ p.inequalities = [] then
+        "trivial"
+      else
+        "\n".intercalate <|
+          (p.equalities.map fun e => s!"{e} = 0") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
     else
       "impossible"
 
@@ -512,6 +515,10 @@ def impossible : Problem where
 
 theorem impossible_unsat : impossible.unsat := unsat_of_impossible rfl
 
+@[simp] theorem not_sat_impossible : sat impossible v ↔ False :=
+  ⟨fun h => impossible_unsat ⟨_, h⟩, False.elim⟩
+
+
 /-- A solution to a problem consists either of a witness, or a proof of unsatisfiability. -/
 inductive Solution (p : Problem)
 | sat : p → Solution p
@@ -525,6 +532,10 @@ just that the solution sets are either both empty or both non-empty.
 structure equiv (p q : Problem) where
   mp : p → q
   mpr : q → p
+
+def equiv_of_sat_iff {p q : Problem} (h : ∀ v, p.sat v ↔ q.sat v) : p.equiv q where
+  mp := fun ⟨v, s⟩ => ⟨v, (h v).mp s⟩
+  mpr := fun ⟨v, s⟩ => ⟨v, (h v).mpr s⟩
 
 end Problem
 
@@ -567,11 +578,11 @@ def eraseInequality_map (p : Problem) (lc : LinearCombo) : p → p.eraseInequali
 
 def filterEqualities_map (p : Problem) : p → { p with equalities := p.equalities.filter f } :=
   fun ⟨v, s⟩ => ⟨v, { s with
-    equalities := fun m  => s.equalities (by simp at m; exact List.mem_of_mem_filter m) }⟩
+    equalities := fun m  => s.equalities (by simp at m; exact List.mem_of_mem_filter' m) }⟩
 
 def filterInequalities_map (p : Problem) : p → { p with inequalities := p.inequalities.filter f } :=
   fun ⟨v, s⟩ => ⟨v, { s with
-    inequalities := fun m  => s.inequalities (by simp at m; exact List.mem_of_mem_filter m) }⟩
+    inequalities := fun m  => s.inequalities (by simp at m; exact List.mem_of_mem_filter' m) }⟩
 
 end Problem
 
@@ -609,6 +620,12 @@ instance : LE LinearCombo := ⟨le⟩
 @[simp]
 theorem le_def (a b : LinearCombo) : a ≤ b ↔ a.coeffs = b.coeffs ∧ a.const ≤ b.const := Iff.rfl
 
+instance : DecidableRel ((· : LinearCombo) ≤ ·) :=
+  fun a b => by
+    dsimp
+    rw [le_def]
+    infer_instance
+
 theorem eval_le_of_le {a b : LinearCombo} (h : a ≤ b) (v : List Int) : a.eval v ≤ b.eval v := by
   simp [LinearCombo.eval]
   rcases a with ⟨a, coeffs⟩; rcases b with ⟨b, bcoeffs⟩
@@ -642,6 +659,12 @@ theorem lt_def (a b : LinearCombo) : a < b ↔ a.coeffs = b.coeffs ∧ a.const <
   · rintro ⟨rfl, lt⟩
     simp only [true_and, and_true]
     exact ⟨Int.le_of_lt lt, Int.ne_of_lt lt⟩
+
+instance : DecidableRel ((· : LinearCombo) < ·) :=
+  fun a b => by
+    dsimp
+    rw [lt_def]
+    infer_instance
 
 theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v < b.eval v := by
   simp [LinearCombo.eval]
@@ -688,13 +711,13 @@ end Problem
 We define negation of a linear combination,
 and show that `a < b.neg` gives a contradition.
 -/
-namespace LinearCombo
+namespace Problem
 
 theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
     (ma : a ∈ p.inequalities) (mb : b ∈ p.inequalities) (w : a < -b) : p.unsat := by
   rintro ⟨v, s⟩
   have := LinearCombo.eval_lt_of_lt w v
-  simp only [neg_eval] at this
+  simp only [LinearCombo.neg_eval] at this
   apply Int.lt_irrefl 0 (Int.lt_of_lt_of_le (Int.lt_of_le_of_lt (s.inequalities ma) this)
     (Int.neg_le_neg (s.inequalities mb)))
 
@@ -704,8 +727,33 @@ We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
 example : let p : Problem := { inequalities := [⟨-1, [1]⟩, ⟨0, [-1]⟩] }; p.unsat := by
   apply contradiction_of_neg_lt (a := ⟨-1, [1]⟩) (b := ⟨0, [-1]⟩) <;> simp
 
-end LinearCombo
 
+instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
+    Decidable (∃ (a : α) (_ : a ∈ l), p a) := by
+  simp
+  infer_instance
+
+def checkContradictions (p : Problem) : Problem :=
+  if ∃ (a : LinearCombo) (_ : a ∈ p.inequalities) (b : LinearCombo) (_ : b ∈ p.inequalities), a < -b then
+    impossible
+  else p
+
+theorem checkContradictions_sat_iff (p : Problem) (v) : p.sat v ↔ p.checkContradictions.sat v := by
+  dsimp [checkContradictions]
+  split_ifs with h
+  · constructor
+    · intro s
+      simp only [not_sat_impossible]
+      obtain ⟨a, ma, b, mb, w⟩ := h
+      exact p.contradiction_of_neg_lt ma mb w ⟨v, s⟩
+    · intro s
+      simp_all
+  · rfl
+
+def checkContradictions_equiv (p : Problem) : p.equiv p.checkContradictions :=
+  Problem.equiv_of_sat_iff p.checkContradictions_sat_iff
+
+end Problem
 
 @[simp] theorem ite_some_none_eq_none [Decidable P] :
     (if P then some x else none) = none ↔ ¬ P := by
@@ -751,6 +799,8 @@ def processConstants (p : Problem) : Problem :=
       inequalities := p.inequalities.filter fun lc => lc.constant? = none }
   else
     impossible
+
+-- TODO refactor these arguments via `equiv_of_sat_iff`.
 
 def processConstants_map (p : Problem) : p → p.processConstants := by
   dsimp [processConstants]
@@ -922,14 +972,7 @@ theorem sat_of_normalize_sat (p : Problem) (h : p.normalize.sat v) : p.sat v whe
     simp [normalize]
     refine ⟨_, m, rfl⟩
 
-def normalize_map (p : Problem) : p → p.normalize :=
-  fun ⟨v, s⟩ => ⟨v, by exact normalize_sat p s⟩
-
-def normalize_inv (p : Problem) : p.normalize → p :=
-  fun ⟨v, s⟩ => ⟨v, by exact sat_of_normalize_sat p s⟩
-
-def normalize_equiv (p : Problem) : p.equiv p.normalize where
-  mp := p.normalize_map
-  mpr := p.normalize_inv
+def normalize_equiv (p : Problem) : p.equiv p.normalize :=
+  equiv_of_sat_iff fun _ => ⟨p.normalize_sat, p.sat_of_normalize_sat⟩
 
 end Problem
