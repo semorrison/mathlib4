@@ -14,4 +14,5 @@ instance (L : List (Option α)) : Decidable (none ∈ L) := by
   rw [List.mem_iff_exists_mem_eq]
   infer_instance
 
+
 @[simp] theorem Nat.dvd_one_iff : n ∣ 1 ↔ n = 1 := by simp only [Nat.dvd_one]

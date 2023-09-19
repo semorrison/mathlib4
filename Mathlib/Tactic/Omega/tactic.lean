@@ -87,12 +87,12 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
 attribute [simp] Int.sub_self
 
 theorem Problem.singleEqualitySub_sat {a b : LinearCombo} (h : a.eval v = b.eval v) :
-    Problem.sat { equalities := [b.sub a] } v where
+    Problem.sat { equalities := [b - a] } v where
   equalities := by simp_all
   inequalities := by simp
 
 theorem Problem.singleInequalitySub_sat {a b : LinearCombo} (h : a.eval v ≤ b.eval v) :
-    Problem.sat { inequalities := [b.sub a] } v where
+    Problem.sat { inequalities := [b - a] } v where
   equalities := by simp
   inequalities := by simpa using Int.sub_nonneg_of_le h
 

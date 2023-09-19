@@ -50,9 +50,8 @@ theorem List.zipWith_foldl_eq_zip_foldl {f : α → β → γ} (i : δ):
     (List.zipWith f l₁ l₂).foldl g i = (List.zip l₁ l₂).foldl (fun r p => g r (f p.1 p.2)) i := by
   induction l₁ generalizing i l₂ <;> cases l₂ <;> simp_all
 
--- This is in Mathlib.Data.List.Basic but I need it earlier.
 theorem List.mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
-  sorry
+  (mem_filter.mp h).1
 
 theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
     a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
@@ -200,7 +199,23 @@ theorem dot_distrib_left (xs ys zs : IntList) : (xs + ys).dot zs = xs.dot zs + y
 @[simp] theorem dot_neg_left (xs ys : IntList) : (-xs).dot ys = -(xs.dot ys) := by
   simp [dot, mul_neg_left]
 
-def sdiv (xs : IntList) (g : Nat) : IntList := xs.map fun x => x / g
+theorem dot_of_left_zero (w : ∀ x, x ∈ xs → x = 0) : dot xs ys = 0 := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      rw [dot_cons₂, w x (by simp), ih]
+      · simp
+      · intro x m
+        apply w
+        exact List.mem_cons_of_mem _ m
+
+def sdiv (xs : IntList) (g : Int) : IntList := xs.map fun x => x / g
+
+@[simp] theorem sdiv_nil : sdiv [] g = [] := rfl
+@[simp] theorem sdiv_cons : sdiv (x::xs) g = (x / g) :: sdiv xs g := rfl
 
 def gcd (xs : IntList) : Nat := xs.foldr (fun x g => Nat.gcd x.natAbs g) 0
 
@@ -214,6 +229,10 @@ theorem gcd_cons_div_left : (gcd (x::xs) : Int) ∣ x := by
 theorem gcd_cons_div_right : gcd (x::xs) ∣ gcd xs := by
   simp only [gcd, List.foldr_cons]
   apply Nat.gcd_dvd_right
+
+theorem gcd_cons_div_right' : (gcd (x::xs) : Int) ∣ (gcd xs : Int) := by
+  rw [Int.ofNat_dvd_left, Int.natAbs_ofNat]
+  exact gcd_cons_div_right
 
 theorem gcd_dvd (xs : IntList) {a : Int} (m : a ∈ xs) : (xs.gcd : Int) ∣ a := by
   rw [Int.ofNat_dvd_left]
@@ -268,6 +287,29 @@ attribute [simp] Int.zero_dvd
         ← Int.emod_emod_of_dvd (x * y) (gcd_cons_div_left),
         ← Int.emod_emod_of_dvd (dot xs ys) (Int.ofNat_dvd.mpr gcd_cons_div_right)]
       simp_all
+
+theorem gcd_dvd_dot_left (xs ys : IntList) : (xs.gcd : Int) ∣ dot xs ys :=
+  Int.dvd_of_emod_eq_zero (dot_mod_gcd_left xs ys)
+
+attribute [simp] Int.zero_ediv
+
+theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
+    dot (xs.sdiv d) ys = (dot xs ys) / d := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      have wx : d ∣ x := Int.dvd_trans h (gcd_cons_div_left)
+      have wxy : d ∣ x * y := Int.dvd_trans wx (Int.dvd_mul_right x y)
+      have w : d ∣ (IntList.gcd xs : Int) := Int.dvd_trans h (gcd_cons_div_right')
+      simp_all [Int.add_ediv_of_dvd_left, Int.mul_ediv_assoc']
+
+
+@[simp] theorem dot_sdiv_gcd_left (xs ys : IntList) :
+    dot (xs.sdiv xs.gcd) ys = (dot xs ys) / xs.gcd :=
+  dot_sdiv_left xs ys (by exact Int.dvd_refl _)
 
 end IntList
 
@@ -353,7 +395,7 @@ deriving Repr
 namespace Problem
 
 structure sat (p : Problem) (values : List Int) : Prop where
-  possible : p.possible = true := by rfl
+  possible : p.possible = true := by trivial
   equalities : lc ∈ p.equalities → lc.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
@@ -637,8 +679,8 @@ def processConstants (p : Problem) : Problem :=
   let inequalityConstants := p.inequalities.filterMap LinearCombo.constant?
   if equalityConstants.all (· = 0) ∧ inequalityConstants.all (· ≥ 0) then
     { possible := p.possible
-      equalities := p.equalities.filter fun lc => lc.constant?.isNone
-      inequalities := p.inequalities.filter fun lc => lc.constant?.isNone }
+      equalities := p.equalities.filter fun lc => lc.constant? = none
+      inequalities := p.inequalities.filter fun lc => lc.constant? = none }
   else
     impossible
 
@@ -646,11 +688,11 @@ def processConstants_map (p : Problem) : p → p.processConstants := by
   dsimp [processConstants]
   split_ifs with w
   · exact (filterEqualities_map _) ∘ (filterInequalities_map _)
-  · simp only [not_and_or] at w
+  · intro ⟨v, s⟩
+    exfalso
+    simp only [not_and_or] at w
     simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
       and_imp, not_forall, exists_prop, exists_and_left] at w
-    intro ⟨v, s⟩
-    exfalso
     rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
     · have := s.equalities w
       simp [eq.eval_eq_of_constant m] at this
@@ -664,7 +706,38 @@ example : processConstants { equalities := [⟨1, []⟩] } |>.unsat := impossibl
 example : Problem.unsat { equalities := [⟨1, []⟩] } := impossible_unsat ∘ processConstants_map _
 example : Problem.unsat { inequalities := [⟨-1, []⟩] } := impossible_unsat ∘ processConstants_map _
 
-def processConstants_inv (p : Problem) : p.processConstants → p := sorry
+def processConstants_inv (p : Problem) : p.processConstants → p := by
+  dsimp [processConstants]
+  split_ifs with w
+  · simp at w
+    rcases w with ⟨eqs, ineqs⟩
+    rintro ⟨v, s⟩
+    refine ⟨v, ?_⟩
+    constructor
+    · exact s.possible
+    · intro lc mem
+      match h : lc.constant? with
+      | some c =>
+        rw [lc.eval_eq_of_constant h]
+        exact eqs _ lc mem h
+      | none =>
+        apply s.equalities
+        simp
+        rw [List.mem_filter]
+        exact ⟨mem, decide_eq_true h⟩
+    · intro lc mem
+      match h : lc.constant? with
+      | some c =>
+        rw [lc.eval_eq_of_constant h]
+        exact ineqs _ lc mem h
+      | none =>
+        apply s.inequalities
+        simp
+        rw [List.mem_filter]
+        exact ⟨mem, decide_eq_true h⟩
+  · rintro ⟨v, h⟩
+    replace h := h.possible
+    simp at h
 
 def processConstants_equiv (p : Problem) : p.equiv p.processConstants where
   mp := p.processConstants_map
@@ -676,9 +749,13 @@ namespace LinearCombo
 
 def normalizeInequality (lc : LinearCombo) : LinearCombo :=
   let gcd := lc.coeffs.gcd
-  { coeffs := lc.coeffs.sdiv gcd
-    -- Recall `Int.fdiv` is division with floor rounding.
-    const := Int.fdiv lc.const gcd }
+  if gcd = 0 then
+    { const := lc.const
+      coeffs := [] }
+  else
+    { coeffs := lc.coeffs.sdiv gcd
+      -- Since `gcd ≥ 0`, `ediv` and `fdiv` coincide: this is floor rounding.
+      const := lc.const / gcd }
 
 def normalizeEquality (lc : LinearCombo) : LinearCombo :=
   let gcd := lc.coeffs.gcd
@@ -689,26 +766,46 @@ def normalizeEquality (lc : LinearCombo) : LinearCombo :=
     { coeffs := []
       const := 1 }
 
-theorem normalizeInequality_eval {lc : LinearCombo} :
+theorem Int.div_nonneg_iff_of_pos {a b : Int} (h : 0 < b) : a / b ≥ 0 ↔ a ≥ 0 := by
+  rw [Int.div_def]
+  match b, h with
+  | Int.ofNat (b+1), _ =>
+    rcases a with ⟨a⟩ <;> simp [Int.ediv]
+    exact decide_eq_decide.mp rfl
+
+@[simp] theorem normalizeInequality_eval {lc : LinearCombo} :
     lc.normalizeInequality.eval v ≥ 0 ↔ lc.eval v ≥ 0 := by
-  sorry
+  rcases lc with ⟨const, coeffs⟩
+  dsimp [normalizeInequality, eval]
+  split_ifs with h
+  · rw [IntList.gcd_eq_zero] at h
+    simp [IntList.dot_of_left_zero h]
+  · rw [IntList.dot_sdiv_gcd_left, ← Int.add_ediv_of_dvd_right (IntList.gcd_dvd_dot_left coeffs v),
+      Int.div_nonneg_iff_of_pos]
+    match coeffs.gcd, h with
+    | (n+1), _ => exact Int.ofNat_succ_pos n
 
 attribute [simp] Int.zero_ediv Int.ediv_zero
 
-theorem normalizeEquality_eval {lc : LinearCombo} :
+theorem Int.mul_eq_mul_right_iff {a b c : Int} (h : c ≠ 0) : a * c = b * c ↔ a = b :=
+  ⟨Int.eq_of_mul_eq_mul_right h, fun w => congr_arg (fun x => x * c) w⟩
+
+@[simp] theorem normalizeEquality_eval {lc : LinearCombo} :
     lc.normalizeEquality.eval v = 0 ↔ lc.eval v = 0 := by
   rcases lc with ⟨const, coeffs⟩
-  dsimp [normalizeEquality]
+  dsimp [normalizeEquality, eval]
   split_ifs with h
-  · simp [eval]
+  · simp only [IntList.dot_sdiv_gcd_left]
     by_cases w : coeffs.gcd = 0
-    · simp [w] at h ⊢
-      simp [h]
+    · simp only [w, Int.ofNat_zero, Int.zero_dvd, Int.ediv_zero, Int.add_zero, true_iff] at h ⊢
+      simp only [h, Int.zero_add]
       simp at w
-      sorry -- easy from here?
-    · -- not terrible from here?
-      sorry
-  · simp only [eval, IntList.dot_nil_left, Int.add_zero, false_iff]
+      rw [IntList.dot_of_left_zero w]
+    · replace w : (coeffs.gcd : Int) ≠ 0 := Int.ofNat_ne_zero.mpr w
+      rw [← Int.mul_eq_mul_right_iff w]
+      have : (coeffs.gcd : Int) ∣ IntList.dot coeffs v := IntList.gcd_dvd_dot_left _ _
+      simp_all [Int.add_mul, Int.ediv_mul_cancel]
+  · simp only [IntList.dot_nil_left, Int.add_zero, false_iff]
     intro w
     apply h
     replace w := congr_arg (fun x : Int => x % coeffs.gcd) w
@@ -721,11 +818,37 @@ namespace Problem
 def normalize (p : Problem) : Problem where
   possible := p.possible
   equalities := p.equalities.map LinearCombo.normalizeEquality
-  inequalities := p.equalities.map LinearCombo.normalizeInequality
+  inequalities := p.inequalities.map LinearCombo.normalizeInequality
 
-def normalize_map (p : Problem) : p → p.normalize := sorry
+theorem normalize_sat (p : Problem) (h : p.sat v) : p.normalize.sat v where
+  possible := h.possible
+  equalities m := by
+    simp [normalize] at m
+    obtain ⟨a, m, rfl⟩ := m
+    simpa using h.equalities m
+  inequalities m := by
+    simp [normalize] at m
+    obtain ⟨a, m, rfl⟩ := m
+    simpa using h.inequalities m
 
-def normalize_inv (p : Problem) : p.normalize → p := sorry
+theorem sat_of_normalize_sat (p : Problem) (h : p.normalize.sat v) : p.sat v where
+  possible := h.possible
+  equalities m := by
+    rw [← LinearCombo.normalizeEquality_eval]
+    apply h.equalities
+    simp [normalize]
+    refine ⟨_, m, rfl⟩
+  inequalities m := by
+    rw [← LinearCombo.normalizeInequality_eval]
+    apply h.inequalities
+    simp [normalize]
+    refine ⟨_, m, rfl⟩
+
+def normalize_map (p : Problem) : p → p.normalize :=
+  fun ⟨v, s⟩ => ⟨v, by exact normalize_sat p s⟩
+
+def normalize_inv (p : Problem) : p.normalize → p :=
+  fun ⟨v, s⟩ => ⟨v, by exact sat_of_normalize_sat p s⟩
 
 def normalize_equiv (p : Problem) : p.equiv p.normalize where
   mp := p.normalize_map
