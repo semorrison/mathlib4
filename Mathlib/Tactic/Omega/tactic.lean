@@ -17,6 +17,12 @@ open Lean Elab Tactic Mathlib.Tactic Meta
 theorem Int.add_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a + c = b + d := by
   subst h₁; subst h₂; rfl
 
+theorem Int.sub_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a - c = b - d := by
+  subst h₁; subst h₂; rfl
+
+theorem Int.neg_congr {a b : Int} (h₁ : a = b) : -a = -b := by
+  subst h₁; rfl
+
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
   mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
@@ -52,18 +58,28 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
     let (l₁, prf₁) ← asLinearCombo e₁
     let (l₂, prf₂) ← asLinearCombo e₂
     let prf : AtomM Expr := do
-      let (_, _, add_eval) ← Meta.forallMetaTelescope (← mkConst' ``LinearCombo.add_eval)
+      let add_eval ← mkAppM ``LinearCombo.add_eval #[toExpr l₁, toExpr l₂, ← atomsList]
       mkEqTrans
         (← mkAppM ``Int.add_congr #[← prf₁, ← prf₂])
         (← mkEqSymm add_eval)
     pure (l₁.add l₂, prf)
-  -- | (``HSub.hSub, #[_, _, _, _, e₁, e₂]) => do
-  --   let (l₁, prf₁) ← asLinearCombo e₁
-  --   let (l₂, prf₂) ← asLinearCombo e₁
-  --   sorry
-  -- | (``Neg.neg, #[_, _, e]) => do
-  --   let (l, prf) ← asLinearCombo e
-  --   sorry
+  | (``HSub.hSub, #[_, _, _, _, e₁, e₂]) => do
+    let (l₁, prf₁) ← asLinearCombo e₁
+    let (l₂, prf₂) ← asLinearCombo e₂
+    let prf : AtomM Expr := do
+      let sub_eval ← mkAppM ``LinearCombo.sub_eval #[toExpr l₁, toExpr l₂, ← atomsList]
+      mkEqTrans
+        (← mkAppM ``Int.sub_congr #[← prf₁, ← prf₂])
+        (← mkEqSymm sub_eval)
+    pure (l₁.sub l₂, prf)
+  | (``Neg.neg, #[_, _, e]) => do
+    let (l, prf) ← asLinearCombo e
+    let prf' : AtomM Expr := do
+      let neg_eval ← mkAppM ``LinearCombo.neg_eval #[toExpr l, ← atomsList]
+      mkEqTrans
+        (← mkAppM ``Int.neg_congr #[← prf])
+        (← mkEqSymm neg_eval)
+    pure (l.neg, prf')
   | _ =>
     logInfo "We don't handle atoms yet."
     failure -- FIXME atoms
@@ -71,9 +87,22 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
 attribute [simp] Int.sub_self
 
 theorem Problem.singleEqualitySub_sat {a b : LinearCombo} (h : a.eval v = b.eval v) :
-    Problem.sat { equalities := [a.sub b] } v where
+    Problem.sat { equalities := [b.sub a] } v where
   equalities := by simp_all
   inequalities := by simp
+
+theorem Problem.singleInequalitySub_sat {a b : LinearCombo} (h : a.eval v ≤ b.eval v) :
+    Problem.sat { inequalities := [b.sub a] } v where
+  equalities := by simp
+  inequalities := by simpa using Int.sub_nonneg_of_le h
+
+theorem le_of_eq_of_le {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : a ≤ c := by
+  subst h₁
+  exact h₂
+
+theorem le_of_le_of_eq {a b c : α} [LE α] (h₁ : a ≤ b) (h₂ : b = c) : a ≤ c := by
+  subst h₂
+  exact h₁
 
 /--
 Given an expression `e`, working in the `AtomM` monad to progressively identify atoms,
@@ -90,14 +119,32 @@ def ofExpr (e : Expr) : AtomM (Problem × AtomM Expr) := do
   | some (.const ``Int [], lhs, rhs) =>
     let (lhs_lc, lhs_prf) ← asLinearCombo lhs
     let (rhs_lc, rhs_prf) ← asLinearCombo rhs
-    let problem : Problem := { equalities := [lhs_lc.sub rhs_lc] }
+    let problem : Problem := { equalities := [rhs_lc.sub lhs_lc] }
     let prf : AtomM Expr := do
       let eq ← mkEqTrans (← mkEqSymm (← lhs_prf)) (← mkEqTrans e (← rhs_prf))
       mkAppM ``Problem.singleEqualitySub_sat #[eq]
     pure (problem, prf)
-  | _ =>
-    logInfo "We don't handle inequalities yet."
-    failure -- TODO handle inequalities
+  | some _ =>
+    -- Equalities in `Nat` will be handled by separate preprocessing.
+    throwError "We only handle equalities in `Int`."
+  | none =>
+    match ty.le? with
+    | some (.const ``Int [], lhs, rhs) =>
+      let (lhs_lc, lhs_prf) ← asLinearCombo lhs
+      let (rhs_lc, rhs_prf) ← asLinearCombo rhs
+      let problem : Problem := { inequalities := [rhs_lc.sub lhs_lc] }
+      let prf : AtomM Expr := do
+        let ineq ← mkAppM ``le_of_le_of_eq
+          #[← mkAppM ``le_of_eq_of_le #[← mkEqSymm (← lhs_prf), e], (← rhs_prf)]
+        mkAppM ``Problem.singleInequalitySub_sat #[ineq]
+      pure (problem, prf)
+    | some _ =>
+      -- Inequalities in `Nat` will be handled by separate preprocessing.
+      throwError "We only handle inequalities in `Int`."
+    | none =>
+      throwError "Expression was not an `=` or `≤`."
+
+#print Expr.le?
 
 /-- The proof that the trivial `Problem` is satisfied by `[]`. -/
 def trivial_sat : Expr :=
@@ -140,7 +187,7 @@ instance : ToExpr Problem where
   toExpr p := (Expr.const ``Problem.mk []).app (toExpr p.possible) |>.app (toExpr p.equalities) |>.app (toExpr p.inequalities)
   toTypeExpr := .const ``Problem []
 
-def foo {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
+def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
 
 def omega (hyps : List Expr) : MetaM Expr := do
   let (p, sat) ← omega_problem hyps
@@ -150,19 +197,11 @@ def omega (hyps : List Expr) : MetaM Expr := do
   match r.getAppFnArgs with
   | (``Option.some, #[_, s]) =>
     match s.getAppFnArgs with
-    | (``Problem.Solution.unsat, #[_, unsat]) => return unsat.app (← mkAppM ``foo #[sat])
+    | (``Problem.Solution.unsat, #[_, unsat]) => return unsat.app (← mkAppM ``Problem.of #[sat])
     | _ => throwError "found satisfying values!"
-  | _ => throwError m!"omega algorithm is incomplete! {r}"
+  | _ => throwError m!"omega algorithm is incomplete!"
 
 open Qq
-
-axiom a : (7 : Int) = 0
-
-#eval show MetaM _ from do
-  inferType (← omega [q(a)])
-
-example : Nat := by
-  exact 7
 
 def omega' : TacticM Unit := do
   liftMetaTactic' MVarId.exfalso
@@ -176,4 +215,38 @@ elab_rules : tactic
   | `(tactic| omega) => omega'
 
 example (h : (7 : Int) = 0) : False := by
+  omega
+
+example (h : (7 : Int) ≤ 0) : False := by
+  omega
+
+example (h : (-7 : Int) + 14 = 0) : False := by
+  omega
+
+example (h : (-7 : Int) + 14 ≤ 0) : False := by
+  omega
+
+example (h : (1 : Int) + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 0) : False := by
+  omega
+
+example (h : (7 : Int) - 14 = 0) : False := by
+  omega
+
+example (h : (14 : Int) - 7 ≤ 0) : False := by
+  omega
+
+example (h : (1 : Int) - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 = 0) : False := by
+  omega
+
+example (h : -(7 : Int) = 0) : False := by
+  omega
+
+example (h : -(-7 : Int) ≤ 0) : False := by
+  omega
+
+/--
+error: omega algorithm is incomplete!
+-/
+#guard_msgs in
+example : False := by
   omega
