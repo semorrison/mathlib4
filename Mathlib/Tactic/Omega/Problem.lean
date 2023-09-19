@@ -621,10 +621,7 @@ instance : LE LinearCombo := ⟨le⟩
 theorem le_def (a b : LinearCombo) : a ≤ b ↔ a.coeffs = b.coeffs ∧ a.const ≤ b.const := Iff.rfl
 
 instance : DecidableRel ((· : LinearCombo) ≤ ·) :=
-  fun a b => by
-    dsimp
-    rw [le_def]
-    infer_instance
+  fun a b => decidable_of_iff' _ (le_def a b)
 
 theorem eval_le_of_le {a b : LinearCombo} (h : a ≤ b) (v : List Int) : a.eval v ≤ b.eval v := by
   simp [LinearCombo.eval]
@@ -661,10 +658,7 @@ theorem lt_def (a b : LinearCombo) : a < b ↔ a.coeffs = b.coeffs ∧ a.const <
     exact ⟨Int.le_of_lt lt, Int.ne_of_lt lt⟩
 
 instance : DecidableRel ((· : LinearCombo) < ·) :=
-  fun a b => by
-    dsimp
-    rw [lt_def]
-    infer_instance
+  fun a b => decidable_of_iff' _ (lt_def a b)
 
 theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v < b.eval v := by
   simp [LinearCombo.eval]
@@ -727,16 +721,28 @@ We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
 example : let p : Problem := { inequalities := [⟨-1, [1]⟩, ⟨0, [-1]⟩] }; p.unsat := by
   apply contradiction_of_neg_lt (a := ⟨-1, [1]⟩) (b := ⟨0, [-1]⟩) <;> simp
 
+variable {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] in
+#synth Decidable (∃ (a : α), a ∈ l ∧ p a)
 
-instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
-    Decidable (∃ (a : α) (_ : a ∈ l), p a) := by
-  simp
-  infer_instance
+example (α : Type) (p q : α → Prop) (h : ∀ a, p a ↔ q a) : (∃ a, p a) ↔ (∃ a, q a) :=
+  exists_congr h
+
+#print axioms List.decidableBEx
+#print decidable_of_iff
+instance instFoo {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
+    Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
+  decidable_of_iff (∃ (a : α), a ∈ l ∧ p a) (exists_congr (fun _ => exists_prop.symm))
+
+#print axioms decidable_of_iff
+#print axioms instFoo
 
 def checkContradictions (p : Problem) : Problem :=
   if ∃ (a : LinearCombo) (_ : a ∈ p.inequalities) (b : LinearCombo) (_ : b ∈ p.inequalities), a < -b then
     impossible
   else p
+
+#print checkContradictions
+#print axioms Problem.checkContradictions
 
 theorem checkContradictions_sat_iff (p : Problem) (v) : p.sat v ↔ p.checkContradictions.sat v := by
   dsimp [checkContradictions]

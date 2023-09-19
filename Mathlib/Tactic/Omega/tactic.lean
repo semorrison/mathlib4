@@ -198,10 +198,23 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
   | h :: t =>
     t.foldlM (fun ⟨p₁, s₁⟩ ⟨p₂, s₂⟩ => return (p₁.and p₂, ← mkAppM ``Problem.and_sat #[s₁, s₂])) h
 
+#print axioms Problem.normalize
+#print axioms Problem.processConstants
+#print axioms Problem.checkContradictions
+#print axioms Problem.processConstants_map
+#print axioms Problem.normalize_equiv
+#print axioms Problem.checkContradictions_equiv
+
 def omega_algorithm (p : Problem) : (q : Problem) × (p → q) :=
-  let p' := p.normalize
-  let q := p'.processConstants
-  ⟨q, p'.processConstants_map ∘ p.normalize_equiv.mp⟩
+  let p₁ := p.normalize
+  let p₂ := p₁.processConstants
+  let p₃ := p₂.checkContradictions
+  ⟨p₃, p₂.checkContradictions_equiv.mp ∘ p₁.processConstants_map ∘ p.normalize_equiv.mp⟩
+  -- let p₁ := p.normalize
+  -- let p₂ := p₁.processConstants
+  -- ⟨p₂, p₁.processConstants_map ∘ p.normalize_equiv.mp⟩
+
+#print axioms omega_algorithm
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
@@ -237,7 +250,7 @@ def omega (hyps : List Expr) : MetaM Expr := do
         return unsat.app (← mkAppM ``Problem.of #[sat])
       | _ => throwError "found satisfying values!"
     | _ => throwError m!"omega algorithm is incomplete!"
-  | _ => unreachable!
+  | _ => throwError m!"omega algorithm did not reduce in the kernel: {r}"
 
 open Qq
 
