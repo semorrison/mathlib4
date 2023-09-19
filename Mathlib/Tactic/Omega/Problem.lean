@@ -319,7 +319,16 @@ structure LinearCombo where
   coeffs : IntList
 deriving DecidableEq, Inhabited, Repr
 
+instance : ToString LinearCombo where
+  toString lc := s!"{lc.const}{String.join <| lc.coeffs.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
+
+example : toString (⟨7, [3, 5]⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
+
 namespace LinearCombo
+
+def coordinate (i : Nat) : LinearCombo where
+  const := 0
+  coeffs := List.replicate i 0 ++ [1]
 
 /--
 Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v_k]` to obtain
@@ -328,10 +337,18 @@ Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v
 def eval (lc : LinearCombo) (values : IntList) : Int :=
   lc.const + lc.coeffs.dot values
 
--- -- Prove some alternative formulas for `eval`? Which to use?
--- theorem eval_eq (lc : LinearCombo) (values : List Int) :
---     lc.eval values = lc.const + (List.zipWith (· * ·) lc.coeffs values).foldr (· + ·) 0 := by
---   simp [eval, List.zipWith_foldr_eq_zip_foldr]
+@[simp] theorem eval_nil : (lc : LinearCombo).eval [] = lc.const := by
+  simp [eval]
+
+@[simp] theorem coordinate_eval (i : Nat) (v : IntList) :
+    (coordinate i).eval v = (v.get? i).getD 0 := by
+  simp [eval, coordinate]
+  induction v generalizing i with
+  | nil => simp
+  | cons x v ih =>
+    cases i with
+    | zero => simp
+    | succ i => simp_all
 
 def add (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const + l₂.const
@@ -393,6 +410,14 @@ structure Problem where
 deriving Repr
 
 namespace Problem
+
+instance : ToString Problem where
+  toString p :=
+    if p.possible then
+      String.join (p.equalities.map fun e => s!"{e} = 0\n") ++
+      String.join (p.inequalities.map fun e => s!"{e} ≥ 0\n")
+    else
+      "impossible"
 
 structure sat (p : Problem) (values : List Int) : Prop where
   possible : p.possible = true := by trivial
@@ -757,6 +782,11 @@ def normalizeInequality (lc : LinearCombo) : LinearCombo :=
       -- Since `gcd ≥ 0`, `ediv` and `fdiv` coincide: this is floor rounding.
       const := lc.const / gcd }
 
+example : (⟨1, [2]⟩ : LinearCombo).normalizeInequality = ⟨0, [1]⟩ := rfl
+example : (⟨5, [6, 15]⟩ : LinearCombo).normalizeInequality = ⟨1, [2, 5]⟩ := rfl
+example : (⟨-5, [6, 15]⟩ : LinearCombo).normalizeInequality = ⟨-2, [2, 5]⟩ := rfl
+example : (⟨10, [6, 8]⟩ : LinearCombo).normalizeInequality = ⟨5, [3, 4]⟩ := rfl
+
 def normalizeEquality (lc : LinearCombo) : LinearCombo :=
   let gcd := lc.coeffs.gcd
   if (gcd : Int) ∣ lc.const then
@@ -765,6 +795,11 @@ def normalizeEquality (lc : LinearCombo) : LinearCombo :=
   else
     { coeffs := []
       const := 1 }
+
+example : (⟨1, [2]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
+example : (⟨-1, [-2]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
+example : (⟨1, [6, 9]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
+example : (⟨3, [6, 9]⟩ : LinearCombo).normalizeEquality = ⟨1, [2, 3]⟩ := rfl
 
 theorem Int.div_nonneg_iff_of_pos {a b : Int} (h : 0 < b) : a / b ≥ 0 ↔ a ≥ 0 := by
   rw [Int.div_def]

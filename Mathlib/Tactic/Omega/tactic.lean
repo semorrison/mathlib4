@@ -12,6 +12,8 @@ It does no preprocessing, and just looks for integer linear constraints amongst 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+initialize Lean.registerTraceClass `omega
+
 open Lean Elab Tactic Mathlib.Tactic Meta
 
 theorem Int.add_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a + c = b + d := by
@@ -40,6 +42,14 @@ def atomsList : AtomM Expr := do
 
 def mkEvalRfl (e : Expr) (lc : LinearCombo) : AtomM Expr := do
   mkEqReflWithExpectedType e (← mkAppM ``LinearCombo.eval #[toExpr lc, ← atomsList])
+
+/-- If `e : Expr` is the `n`-th atom, construct the proof that
+`e = (coordinate n).eval atoms`. -/
+def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : AtomM Expr := do
+  -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
+  let eq ← mkEqReflWithExpectedType
+    e (← mkAppM ``Option.getD #[← mkAppM ``List.get? #[← atomsList, toExpr n], toExpr (0 : Int)])
+  mkEqTrans eq (← mkEqSymm (← mkAppM ``LinearCombo.coordinate_eval #[toExpr n, ← atomsList]))
 
 /--
 Given an expression `e`, express it as a linear combination `lc : LinearCombo`
@@ -80,9 +90,10 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
         (← mkAppM ``Int.neg_congr #[← prf])
         (← mkEqSymm neg_eval)
     pure (l.neg, prf')
+    -- TODO scalar multiplication
   | _ =>
-    logInfo "We don't handle atoms yet."
-    failure -- FIXME atoms
+    let n ← AtomM.addAtom e
+    return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n⟩
 
 attribute [simp] Int.sub_self
 
@@ -144,8 +155,6 @@ def ofExpr (e : Expr) : AtomM (Problem × AtomM Expr) := do
     | none =>
       throwError "Expression was not an `=` or `≤`."
 
-#print Expr.le?
-
 /-- The proof that the trivial `Problem` is satisfied by `[]`. -/
 def trivial_sat : Expr :=
   .app (.const `Problem.trivial_sat []) (.app (.const `List.nil [.zero]) (.const `Int []))
@@ -174,14 +183,19 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
   | h :: t =>
     t.foldlM (fun ⟨p₁, s₁⟩ ⟨p₂, s₂⟩ => return (p₁.and p₂, ← mkAppM ``Problem.and_sat #[s₁, s₂])) h
 
--- In fact we don't really need the `Option` here. It's a decision procedure.
+def omega_algorithm (p : Problem) : (q : Problem) × (p → q) :=
+  let p' := p.normalize
+  let q := p'.processConstants
+  ⟨q, p'.processConstants_map ∘ p.normalize_map⟩
+
+-- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
-def omega_algorithm (p : Problem) : Option p.Solution :=
-  let p' := p.processConstants
-  if h : p'.possible = false then
-    some (.unsat (p'.unsat_of_impossible h ∘ p.processConstants_map))
+def omega_algorithm' (p : Problem) : Problem × Option p.Solution :=
+  let ⟨q, f⟩ := omega_algorithm p
+  if h : q.possible = false then
+    (q, some (.unsat (q.unsat_of_impossible h ∘ f)))
   else
-    none
+    (q, none)
 
 instance : ToExpr Problem where
   toExpr p := (Expr.const ``Problem.mk []).app (toExpr p.possible) |>.app (toExpr p.equalities) |>.app (toExpr p.inequalities)
@@ -189,17 +203,26 @@ instance : ToExpr Problem where
 
 def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
 
+def evalProblem (e : Expr) : MetaM Problem := unsafe do
+  evalExpr Problem (mkConst ``Problem) e
+
 def omega (hyps : List Expr) : MetaM Expr := do
   let (p, sat) ← omega_problem hyps
+  trace[omega] "{p}"
   let p_expr := toExpr p
-  let s ← mkAppM ``omega_algorithm #[p_expr]
+  let s ← mkAppM ``omega_algorithm' #[p_expr]
   let r ← reduce s
   match r.getAppFnArgs with
-  | (``Option.some, #[_, s]) =>
-    match s.getAppFnArgs with
-    | (``Problem.Solution.unsat, #[_, unsat]) => return unsat.app (← mkAppM ``Problem.of #[sat])
-    | _ => throwError "found satisfying values!"
-  | _ => throwError m!"omega algorithm is incomplete!"
+  | (``Prod.mk, #[_, _, q, sol?]) =>
+    trace[omega] "{← evalProblem q}"
+    match sol?.getAppFnArgs with
+    | (``Option.some, #[_, sol]) =>
+      match sol.getAppFnArgs with
+      | (``Problem.Solution.unsat, #[_, unsat]) =>
+        return unsat.app (← mkAppM ``Problem.of #[sat])
+      | _ => throwError "found satisfying values!"
+    | _ => throwError m!"omega algorithm is incomplete!"
+  | _ => unreachable!
 
 open Qq
 
@@ -213,40 +236,3 @@ syntax "omega" : tactic
 
 elab_rules : tactic
   | `(tactic| omega) => omega'
-
-example (h : (7 : Int) = 0) : False := by
-  omega
-
-example (h : (7 : Int) ≤ 0) : False := by
-  omega
-
-example (h : (-7 : Int) + 14 = 0) : False := by
-  omega
-
-example (h : (-7 : Int) + 14 ≤ 0) : False := by
-  omega
-
-example (h : (1 : Int) + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 0) : False := by
-  omega
-
-example (h : (7 : Int) - 14 = 0) : False := by
-  omega
-
-example (h : (14 : Int) - 7 ≤ 0) : False := by
-  omega
-
-example (h : (1 : Int) - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 - 1 + 1 = 0) : False := by
-  omega
-
-example (h : -(7 : Int) = 0) : False := by
-  omega
-
-example (h : -(-7 : Int) ≤ 0) : False := by
-  omega
-
-/--
-error: omega algorithm is incomplete!
--/
-#guard_msgs in
-example : False := by
-  omega
