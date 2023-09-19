@@ -34,6 +34,14 @@ theorem List.zip_map_right (l₁ : List α) (l₂ : List β) (f : β → γ) :
     List.zip l₁ (l₂.map f) = (List.zip l₁ l₂).map fun p => (p.1, f p.2) := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
 
+theorem List.zipWith_map_left (l₁ : List α) (l₂ : List β) (f : α → α') (g : α' → β → γ) :
+    List.zipWith g (l₁.map f) l₂ = List.zipWith (fun a b => g (f a) b) l₁ l₂ := by
+  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
+
+theorem List.zipWith_map_right (l₁ : List α) (l₂ : List β) (f : β → β') (g : α → β' → γ) :
+    List.zipWith g l₁ (l₂.map f) = List.zipWith (fun a b => g a (f b)) l₁ l₂ := by
+  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
+
 theorem List.zipWith_foldr_eq_zip_foldr {f : α → β → γ} (i : δ):
     (List.zipWith f l₁ l₂).foldr g i = (List.zip l₁ l₂).foldr (fun p r => g (f p.1 p.2) r) i := by
   induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
@@ -42,21 +50,7 @@ theorem List.zipWith_foldl_eq_zip_foldl {f : α → β → γ} (i : δ):
     (List.zipWith f l₁ l₂).foldl g i = (List.zip l₁ l₂).foldl (fun r p => g r (f p.1 p.2)) i := by
   induction l₁ generalizing i l₂ <;> cases l₂ <;> simp_all
 
--- theorem List.partitionMap_fst {f : α → β ⊕ γ} :
---     (List.partitionMap f l).fst =
---       l.filterMap fun a => match f a with | .inl b => some b | .inr _ => none := by
---   induction l <;> simp_all
---   sorry -- FIXME missing simp lemmas
---   sorry
-
--- theorem List.partitionMap_snd {f : α → β ⊕ γ} :
---     (List.partitionMap f l).snd =
---       l.filterMap fun a => match f a with | .inl _ => none | .inr c => some c := by
---   induction l <;> simp_all
---   sorry -- FIXME missing simp lemmas
---   sorry
-
--- This is in Mathlib.Data.List.Basic
+-- This is in Mathlib.Data.List.Basic but I need it earlier.
 theorem List.mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
   sorry
 
@@ -83,10 +77,204 @@ def List.zipWithAll (f : Option α → Option β → γ) : List α → List β �
 @[simp] theorem List.zipWithAll_cons_cons :
     List.zipWithAll f (a :: as) (b :: bs) = f (some a) (some b) :: zipWithAll f as bs := rfl
 
+theorem Nat.gcd_eq_iff (a b : Nat) :
+    gcd a b = g ↔ g ∣ a ∧ g ∣ b ∧ (∀ c, c ∣ a → c ∣ b → c ∣ g) := by
+  constructor
+  · rintro rfl
+    exact ⟨gcd_dvd_left _ _, gcd_dvd_right _ _, fun _ => Nat.dvd_gcd⟩
+  · rintro ⟨ha, hb, hc⟩
+    apply Nat.dvd_antisymm
+    · apply hc
+      · exact gcd_dvd_left a b
+      · exact gcd_dvd_right a b
+    · exact Nat.dvd_gcd ha hb
+
+attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zero
+
+abbrev IntList := List Int
+
+namespace IntList
+
+def add (xs ys : IntList) : IntList :=
+  List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys
+
+instance : Add IntList := ⟨add⟩
+
+theorem add_def (xs ys : IntList) :
+    xs + ys = List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys :=
+  rfl
+
+def mul (xs ys : IntList) : IntList := List.zipWith (· * ·) xs ys
+
+instance : Mul IntList := ⟨mul⟩
+
+theorem mul_def (xs ys : IntList) : xs * ys = List.zipWith (· * ·) xs ys :=
+  rfl
+
+@[simp] theorem mul_nil_left : ([] : IntList) * ys = [] := rfl
+@[simp] theorem mul_nil_right : xs * ([] : IntList) = [] := List.zipWith_nil_right
+@[simp] theorem mul_cons₂ : (x::xs : IntList) * (y::ys) = (x * y) :: (xs * ys) := rfl
+
+def neg (xs : IntList) : IntList := xs.map fun x => -x
+
+instance : Neg IntList := ⟨neg⟩
+
+theorem neg_def (xs : IntList) : - xs = xs.map fun x => -x := rfl
+
+@[simp] theorem neg_nil : (- ([] : IntList)) = [] := rfl
+@[simp] theorem neg_cons : (- (x::xs : IntList)) = -x :: -xs := rfl
+
+def sub (xs ys : IntList) : IntList :=
+  List.zipWithAll (fun x y => x.getD 0 - y.getD 0) xs ys
+
+instance : Sub IntList := ⟨sub⟩
+
+theorem sub_def (xs ys : IntList) :
+    xs - ys = List.zipWithAll (fun x y => x.getD 0 - y.getD 0) xs ys :=
+  rfl
+
+attribute [local simp] add_def mul_def in
+theorem mul_distrib_left (xs ys zs : IntList) : (xs + ys) * zs = xs * zs + ys * zs := by
+  induction xs generalizing ys zs with
+  | nil =>
+    cases ys with
+    | nil => simp
+    | cons _ _ =>
+      cases zs with
+      | nil => simp
+      | cons _ _ => simp_all [Int.add_mul]
+  | cons x xs ih₁ =>
+    cases ys with
+    | nil => simp_all
+    | cons _ _ =>
+      cases zs with
+      | nil => simp
+      | cons _ _ => simp_all [Int.add_mul]
+
+theorem mul_neg_left (xs ys : IntList) : (-xs) * ys = -(xs * ys) := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.neg_mul]
+
+attribute [local simp] add_def neg_def sub_def in
+theorem sub_eq_add_neg (xs ys : IntList) : xs - ys = xs + (-ys) := by
+  induction xs generalizing ys with
+  | nil => simp; rfl
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.sub_eq_add_neg]
+
+def sum (xs : IntList) : Int := xs.foldr (· + ·) 0
+
+@[simp] theorem sum_nil : sum ([] : IntList) = 0 := rfl
+@[simp] theorem sum_cons : sum (x::xs : IntList) = x + sum xs := rfl
+
+attribute [local simp] sum add_def in
+theorem sum_add (xs ys : IntList) : (xs + ys).sum = xs.sum + ys.sum := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.add_assoc, Int.add_left_comm]
+
+@[simp]
+theorem sum_neg (xs : IntList) : (-xs).sum = -(xs.sum) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih => simp_all [Int.neg_add]
+
+def dot (xs ys : IntList) : Int := (xs * ys).sum
+
+@[simp] theorem dot_nil_left : dot ([] : IntList) ys = 0 := rfl
+@[simp] theorem dot_nil_right : dot xs ([] : IntList) = 0 := by simp [dot]
+@[simp] theorem dot_cons₂ : dot (x::xs) (y::ys) = x * y + dot xs ys := rfl
+
+theorem dot_distrib_left (xs ys zs : IntList) : (xs + ys).dot zs = xs.dot zs + ys.dot zs := by
+  simp [dot, mul_distrib_left, sum_add]
+
+@[simp] theorem dot_neg_left (xs ys : IntList) : (-xs).dot ys = -(xs.dot ys) := by
+  simp [dot, mul_neg_left]
+
+def sdiv (xs : IntList) (g : Nat) : IntList := xs.map fun x => x / g
+
+def gcd (xs : IntList) : Nat := xs.foldr (fun x g => Nat.gcd x.natAbs g) 0
+
+@[simp] theorem gcd_nil : gcd [] = 0 := rfl
+@[simp] theorem gcd_cons : gcd (x :: xs) = Nat.gcd x.natAbs (gcd xs) := rfl
+
+theorem gcd_cons_div_left : (gcd (x::xs) : Int) ∣ x := by
+  simp only [gcd, List.foldr_cons, Int.ofNat_dvd_left]
+  apply Nat.gcd_dvd_left
+
+theorem gcd_cons_div_right : gcd (x::xs) ∣ gcd xs := by
+  simp only [gcd, List.foldr_cons]
+  apply Nat.gcd_dvd_right
+
+theorem gcd_dvd (xs : IntList) {a : Int} (m : a ∈ xs) : (xs.gcd : Int) ∣ a := by
+  rw [Int.ofNat_dvd_left]
+  induction m with
+  | head =>
+    simp only [gcd_cons]
+    apply Nat.gcd_dvd_left
+  | tail b m ih =>   -- FIXME: why is the argument of tail implicit?
+    simp only [gcd_cons]
+    exact Nat.dvd_trans (Nat.gcd_dvd_right _ _) ih
+
+theorem dvd_gcd (xs : IntList) (c : Nat) (w : ∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) :
+    c ∣ xs.gcd := by
+  simp only [Int.ofNat_dvd_left] at w
+  induction xs with
+  | nil => simpa using Nat.dvd_zero c
+  | cons x xs ih =>
+    simp
+    apply Nat.dvd_gcd
+    · apply w
+      simp
+    · apply ih
+      intro b m
+      apply w
+      exact List.mem_cons_of_mem x m
+
+theorem gcd_eq_iff (xs : IntList) (g : Nat) :
+    xs.gcd = g ↔ (∀ {a : Int}, a ∈ xs → (g : Int) ∣ a) ∧ (∀ (c : Nat), (∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) → c ∣ g) := by
+  constructor
+  · rintro rfl
+    exact ⟨gcd_dvd _, dvd_gcd _⟩
+  · rintro ⟨hi, hg⟩
+    apply Nat.dvd_antisymm
+    · apply hg
+      intro i m
+      exact gcd_dvd xs m
+    · exact dvd_gcd xs g hi
+
+attribute [simp] Int.zero_dvd
+
+@[simp] theorem gcd_eq_zero (xs : IntList) : xs.gcd = 0 ↔ ∀ x ∈ xs, x = 0 := by
+  simp [gcd_eq_iff, Nat.dvd_zero]
+
+@[simp] theorem dot_mod_gcd_left (xs ys : IntList) : dot xs ys % xs.gcd = 0 := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      rw [dot_cons₂, Int.add_emod,
+        ← Int.emod_emod_of_dvd (x * y) (gcd_cons_div_left),
+        ← Int.emod_emod_of_dvd (dot xs ys) (Int.ofNat_dvd.mpr gcd_cons_div_right)]
+      simp_all
+
+end IntList
+
 @[ext]
 structure LinearCombo where
   const : Int
-  coeffs : List Int
+  coeffs : IntList
 deriving DecidableEq, Inhabited, Repr
 
 namespace LinearCombo
@@ -95,102 +283,63 @@ namespace LinearCombo
 Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v_k]` to obtain
 `r + (c_1 * x_1 + (c_2 * x_2 + ... (c_k * x_k + 0))))`.
 -/
-def eval (lc : LinearCombo) (values : List Int) : Int :=
-  lc.const + (lc.coeffs.zip values).foldr (fun ⟨c, v⟩ r => c * v + r) 0
+def eval (lc : LinearCombo) (values : IntList) : Int :=
+  lc.const + lc.coeffs.dot values
 
--- Prove some alternative formulas for `eval`? Which to use?
-theorem eval_eq (lc : LinearCombo) (values : List Int) :
-    lc.eval values = lc.const + (List.zipWith (· * ·) lc.coeffs values).foldr (· + ·) 0 := by
-  simp [eval, List.zipWith_foldr_eq_zip_foldr]
+-- -- Prove some alternative formulas for `eval`? Which to use?
+-- theorem eval_eq (lc : LinearCombo) (values : List Int) :
+--     lc.eval values = lc.const + (List.zipWith (· * ·) lc.coeffs values).foldr (· + ·) 0 := by
+--   simp [eval, List.zipWith_foldr_eq_zip_foldr]
 
-@[simps]
 def add (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const + l₂.const
-  coeffs := List.zipWithAll (fun c₁ c₂ => c₁.getD 0 + c₂.getD 0) l₁.coeffs l₂.coeffs
+  coeffs := l₁.coeffs + l₂.coeffs
 
-@[simps]
+instance : Add LinearCombo := ⟨add⟩
+
+@[simp] lemma add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
+@[simp] lemma add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
+
 def sub (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const - l₂.const
-  coeffs := List.zipWithAll (fun c₁ c₂ => c₁.getD 0 - c₂.getD 0) l₁.coeffs l₂.coeffs
+  coeffs := l₁.coeffs - l₂.coeffs
+
+instance : Sub LinearCombo := ⟨sub⟩
+
+@[simp] lemma sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
+@[simp] lemma sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
 
 /-- Negating a linear combination means negating the constant term and the coefficients. -/
-@[simps]
 def neg (lc : LinearCombo) : LinearCombo where
   const := -lc.const
-  coeffs := lc.coeffs.map (-·)
+  coeffs := -lc.coeffs
 
-attribute [simp] Int.zero_add Int.add_zero Int.zero_sub Int.sub_zero
+instance : Neg LinearCombo := ⟨neg⟩
 
-theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁.sub l₂ = l₁.add l₂.neg := by
+@[simp] lemma neg_const {l : LinearCombo} : (-l).const = -l.const := rfl
+@[simp] lemma neg_coeffs {l : LinearCombo} : (-l).coeffs = -l.coeffs  := rfl
+
+theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ := by
   rcases l₁ with ⟨a₁, c₁⟩; rcases l₂ with ⟨a₂, c₂⟩
   ext1
   · simp [Int.sub_eq_add_neg]
-  · simp
-    induction c₁ generalizing c₂ with
-    | nil => simp; rfl
-    | cons c c₁ ih =>
-      cases c₂ with
-      | nil => simp
-      | cons c' c₂ => simp_all [Int.sub_eq_add_neg]
-
-theorem add_eval_aux (c₁ c₂ v : List Int) :
-    List.zipWith (· * ·) (List.zipWithAll (fun c₁ c₂ ↦ c₁.getD 0 + c₂.getD 0) c₁ c₂) v =
-    List.zipWithAll (fun c₁ c₂ => c₁.getD 0 + c₂.getD 0)
-     (List.zipWith (· * ·) c₁ v) (List.zipWith (· * ·) c₂ v) := by
-  induction c₁ generalizing c₂ v with
-  | nil =>
-    cases c₂ with
-    | nil => simp
-    | cons _ _ =>
-      cases v with
-      | nil => simp
-      | cons _ _ => simp_all [Int.add_mul]
-  | cons c c₁ ih₁ =>
-    cases c₂ with
-    | nil => simp_all
-    | cons _ _ =>
-      cases v with
-      | nil => simp
-      | cons _ _ => simp_all [Int.add_mul]
+  · simp [IntList.sub_eq_add_neg]
 
 @[simp]
-theorem add_eval (l₁ l₂ : LinearCombo) (v : List Int) : (l₁.add l₂).eval v = l₁.eval v + l₂.eval v := by
+theorem add_eval (l₁ l₂ : LinearCombo) (v : List Int) : (l₁ + l₂).eval v = l₁.eval v + l₂.eval v := by
   rcases l₁ with ⟨r₁, c₁⟩; rcases l₂ with ⟨r₂, c₂⟩
-  simp only [eval_eq, add_const, add_coeffs, Int.add_assoc, Int.add_left_comm]
+  simp only [eval, add_const, add_coeffs, Int.add_assoc, Int.add_left_comm]
   congr
-  rw [add_eval_aux]
-  generalize List.zipWith (· * ·) c₁ v = p₁
-  generalize List.zipWith (· * ·) c₂ v = p₂
-  clear c₁ c₂ v
-  induction p₁ generalizing p₂ with
-  | nil =>
-    induction p₂ <;> simp
-  | cons p p₁ ih₁ =>
-    induction p₂ with
-    | nil =>
-      simp_all
-    | cons p' p₂ ih₂ =>
-      simp_all
-      simp only [Int.add_assoc]
-      congr 1
-      simp only [Int.add_left_comm]
+  exact IntList.dot_distrib_left c₁ c₂ v
 
 @[simp]
-theorem neg_eval (lc : LinearCombo) (v : List Int) : lc.neg.eval v = - lc.eval v := by
+theorem neg_eval (lc : LinearCombo) (v : List Int) : (-lc).eval v = - lc.eval v := by
   rcases lc with ⟨a, coeffs⟩
-  simp only [eval, neg_const, neg_coeffs]
-  rw [List.zip_map_left, List.foldr_map]
-  generalize coeffs.zip v = ps
-  induction ps generalizing a with
-  | nil => simp
-  | cons p ps ih =>
-    simp_all only [List.foldr_cons]
-    rw [Int.neg_mul, ← Int.add_assoc, Int.add_right_comm, ih, ← Int.neg_add, Int.add_assoc,
-      Int.add_comm (p.1 * p.2)]
+  simp [eval, Int.neg_add]
 
 @[simp]
 theorem sub_eval (l₁ l₂ : LinearCombo) (v : List Int) :
-    (l₁.sub l₂).eval v = l₁.eval v - l₂.eval v := by
+    (l₁ - l₂).eval v = l₁.eval v - l₂.eval v := by
   simp [sub_eq_add_neg, Int.sub_eq_add_neg]
 
 end LinearCombo
@@ -354,13 +503,7 @@ theorem eval_le_of_le {a b : LinearCombo} (h : a ≤ b) (v : List Int) : a.eval 
   simp [LinearCombo.eval]
   rcases a with ⟨a, coeffs⟩; rcases b with ⟨b, bcoeffs⟩
   rcases h with ⟨rfl, h⟩
-  simp_all
-  generalize List.zip _ _ = p
-  induction p generalizing a b h with
-  | nil => simpa
-  | cons x p ih =>
-    rw [List.foldr_cons, Int.add_left_comm a, Int.add_left_comm b]
-    exact Int.add_le_add_left (ih a b h) (x.fst * x.snd)
+  apply Int.add_le_add_right h
 
 theorem evalNonneg_of_le {a b : LinearCombo} (h : a ≤ b) : a.eval v ≥ 0 → b.eval v ≥ 0 :=
   fun w => Int.le_trans w (eval_le_of_le h v)
@@ -395,13 +538,7 @@ theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v 
   rcases a with ⟨a, coeffs⟩; rcases b with ⟨b, bcoeffs⟩
   rw [lt_def] at h
   rcases h with ⟨rfl, h⟩
-  simp_all
-  generalize List.zip _ _ = p
-  induction p generalizing a b h with
-  | nil => simpa
-  | cons x p ih =>
-    rw [List.foldr_cons, Int.add_left_comm a, Int.add_left_comm b]
-    exact Int.add_lt_add_left (ih a b h) (x.fst * x.snd)
+  apply Int.add_lt_add_right h
 
 end LinearCombo
 
@@ -444,7 +581,7 @@ and show that `a < b.neg` gives a contradition.
 namespace LinearCombo
 
 theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
-    (ma : a ∈ p.inequalities) (mb : b ∈ p.inequalities) (w : a < b.neg) : p.unsat := by
+    (ma : a ∈ p.inequalities) (mb : b ∈ p.inequalities) (w : a < -b) : p.unsat := by
   rintro ⟨v, s⟩
   have := LinearCombo.eval_lt_of_lt w v
   simp only [neg_eval] at this
@@ -534,24 +671,49 @@ def processConstants_equiv (p : Problem) : p.equiv p.processConstants where
   mpr := p.processConstants_inv
 
 end Problem
+
 namespace LinearCombo
 
-def coeffGCD (lc : LinearCombo) : Nat := lc.coeffs.foldr (fun x g => Nat.gcd x.natAbs g) 0
-
 def normalizeInequality (lc : LinearCombo) : LinearCombo :=
-  let gcd := lc.coeffGCD
-  { coeffs := lc.coeffs.map fun c => c / gcd
+  let gcd := lc.coeffs.gcd
+  { coeffs := lc.coeffs.sdiv gcd
     -- Recall `Int.fdiv` is division with floor rounding.
     const := Int.fdiv lc.const gcd }
 
 def normalizeEquality (lc : LinearCombo) : LinearCombo :=
-  let gcd := lc.coeffGCD
+  let gcd := lc.coeffs.gcd
   if (gcd : Int) ∣ lc.const then
-    { coeffs := lc.coeffs.map fun c => c / gcd
+    { coeffs := lc.coeffs.sdiv gcd
       const := lc.const / gcd }
   else
     { coeffs := []
       const := 1 }
+
+theorem normalizeInequality_eval {lc : LinearCombo} :
+    lc.normalizeInequality.eval v ≥ 0 ↔ lc.eval v ≥ 0 := by
+  sorry
+
+attribute [simp] Int.zero_ediv Int.ediv_zero
+
+theorem normalizeEquality_eval {lc : LinearCombo} :
+    lc.normalizeEquality.eval v = 0 ↔ lc.eval v = 0 := by
+  rcases lc with ⟨const, coeffs⟩
+  dsimp [normalizeEquality]
+  split_ifs with h
+  · simp [eval]
+    by_cases w : coeffs.gcd = 0
+    · simp [w] at h ⊢
+      simp [h]
+      simp at w
+      sorry -- easy from here?
+    · -- not terrible from here?
+      sorry
+  · simp only [eval, IntList.dot_nil_left, Int.add_zero, false_iff]
+    intro w
+    apply h
+    replace w := congr_arg (fun x : Int => x % coeffs.gcd) w
+    simp [Int.add_emod] at w
+    exact Int.dvd_of_emod_eq_zero w
 
 end LinearCombo
 namespace Problem
