@@ -1,4 +1,5 @@
 import Mathlib.Tactic.Omega.tactic
+import Mathlib.Util.Time
 
 /-!
 `n = 0` has no solutions if `n ≠ 0`, and `n ≥ 0` has no solutions if `n < 0`.
@@ -63,6 +64,7 @@ example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
   omega
 
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
+#time
 example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₁ : 2 * x + 1 ≤ 0) : False := by
   omega
 

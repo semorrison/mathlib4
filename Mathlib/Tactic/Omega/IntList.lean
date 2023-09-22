@@ -1,0 +1,321 @@
+import Mathlib.Tactic.Omega.ForStd
+import Mathlib.Tactic.Rewrites
+
+set_option autoImplicit true
+set_option relaxedAutoImplicit true
+
+abbrev IntList := List Int
+
+namespace IntList
+
+/-- Get the `i`-th element (interpreted as `0` if the list is not long enough). -/
+def get (xs : IntList) (i : Nat) : Int := (xs.get? i).getD 0
+
+@[simp] theorem get_nil : get ([] : IntList) i = 0 := rfl
+@[simp] theorem get_cons_zero : get (x :: xs) 0 = x := rfl
+@[simp] theorem get_cons_succ : get (x :: xs) (i+1) = get xs i := rfl
+
+/-- Like `List.set`, but right-pad with zeroes as necessary first. -/
+def set (xs : IntList) (i : Nat) (y : Int) : IntList :=
+  match xs, i with
+  | [], 0 => [y]
+  | [], (i+1) => 0 :: set [] i y
+  | _ :: xs, 0 => y :: xs
+  | x :: xs, (i+1) => x :: set xs i y
+
+@[simp] theorem set_nil_zero : set [] 0 y = [y] := rfl
+@[simp] theorem set_nil_succ : set [] (i+1) y = 0 :: set [] i y := rfl
+@[simp] theorem set_cons_zero : set (x :: xs) 0 y = y :: xs := rfl
+@[simp] theorem set_cons_succ : set (x :: xs) (i+1) y = x :: set xs i y := rfl
+
+theorem set_get_eq : get (set xs i y) j = if i = j then y else xs.get j := by
+  induction xs generalizing i j with
+  | nil =>
+    induction i generalizing j with
+    | zero => cases j <;> simp [set]
+    | succ i => cases j <;> simp_all [set]
+  | cons x xs ih =>
+    induction i with
+    | zero => cases j <;> simp [set]
+    | succ i => cases j <;> simp_all [set]
+
+@[simp] theorem set_get_self : get (set xs i y) i = y := by simp [set_get_eq]
+@[simp] theorem set_get_of_ne (h : i ≠ j) : get (set xs i y) j = xs.get j := by simp [set_get_eq, h]
+
+def add (xs ys : IntList) : IntList :=
+  List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys
+
+instance : Add IntList := ⟨add⟩
+
+theorem add_def (xs ys : IntList) :
+    xs + ys = List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys :=
+  rfl
+
+def mul (xs ys : IntList) : IntList := List.zipWith (· * ·) xs ys
+
+instance : Mul IntList := ⟨mul⟩
+
+theorem mul_def (xs ys : IntList) : xs * ys = List.zipWith (· * ·) xs ys :=
+  rfl
+
+@[simp] theorem mul_nil_left : ([] : IntList) * ys = [] := rfl
+@[simp] theorem mul_nil_right : xs * ([] : IntList) = [] := List.zipWith_nil_right
+@[simp] theorem mul_cons₂ : (x::xs : IntList) * (y::ys) = (x * y) :: (xs * ys) := rfl
+
+def neg (xs : IntList) : IntList := xs.map fun x => -x
+
+instance : Neg IntList := ⟨neg⟩
+
+theorem neg_def (xs : IntList) : - xs = xs.map fun x => -x := rfl
+
+@[simp] theorem neg_nil : (- ([] : IntList)) = [] := rfl
+@[simp] theorem neg_cons : (- (x::xs : IntList)) = -x :: -xs := rfl
+
+def sub (xs ys : IntList) : IntList :=
+  List.zipWithAll (fun x y => x.getD 0 - y.getD 0) xs ys
+
+instance : Sub IntList := ⟨sub⟩
+
+theorem sub_def (xs ys : IntList) :
+    xs - ys = List.zipWithAll (fun x y => x.getD 0 - y.getD 0) xs ys :=
+  rfl
+
+def smul (xs : IntList) (i : Int) : IntList :=
+  xs.map fun x => i * x
+
+instance : HMul Int IntList IntList where
+  hMul i xs := xs.smul i
+
+theorem smul_def (xs : IntList) (i : Int) : i * xs = xs.map fun x => i * x := rfl
+
+@[simp] theorem smul_nil {i : Int} : i * ([] : IntList) = [] := rfl
+@[simp] theorem smul_cons {i : Int} : i * (x::xs : IntList) = i * x :: i * xs := rfl
+
+theorem mul_comm (xs ys : IntList) : xs * ys = ys * xs := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih => cases ys <;> simp_all [Int.mul_comm]
+
+attribute [local simp] add_def mul_def in
+theorem mul_distrib_left (xs ys zs : IntList) : (xs + ys) * zs = xs * zs + ys * zs := by
+  induction xs generalizing ys zs with
+  | nil =>
+    cases ys with
+    | nil => simp
+    | cons _ _ =>
+      cases zs with
+      | nil => simp
+      | cons _ _ => simp_all [Int.add_mul]
+  | cons x xs ih₁ =>
+    cases ys with
+    | nil => simp_all
+    | cons _ _ =>
+      cases zs with
+      | nil => simp
+      | cons _ _ => simp_all [Int.add_mul]
+
+theorem mul_neg_left (xs ys : IntList) : (-xs) * ys = -(xs * ys) := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.neg_mul]
+
+attribute [local simp] add_def neg_def sub_def in
+theorem sub_eq_add_neg (xs ys : IntList) : xs - ys = xs + (-ys) := by
+  induction xs generalizing ys with
+  | nil => simp; rfl
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.sub_eq_add_neg]
+
+@[simp] theorem mul_smul_left {i : Int} {xs ys : IntList} : (i * xs) * ys = i * (xs * ys) := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.mul_assoc]
+
+def sum (xs : IntList) : Int := xs.foldr (· + ·) 0
+
+@[simp] theorem sum_nil : sum ([] : IntList) = 0 := rfl
+@[simp] theorem sum_cons : sum (x::xs : IntList) = x + sum xs := rfl
+
+attribute [local simp] sum add_def in
+theorem sum_add (xs ys : IntList) : (xs + ys).sum = xs.sum + ys.sum := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys => simp_all [Int.add_assoc, Int.add_left_comm]
+
+@[simp]
+theorem sum_neg (xs : IntList) : (-xs).sum = -(xs.sum) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih => simp_all [Int.neg_add]
+
+@[simp]
+theorem sum_smul (i : Int) (xs : IntList) : (i * xs).sum = i * (xs.sum) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih => simp_all [Int.mul_add]
+
+def dot (xs ys : IntList) : Int := (xs * ys).sum
+
+@[simp] theorem dot_nil_left : dot ([] : IntList) ys = 0 := rfl
+@[simp] theorem dot_nil_right : dot xs ([] : IntList) = 0 := by simp [dot]
+@[simp] theorem dot_cons₂ : dot (x::xs) (y::ys) = x * y + dot xs ys := rfl
+
+theorem dot_comm (xs ys : IntList) : dot xs ys = dot ys xs := by
+  rw [dot, dot, mul_comm]
+
+@[simp] theorem dot_set_left (xs ys : IntList) (i : Nat) (z : Int) :
+    dot (xs.set i z) ys = dot xs ys + (z - xs.get i) * ys.get i := by
+  induction xs generalizing i ys with
+  | nil =>
+    induction i generalizing ys with
+    | zero => cases ys <;> simp
+    | succ i => cases ys <;> simp_all
+  | cons x xs ih =>
+    induction i generalizing ys with
+    | zero =>
+      cases ys with
+      | nil => simp
+      | cons y ys =>
+        simp only [Nat.zero_eq, set_cons_zero, dot_cons₂, get_cons_zero, Int.sub_mul]
+        rw [Int.add_right_comm, Int.add_comm (x * y), Int.sub_add_cancel]
+    | succ i =>
+      cases ys with
+      | nil => simp
+      | cons y ys => simp_all [Int.add_assoc]
+
+@[simp] theorem dot_set_right (xs ys : IntList) (i : Nat) (z : Int) :
+    dot xs (ys.set i z) = dot xs ys + xs.get i * (z - ys.get i) := by
+  rw [dot_comm, dot_set_left, dot_comm, Int.mul_comm]
+
+theorem dot_distrib_left (xs ys zs : IntList) : (xs + ys).dot zs = xs.dot zs + ys.dot zs := by
+  simp [dot, mul_distrib_left, sum_add]
+
+@[simp] theorem dot_neg_left (xs ys : IntList) : (-xs).dot ys = -(xs.dot ys) := by
+  simp [dot, mul_neg_left]
+
+@[simp] theorem dot_smul_left (xs ys : IntList) (i : Int) : (i * xs).dot ys = i * xs.dot ys := by
+  simp [dot]
+
+theorem dot_of_left_zero (w : ∀ x, x ∈ xs → x = 0) : dot xs ys = 0 := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      rw [dot_cons₂, w x (by simp), ih]
+      · simp
+      · intro x m
+        apply w
+        exact List.mem_cons_of_mem _ m
+
+def sdiv (xs : IntList) (g : Int) : IntList := xs.map fun x => x / g
+
+@[simp] theorem sdiv_nil : sdiv [] g = [] := rfl
+@[simp] theorem sdiv_cons : sdiv (x::xs) g = (x / g) :: sdiv xs g := rfl
+
+def gcd (xs : IntList) : Nat := xs.foldr (fun x g => Nat.gcd x.natAbs g) 0
+
+@[simp] theorem gcd_nil : gcd [] = 0 := rfl
+@[simp] theorem gcd_cons : gcd (x :: xs) = Nat.gcd x.natAbs (gcd xs) := rfl
+
+theorem gcd_cons_div_left : (gcd (x::xs) : Int) ∣ x := by
+  simp only [gcd, List.foldr_cons, Int.ofNat_dvd_left]
+  apply Nat.gcd_dvd_left
+
+theorem gcd_cons_div_right : gcd (x::xs) ∣ gcd xs := by
+  simp only [gcd, List.foldr_cons]
+  apply Nat.gcd_dvd_right
+
+theorem gcd_cons_div_right' : (gcd (x::xs) : Int) ∣ (gcd xs : Int) := by
+  rw [Int.ofNat_dvd_left, Int.natAbs_ofNat]
+  exact gcd_cons_div_right
+
+theorem gcd_dvd (xs : IntList) {a : Int} (m : a ∈ xs) : (xs.gcd : Int) ∣ a := by
+  rw [Int.ofNat_dvd_left]
+  induction m with
+  | head =>
+    simp only [gcd_cons]
+    apply Nat.gcd_dvd_left
+  | tail b m ih =>   -- FIXME: why is the argument of tail implicit?
+    simp only [gcd_cons]
+    exact Nat.dvd_trans (Nat.gcd_dvd_right _ _) ih
+
+theorem dvd_gcd (xs : IntList) (c : Nat) (w : ∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) :
+    c ∣ xs.gcd := by
+  simp only [Int.ofNat_dvd_left] at w
+  induction xs with
+  | nil => simpa using Nat.dvd_zero c
+  | cons x xs ih =>
+    simp
+    apply Nat.dvd_gcd
+    · apply w
+      simp
+    · apply ih
+      intro b m
+      apply w
+      exact List.mem_cons_of_mem x m
+
+theorem gcd_eq_iff (xs : IntList) (g : Nat) :
+    xs.gcd = g ↔ (∀ {a : Int}, a ∈ xs → (g : Int) ∣ a) ∧ (∀ (c : Nat), (∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) → c ∣ g) := by
+  constructor
+  · rintro rfl
+    exact ⟨gcd_dvd _, dvd_gcd _⟩
+  · rintro ⟨hi, hg⟩
+    apply Nat.dvd_antisymm
+    · apply hg
+      intro i m
+      exact gcd_dvd xs m
+    · exact dvd_gcd xs g hi
+
+attribute [simp] Int.zero_dvd
+
+@[simp] theorem gcd_eq_zero (xs : IntList) : xs.gcd = 0 ↔ ∀ x ∈ xs, x = 0 := by
+  simp [gcd_eq_iff, Nat.dvd_zero]
+
+@[simp] theorem dot_mod_gcd_left (xs ys : IntList) : dot xs ys % xs.gcd = 0 := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      rw [dot_cons₂, Int.add_emod,
+        ← Int.emod_emod_of_dvd (x * y) (gcd_cons_div_left),
+        ← Int.emod_emod_of_dvd (dot xs ys) (Int.ofNat_dvd.mpr gcd_cons_div_right)]
+      simp_all
+
+theorem gcd_dvd_dot_left (xs ys : IntList) : (xs.gcd : Int) ∣ dot xs ys :=
+  Int.dvd_of_emod_eq_zero (dot_mod_gcd_left xs ys)
+
+attribute [simp] Int.zero_ediv
+
+theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
+    dot (xs.sdiv d) ys = (dot xs ys) / d := by
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      have wx : d ∣ x := Int.dvd_trans h (gcd_cons_div_left)
+      have wxy : d ∣ x * y := Int.dvd_trans wx (Int.dvd_mul_right x y)
+      have w : d ∣ (IntList.gcd xs : Int) := Int.dvd_trans h (gcd_cons_div_right')
+      simp_all [Int.add_ediv_of_dvd_left, Int.mul_ediv_assoc']
+
+@[simp] theorem dot_sdiv_gcd_left (xs ys : IntList) :
+    dot (xs.sdiv xs.gcd) ys = (dot xs ys) / xs.gcd :=
+  dot_sdiv_left xs ys (by exact Int.dvd_refl _)
+
+end IntList
