@@ -96,14 +96,14 @@ namespace Omega.Impl
 structure LinearCombo where
   const : Int := 0
   coeffs : IntList := []
-  smallCoeff : Option Nat := coeffs.findIdx? fun i => i.natAbs = 1
-  smallCoeff_eq : smallCoeff = coeffs.findIdx? fun i => i.natAbs = 1 := by rfl
+  -- smallCoeff : Option Nat := coeffs.findIdx? fun i => i.natAbs = 1
+  -- smallCoeff_eq : smallCoeff = coeffs.findIdx? fun i => i.natAbs = 1 := by rfl
 deriving DecidableEq, Repr
 
 instance : ToString LinearCombo where
   toString lc := s!"{lc.const}{String.join <| lc.coeffs.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
 
-example : toString (⟨7, [3, 5], none, rfl⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
+example : toString (⟨7, [3, 5]/-, none, rfl-/⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
 
 namespace LinearCombo
 
@@ -120,7 +120,7 @@ instance : Inhabited LinearCombo := ⟨{const := 1}⟩
   cases a; cases b
   subst w₁; subst w₂
   congr
-  simp_all
+  -- simp_all
 
 theorem ext_iff {a b : LinearCombo} : a = b ↔ a.const = b.const ∧ a.coeffs = b.coeffs :=
   ⟨by rintro rfl; simp, fun ⟨w₁, w₂⟩ => ext w₁ w₂⟩
@@ -128,8 +128,8 @@ theorem ext_iff {a b : LinearCombo} : a = b ↔ a.const = b.const ∧ a.coeffs =
 def coordinate (i : Nat) : LinearCombo where
   const := 0
   coeffs := List.replicate i 0 ++ [1]
-  smallCoeff := i
-  smallCoeff_eq := by simp
+  -- smallCoeff := i
+  -- smallCoeff_eq := by simp
 
 /--
 Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v_k]` to obtain
@@ -222,9 +222,11 @@ theorem smul_eval (lc : LinearCombo) (i : Int) (v : List Int) :
 
 def coeff (lc : LinearCombo) (i : Nat) : Int := lc.coeffs.get i
 
+def smallCoeff (a : LinearCombo) : Option Nat := a.coeffs.findIdx? fun i => i.natAbs = 1
+
 theorem smallCoeff_natAbs {a : LinearCombo} (w : a.smallCoeff = some i) :
     (a.coeff i).natAbs = 1 := by
-  simp [a.smallCoeff_eq] at w
+  -- simp [a.smallCoeff_eq] at w
   replace w := List.findIdx?_of_eq_some w
   dsimp [coeff, IntList.get]
   revert w
@@ -235,9 +237,7 @@ theorem smallCoeff_natAbs {a : LinearCombo} (w : a.smallCoeff = some i) :
 @[simps]
 def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo :=
   { lc with
-    coeffs := lc.coeffs.set i x
-    smallCoeff := _
-    smallCoeff_eq := rfl }
+    coeffs := lc.coeffs.set i x }
 
 @[simp] theorem setCoeff_eval {lc : LinearCombo} :
     (lc.setCoeff i x).eval v = lc.eval v + (x - lc.coeff i) * v.get i := by
@@ -288,6 +288,13 @@ structure sat (p : Problem) (values : List Int) : Prop where
   equalities : lc ∈ p.equalities → lc.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
+@[simps]
+def trivial : Problem where
+
+theorem trivial_sat (values : List Int) : trivial.sat values where
+  equalities := by simp
+  inequalities := by simp
+
 theorem of_sat (p : Omega.Problem) : (of p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
@@ -301,6 +308,25 @@ theorem to_sat (p : Problem) : (to p).sat v ↔ p.sat v := by
     constructor <;> simp_all
   · intro ⟨_, _, _⟩
     constructor <;> simp_all
+
+@[simps]
+def and (p q : Problem) : Problem where
+  possible := p.possible && q.possible
+  equalities := p.equalities ++ q.equalities
+  inequalities := p.inequalities ++ q.inequalities
+
+theorem and_sat {p q : Problem} (hp : p.sat values) (hq : q.sat values) : (p.and q).sat values where
+  possible := by simp [hp.possible, hq.possible]
+  equalities := by
+    intros lc m
+    simp only [and_equalities, List.mem_append] at m
+    rcases m with pm | qm <;>
+    simp_all [hp.equalities, hq.equalities]
+  inequalities := by
+    intros lc m
+    simp only [and_inequalities, List.mem_append] at m
+    rcases m with pm | qm <;>
+    simp_all [hp.inequalities, hq.inequalities]
 
 def solutions (p : Problem) : Type :=
   { values // p.sat values }
