@@ -36,7 +36,7 @@ open Qq
 open Qq
 
 instance : ToExpr LinearCombo where
-  toExpr lc := (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
+  toExpr lc := (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs) |>.app (toExpr lc.smallCoeff) |>.app (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (mkApp (mkConst ``Option [.zero]) (mkConst ``Nat [])) (toExpr lc.smallCoeff))
   toTypeExpr := .const ``LinearCombo []
 
 /-- Return the `Expr` representing the list of atoms. -/
@@ -68,7 +68,7 @@ providing a proof that `e = lc.eval atoms`.
 partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr) := do
   match e.int? with
   | some i =>
-    let lc := ⟨i, []⟩
+    let lc := {const := i}
     return ⟨lc, mkEvalRfl e lc⟩
   | none => match e.getAppFnArgs with
   | (``HAdd.hAdd, #[_, _, _, _, e₁, e₂]) => do

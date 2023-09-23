@@ -4,6 +4,15 @@ import Mathlib.Tactic.SplitIfs
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+namespace Option
+
+@[simp] theorem map_id'' {x : Option α} : (x.map fun a => a) = x := by cases x <;> rfl
+
+theorem map_orElse {x y : Option α} : (x <|> y).map f = (x.map f <|> y.map f) := by
+  cases x <;> simp
+
+end Option
+
 @[simp]
 theorem List.map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
 

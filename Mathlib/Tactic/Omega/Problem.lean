@@ -6,6 +6,7 @@ import Mathlib.Tactic.SplitIfs
 import Mathlib.Logic.Basic -- yuck!
 import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Omega.IntList
+import Std.Data.Option.Lemmas
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -29,7 +30,60 @@ theorem dropWhile_cons :
     (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
   split_ifs <;> simp_all [dropWhile]
 
+@[simp] theorem findIdx?_append :
+    (xs ++ ys : List α).findIdx? p =
+      (xs.findIdx? p <|> (ys.findIdx? p).map fun i => i + xs.length) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [cons_append, findIdx?_cons, Nat.zero_add, findIdx?_succ]
+    split_ifs
+    · simp
+    · simp_all only [Bool.not_eq_true, Option.map_orElse, Option.map_map, length_cons]
+      rfl
+
+@[simp] theorem findIdx?_replicate :
+    (List.replicate n a).findIdx? p = if 0 < n ∧ p a then some 0 else none := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
+    split_ifs <;> simp_all
+
 end List
+
+namespace UInt64
+
+attribute [ext] UInt64
+
+protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b := rfl
+protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
+protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
+
+@[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
+  rw [UInt64.le_def, UInt64.lt_def]
+  exact Fin.not_le
+
+protected theorem min_comm {a b : UInt64} : min a b = min b a := by
+  simp [UInt64.min_def]
+  split_ifs with h₁ h₂ h₂
+  · rw [UInt64.le_def] at *
+    ext
+    exact Nat.le_antisymm h₁ h₂
+  · rfl
+  · rfl
+  · rw [UInt64.not_le, UInt64.lt_def] at *
+    exfalso
+    exact Nat.lt_irrefl _ (Nat.lt_trans h₁ h₂)
+
+protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
+  simp [UInt64.min_def, h]
+
+protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
+  rw [UInt64.min_comm]; exact UInt64.min_eq_left h
+
+end UInt64
+
 namespace IntList
 
 def trim (xs : IntList) : IntList :=
@@ -48,69 +102,53 @@ def trim (xs : IntList) : IntList :=
     split_ifs <;>
     simp_all [List.reverse_map]
 
-def hash' (xs : IntList) : UInt64 := hash xs.trim
-
 /--
 We need two properties of this hash:
 1. It is stable under adding trailing zeroes.
 2. `(-xs).hash = xs.hash`
 -/
 def hash (xs : IntList) : UInt64 :=
-  min (hash' xs) (hash' (-xs))
+  min (Hashable.hash xs.trim) (Hashable.hash (-xs).trim)
 
 theorem hash_append_zero : hash (xs ++ [0]) = hash xs := by
-  simp [hash, hash']
-
-attribute [ext] UInt64
-
-protected theorem UInt64.min_def {a b : UInt64} : min a b = if a ≤ b then a else b := rfl
-protected theorem UInt64.le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
-protected theorem UInt64.lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
-
-@[simp] protected theorem UInt64.not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
-  rw [UInt64.le_def, UInt64.lt_def]
-  exact Fin.not_le
-
-protected theorem UInt64.min_comm {a b : UInt64} : min a b = min b a := by
-  simp [UInt64.min_def]
-  split_ifs with h₁ h₂ h₂
-  · rw [UInt64.le_def] at *
-    ext
-    exact Nat.le_antisymm h₁ h₂
-  · rfl
-  · rfl
-  · rw [UInt64.not_le, UInt64.lt_def] at *
-    exfalso
-    exact Nat.lt_irrefl _ (Nat.lt_trans h₁ h₂)
-
-protected theorem UInt64.min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
-  simp [UInt64.min_def, h]
-
-protected theorem UInt64.min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
-  rw [UInt64.min_comm]; exact UInt64.min_eq_left h
+  simp [hash]
 
 theorem hash_neg : hash (-xs) = hash xs := by
-  simp [hash]
-  rw [UInt64.min_comm]
+  simp [hash, UInt64.min_comm]
 
 end IntList
 
-@[ext]
 structure LinearCombo where
-  const : Int
-  coeffs : IntList
-deriving DecidableEq, Inhabited, Repr
+  const : Int := 0
+  coeffs : IntList := []
+  smallCoeff : Option Nat := coeffs.findIdx? fun i => i.natAbs = 1
+  smallCoeff_eq : smallCoeff = coeffs.findIdx? fun i => i.natAbs = 1 := by simp
+deriving DecidableEq, Repr
 
 instance : ToString LinearCombo where
   toString lc := s!"{lc.const}{String.join <| lc.coeffs.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
 
-example : toString (⟨7, [3, 5]⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
+example : toString (⟨7, [3, 5], none, rfl⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
 
 namespace LinearCombo
+
+instance : Inhabited LinearCombo := ⟨{const := 1}⟩
+
+@[ext] theorem ext {a b : LinearCombo} (w₁ : a.const = b.const) (w₂ : a.coeffs = b.coeffs) :
+    a = b := by
+  cases a; cases b
+  subst w₁; subst w₂
+  congr
+  simp_all
+
+theorem ext_iff {a b : LinearCombo} : a = b ↔ a.const = b.const ∧ a.coeffs = b.coeffs :=
+  ⟨by rintro rfl; simp, fun ⟨w₁, w₂⟩ => ext w₁ w₂⟩
 
 def coordinate (i : Nat) : LinearCombo where
   const := 0
   coeffs := List.replicate i 0 ++ [1]
+  smallCoeff := i
+  smallCoeff_eq := by simp
 
 /--
 Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v_k]` to obtain
@@ -202,7 +240,10 @@ def coeff (lc : LinearCombo) (i : Nat) : Int := lc.coeffs.get i
 
 @[simps]
 def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo :=
-  { lc with coeffs := lc.coeffs.set i x }
+  { lc with
+    coeffs := lc.coeffs.set i x
+    smallCoeff := _
+    smallCoeff_eq := rfl }
 
 @[simp] theorem setCoeff_eval {lc : LinearCombo} :
     (lc.setCoeff i x).eval v = lc.eval v + (x - lc.coeff i) * v.get i := by
@@ -441,7 +482,7 @@ theorem lt_def (a b : LinearCombo) : a < b ↔ a.coeffs = b.coeffs ∧ a.const <
   change a ≤ b ∧ ¬a = b ↔ _
   rw [le_def]
   rcases a with ⟨a, as⟩; rcases b with ⟨b, bs⟩
-  simp only [mk.injEq]
+  simp only [ext_iff]
   constructor
   · rintro ⟨⟨rfl, le⟩, h⟩
     simp_all only [and_true, true_and]
@@ -511,8 +552,11 @@ theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
 /--
 We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
 -/
-example : let p : Problem := { inequalities := [⟨-1, [1]⟩, ⟨0, [-1]⟩] }; p.unsat := by
-  apply contradiction_of_neg_lt (a := ⟨-1, [1]⟩) (b := ⟨0, [-1]⟩) <;> simp
+example :
+    let p : Problem := { inequalities := [{const:=-1, coeffs:=[1]}, {const:=0, coeffs:=[-1]}] };
+    p.unsat := by
+  apply contradiction_of_neg_lt (a := {const:=-1, coeffs:=[1]}) (b := {const:=0, coeffs:=[-1]}) <;>
+  simp
 
 instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
     Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
@@ -552,16 +596,11 @@ theorem eval_eq_of_constant (lc : LinearCombo) (h : lc.constant? = some c) : lc.
   simp [constant?] at h
   rcases h with ⟨h, rfl⟩
   rcases lc with ⟨c, coeffs⟩
+  simp at h
   simp [eval]
   nth_rewrite 2 [← Int.add_zero c]
   congr
-  induction coeffs generalizing v with
-  | nil => simp
-  | cons x coeffs ih =>
-    cases v with
-    | nil => simp
-    | cons v vs =>
-      simp_all [ih]
+  exact IntList.dot_of_left_zero h
 
 end LinearCombo
 
@@ -634,11 +673,11 @@ theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sa
 def processConstants_equiv (p : Problem) : p.processConstants.equiv p :=
   equiv_of_sat_iff fun v => ⟨p.sat_of_processConstants_sat v, p.processConstants_sat v⟩
 
-example : processConstants { equalities := [⟨1, []⟩] } = impossible := rfl
-example : processConstants { equalities := [⟨1, []⟩] } |>.unsat := impossible_unsat
-example : Problem.unsat { equalities := [⟨1, []⟩] } :=
+example : processConstants { equalities := [{const := 1}] } = impossible := rfl
+example : processConstants { equalities := [{const := 1}] } |>.unsat := impossible_unsat
+example : Problem.unsat { equalities := [{const := 1}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
-example : Problem.unsat { inequalities := [⟨-1, []⟩] } :=
+example : Problem.unsat { inequalities := [{const := -1}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
 
 end Problem
@@ -659,10 +698,14 @@ def normalizeInequality (lc : LinearCombo) : LinearCombo :=
       -- Since `gcd ≥ 0`, `ediv` and `fdiv` coincide: this is floor rounding.
       const := lc.const / gcd }
 
-example : (⟨1, [2]⟩ : LinearCombo).normalizeInequality = ⟨0, [1]⟩ := rfl
-example : (⟨5, [6, 15]⟩ : LinearCombo).normalizeInequality = ⟨1, [2, 5]⟩ := rfl
-example : (⟨-5, [6, 15]⟩ : LinearCombo).normalizeInequality = ⟨-2, [2, 5]⟩ := rfl
-example : (⟨10, [6, 8]⟩ : LinearCombo).normalizeInequality = ⟨5, [3, 4]⟩ := rfl
+example : ({const := 1, coeffs := [2]} : LinearCombo).normalizeInequality =
+    {const := 0, coeffs := [1]} := rfl
+example : ({const := 5, coeffs := [6, 15]} : LinearCombo).normalizeInequality =
+    {const := 1, coeffs := [2, 5]} := rfl
+example : ({const := -5, coeffs := [6, 15]} : LinearCombo).normalizeInequality =
+    {const := -2, coeffs := [2, 5]} := rfl
+example : ({const := 10, coeffs := [6, 8]} : LinearCombo).normalizeInequality =
+    {const := 5, coeffs := [3, 4]} := rfl
 
 /--
 To normalize an equality, we check if the constant term is divisible by the gcd of the coefficients.
@@ -677,10 +720,11 @@ def normalizeEquality (lc : LinearCombo) : LinearCombo :=
     { coeffs := []
       const := 1 }
 
-example : (⟨1, [2]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
-example : (⟨-1, [-2]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
-example : (⟨1, [6, 9]⟩ : LinearCombo).normalizeEquality = ⟨1, []⟩ := rfl
-example : (⟨3, [6, 9]⟩ : LinearCombo).normalizeEquality = ⟨1, [2, 3]⟩ := rfl
+example : ({const := 1, coeffs := [2]} : LinearCombo).normalizeEquality = {const := 1} := rfl
+example : ({const := -1, coeffs := [-2]} : LinearCombo).normalizeEquality = {const := 1} := rfl
+example : ({const := 1, coeffs := [6, 9]} : LinearCombo).normalizeEquality = {const := 1} := rfl
+example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
+    {const := 1, coeffs := [2, 3]} := rfl
 
 @[simp] theorem normalizeInequality_eval {lc : LinearCombo} :
     lc.normalizeInequality.eval v ≥ 0 ↔ lc.eval v ≥ 0 := by
