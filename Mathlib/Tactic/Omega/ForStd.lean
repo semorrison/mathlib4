@@ -90,3 +90,24 @@ attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zer
 @[simp] theorem ite_some_none_eq_some [Decidable P] :
     (if P then some x else none) = some y ↔ P ∧ x = y := by
   split_ifs <;> simp_all
+
+@[simp] theorem List.findIdx?_nil : ([] : List α).findIdx? p i = none := rfl
+@[simp] theorem List.findIdx?_cons :
+    (x :: xs).findIdx? p i = if p x then some i else findIdx? p xs (i + 1) := rfl
+@[simp] theorem List.findIdx?_succ :
+    (xs : List α).findIdx? p (i+1) = (xs.findIdx? p i).map fun i => i + 1 := by
+  induction xs generalizing i with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [findIdx?_cons]
+    split_ifs <;> simp_all
+
+theorem List.findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
+    xs.findIdx? p = some i ↔ (xs.take (i + 1)).map p = List.replicate i false ++ [true] := by
+  induction xs generalizing i with
+  | nil => simp
+  | cons x xs ih =>
+    simp
+    split_ifs with h
+    · cases i <;> simp_all
+    · cases i <;> simp_all

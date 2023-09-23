@@ -1,6 +1,1 @@
-*.cache
-*.aux
-*.glob
-*.vo
-*.vok
-*.vos
+tmp/

@@ -96,6 +96,9 @@ theorem mul_comm (xs ys : IntList) : xs * ys = ys * xs := by
   | nil => simp
   | cons x xs ih => cases ys <;> simp_all [Int.mul_comm]
 
+@[simp] theorem neg_neg {xs : IntList} : - - xs = xs := by
+  induction xs <;> simp_all
+
 attribute [local simp] add_def mul_def in
 theorem mul_distrib_left (xs ys zs : IntList) : (xs + ys) * zs = xs * zs + ys * zs := by
   induction xs generalizing ys zs with
