@@ -1,5 +1,6 @@
 import Lean
 import Mathlib.Tactic.Omega.Problem
+import Mathlib.Tactic.Omega.Impl.Problem
 import Mathlib.Util.AtomM
 import Qq
 /-!
@@ -33,10 +34,16 @@ def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
 
 open Qq
 
-open Qq
+open Omega
+
+def mkEqReflOptionNat (x : Option Nat) : Expr :=
+  mkApp2 (mkConst ``Eq.refl [.succ .zero])
+    (mkApp (mkConst ``Option [.zero]) (mkConst ``Nat [])) (toExpr x)
 
 instance : ToExpr LinearCombo where
-  toExpr lc := (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs) |>.app (toExpr lc.smallCoeff) |>.app (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (mkApp (mkConst ``Option [.zero]) (mkConst ``Nat [])) (toExpr lc.smallCoeff))
+  toExpr lc :=
+    (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
+      -- |>.app (toExpr lc.smallCoeff) |>.app (mkEqReflOptionNat lc.smallCoeff)
   toTypeExpr := .const ``LinearCombo []
 
 /-- Return the `Expr` representing the list of atoms. -/
@@ -199,10 +206,14 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
     t.foldlM (fun ⟨p₁, s₁⟩ ⟨p₂, s₂⟩ => return (p₁.and p₂, ← mkAppM ``Problem.and_sat #[s₁, s₂])) h
 
 def omega_algorithm (p : Problem) : (q : Problem) × (p → q) :=
-  let p₁ := p.normalize
+  let p₀ := Impl.Problem.of p
+  let p₁ := p₀.normalize
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
-  ⟨p₃, p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr⟩
+  let p₄ := p₃.eliminateEasyEqualities
+  let f : p₀ → p₄ := p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr
+  let q := p₄.to
+  ⟨q, p₄.map_to ∘ f ∘ Impl.Problem.map_of p⟩
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.

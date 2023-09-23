@@ -116,7 +116,62 @@ theorem List.findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
   induction xs generalizing i with
   | nil => simp
   | cons x xs ih =>
-    simp
+    simp only [findIdx?_cons, Nat.zero_add, findIdx?_succ, take_succ_cons, map_cons]
     split_ifs with h
     · cases i <;> simp_all
     · cases i <;> simp_all
+
+theorem List.findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findIdx? p = some i) :
+    match xs.get? i with | some a => p a | none => false := by
+  induction xs generalizing i with
+  | nil => simp_all
+  | cons x xs ih =>
+    simp_all only [findIdx?_cons, Nat.zero_add, findIdx?_succ]
+    split_ifs at w with h
+    · cases i <;> simp_all
+    · cases i <;> simp_all
+
+namespace List
+
+theorem dropWhile_cons :
+    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
+  split_ifs <;> simp_all [dropWhile]
+
+@[simp] theorem findIdx?_append :
+    (xs ++ ys : List α).findIdx? p =
+      (xs.findIdx? p <|> (ys.findIdx? p).map fun i => i + xs.length) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [cons_append, findIdx?_cons, Nat.zero_add, findIdx?_succ]
+    split_ifs
+    · simp
+    · simp_all only [Bool.not_eq_true, Option.map_orElse, Option.map_map, length_cons]
+      rfl
+
+@[simp] theorem findIdx?_replicate :
+    (List.replicate n a).findIdx? p = if 0 < n ∧ p a then some 0 else none := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
+    split_ifs <;> simp_all
+
+end List
+
+namespace List
+
+@[simp] theorem findSome?_none : ([] : List α).findSome? f = none := rfl
+theorem findSome?_cons {f : α → Option β} :
+    (x :: xs : List α).findSome? f = (match f x with | some b => some b | none => xs.findSome? f) :=
+  rfl
+
+theorem exists_of_findSome?_eq_some {l : List α} {f : α → Option β} (w : l.findSome? f = some b) :
+    ∃ a, a ∈ l ∧ f a = b := by
+  induction l with
+  | nil => simp_all
+  | cons h l ih =>
+    simp_all only [findSome?_cons, mem_cons, exists_eq_or_imp]
+    split at w <;> simp_all
+
+end List
