@@ -107,7 +107,10 @@ example : toString (⟨7, [3, 5], none, rfl⟩ : LinearCombo) = "7 + 3 * x1 + 5 
 
 namespace LinearCombo
 
+@[simps]
 def of (a : Omega.LinearCombo) : LinearCombo := { a with }
+
+@[simps]
 def to (a : LinearCombo) : Omega.LinearCombo := { a with }
 
 instance : Inhabited LinearCombo := ⟨{const := 1}⟩
@@ -137,6 +140,9 @@ def eval (lc : LinearCombo) (values : IntList) : Int :=
 
 @[simp] theorem eval_nil : (lc : LinearCombo).eval [] = lc.const := by
   simp [eval]
+
+@[simp] theorem of_eval (a : Omega.LinearCombo) : (of a).eval v = a.eval v := rfl
+@[simp] theorem to_eval (a : LinearCombo) : (to a).eval v = a.eval v := rfl
 
 @[simp] theorem coordinate_eval (i : Nat) (v : IntList) :
     (coordinate i).eval v = (v.get? i).getD 0 := by
@@ -265,11 +271,13 @@ instance : ToString Problem where
     else
       "impossible"
 
+@[simps]
 def of (p : Omega.Problem) : Problem where
   possible := p.possible
   equalities := p.equalities.map .of
   inequalities := p.inequalities.map .of
 
+@[simps]
 def to (p : Problem) : Omega.Problem where
   possible := p.possible
   equalities := p.equalities.map LinearCombo.to
@@ -280,31 +288,19 @@ structure sat (p : Problem) (values : List Int) : Prop where
   equalities : lc ∈ p.equalities → lc.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
-@[simps]
-def trivial : Problem where
+theorem of_sat (p : Omega.Problem) : (of p).sat v ↔ p.sat v := by
+  constructor
+  · intro ⟨_, _, _⟩
+    constructor <;> simp_all
+  · intro ⟨_, _, _⟩
+    constructor <;> simp_all
 
-theorem trivial_sat (values : List Int) : trivial.sat values where
-  equalities := by simp
-  inequalities := by simp
-
-@[simps]
-def and (p q : Problem) : Problem where
-  possible := p.possible && q.possible
-  equalities := p.equalities ++ q.equalities
-  inequalities := p.inequalities ++ q.inequalities
-
-theorem and_sat {p q : Problem} (hp : p.sat values) (hq : q.sat values) : (p.and q).sat values where
-  possible := by simp [hp.possible, hq.possible]
-  equalities := by
-    intros lc m
-    simp only [and_equalities, List.mem_append] at m
-    rcases m with pm | qm <;>
-    simp_all [hp.equalities, hq.equalities]
-  inequalities := by
-    intros lc m
-    simp only [and_inequalities, List.mem_append] at m
-    rcases m with pm | qm <;>
-    simp_all [hp.inequalities, hq.inequalities]
+theorem to_sat (p : Problem) : (to p).sat v ↔ p.sat v := by
+  constructor
+  · intro ⟨_, _, _⟩
+    constructor <;> simp_all
+  · intro ⟨_, _, _⟩
+    constructor <;> simp_all
 
 def solutions (p : Problem) : Type :=
   { values // p.sat values }
@@ -312,8 +308,8 @@ def solutions (p : Problem) : Type :=
 instance : CoeSort Problem Type where
   coe := solutions
 
-def map_of (p : Omega.Problem) : p → of p := sorry
-def map_to (p : Problem) : p → to p := sorry
+def map_of (p : Omega.Problem) : p → of p := fun ⟨v, s⟩ => ⟨v, (of_sat p).mpr s⟩
+def map_to (p : Problem) : p → to p := fun ⟨v, s⟩ => ⟨v, (to_sat p).mpr s⟩
 
 def map_of_sat {p q : Problem} (h : ∀ v, p.sat v → q.sat v) : p → q :=
   fun ⟨v, s⟩ => ⟨v, h v s⟩

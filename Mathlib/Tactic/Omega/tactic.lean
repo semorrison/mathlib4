@@ -211,9 +211,9 @@ def omega_algorithm (p : Problem) : (q : Problem) × (p → q) :=
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
   let p₄ := p₃.eliminateEasyEqualities
-  let f : p₀ → p₄ := p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr
+  -- let f : p₀ → p₄ :=
   let q := p₄.to
-  ⟨q, p₄.map_to ∘ f ∘ Impl.Problem.map_of p⟩
+  ⟨q, p₄.map_to ∘ p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p⟩
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
