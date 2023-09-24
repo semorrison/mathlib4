@@ -212,9 +212,7 @@ def omega_algorithm (p : Impl.Problem) : (q : Impl.Problem) × (p → q) :=
   let p₄ := p₃.eliminateEasyEqualities
   -- let f : p₀ → p₃ := /-p₃.eliminateEasyEqualities_equiv.mpr ∘ -/p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr
   -- let q := p₃.to
-  let z := p₄.to
-  let z' := Impl.Problem.of z
-  ⟨z', Impl.Problem.map_of z ∘ p₄.map_to ∘ p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr⟩
+  ⟨p₄, p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr⟩
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
@@ -239,7 +237,8 @@ def omega (hyps : List Expr) : MetaM Expr := do
   trace[omega] "{p}"
   let p_expr := toExpr p
   let s ← mkAppM ``omega_algorithm' #[p_expr]
-  let r ← whnf s -- No need to run `reduceAll` here, `reduce` will do.
+  let r ← profileitM Exception "omega" (← getOptions) do
+    whnf s -- No need to run `reduceAll` here, `reduce` will do.
   match r.getAppFnArgs with
   | (``Prod.mk, #[_, _, q, sol?]) =>
     trace[omega] "{← evalProblem q}"

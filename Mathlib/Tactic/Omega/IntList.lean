@@ -321,4 +321,47 @@ theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
     dot (xs.sdiv xs.gcd) ys = (dot xs ys) / xs.gcd :=
   dot_sdiv_left xs ys (by exact Int.dvd_refl _)
 
+def leadingSign (xs : IntList) : Int :=
+  match xs with
+  | [] => 0
+  | 0 :: xs => leadingSign xs
+  | x :: _ => x.sign
+
+@[simp] theorem leadingSign_nil : leadingSign [] = 0 := rfl
+@[simp] theorem leadingSign_cons_zero : leadingSign (0 :: xs) = leadingSign xs := rfl
+theorem leadingSign_cons : leadingSign (x :: xs) = if x = 0 then leadingSign xs else x.sign := by
+  split_ifs with h
+  · subst h
+    rfl
+  · rw [leadingSign]
+    intro w
+    exact h w
+
+attribute [simp] Int.neg_eq_zero
+
+theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    by_cases h : x = 0
+    · subst h
+      simp_all
+    · simp_all [leadingSign_cons]
+
+def trim (xs : IntList) : IntList :=
+  (xs.reverse.dropWhile (· == 0)).reverse
+
+@[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
+  simp [trim, List.dropWhile]
+
+@[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
+  simp [trim, neg_def, List.reverse_map]
+  generalize xs.reverse = xs'
+  induction xs' with
+  | nil => simp
+  | cons x xs' ih =>
+    simp only [List.map_cons, List.dropWhile_cons, Int.neg_eq_zero, beq_iff_eq]
+    split_ifs <;>
+    simp_all [List.reverse_map]
+
 end IntList

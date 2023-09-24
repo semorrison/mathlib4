@@ -1,12 +1,6 @@
 import Mathlib.Tactic.Simps.Basic
-import Mathlib.Tactic.LibrarySearch
-import Mathlib.Tactic.Rewrites
-import Mathlib.Tactic.Have
-import Mathlib.Tactic.SplitIfs
-import Mathlib.Logic.Basic -- yuck!
-import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Omega.IntList
-import Std.Data.Option.Lemmas
+import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -77,8 +71,8 @@ def add (l₁ l₂ : LinearCombo) : LinearCombo where
 
 instance : Add LinearCombo := ⟨add⟩
 
-@[simp] lemma add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
-@[simp] lemma add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
+@[simp] theorem add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
+@[simp] theorem add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
 
 def sub (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const - l₂.const
@@ -86,8 +80,8 @@ def sub (l₁ l₂ : LinearCombo) : LinearCombo where
 
 instance : Sub LinearCombo := ⟨sub⟩
 
-@[simp] lemma sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
-@[simp] lemma sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
+@[simp] theorem sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
+@[simp] theorem sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
 
 /-- Negating a linear combination means negating the constant term and the coefficients. -/
 def neg (lc : LinearCombo) : LinearCombo where
@@ -96,8 +90,8 @@ def neg (lc : LinearCombo) : LinearCombo where
 
 instance : Neg LinearCombo := ⟨neg⟩
 
-@[simp] lemma neg_const {l : LinearCombo} : (-l).const = -l.const := rfl
-@[simp] lemma neg_coeffs {l : LinearCombo} : (-l).coeffs = -l.coeffs  := rfl
+@[simp] theorem neg_const {l : LinearCombo} : (-l).const = -l.const := rfl
+@[simp] theorem neg_coeffs {l : LinearCombo} : (-l).coeffs = -l.coeffs  := rfl
 
 theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ := by
   rcases l₁ with ⟨a₁, c₁⟩; rcases l₂ with ⟨a₂, c₂⟩
@@ -111,8 +105,8 @@ def smul (lc : LinearCombo) (i : Int) : LinearCombo where
 
 instance : HMul Int LinearCombo LinearCombo := ⟨fun i lc => lc.smul i⟩
 
-@[simp] lemma smul_const {lc : LinearCombo} {i : Int} : (i * lc).const = i * lc.const := rfl
-@[simp] lemma smul_coeffs {lc : LinearCombo} {i : Int} : (i * lc).coeffs = i * lc.coeffs := rfl
+@[simp] theorem smul_const {lc : LinearCombo} {i : Int} : (i * lc).const = i * lc.const := rfl
+@[simp] theorem smul_coeffs {lc : LinearCombo} {i : Int} : (i * lc).coeffs = i * lc.coeffs := rfl
 
 @[simp]
 theorem add_eval (l₁ l₂ : LinearCombo) (v : List Int) : (l₁ + l₂).eval v = l₁.eval v + l₂.eval v := by

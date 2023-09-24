@@ -12,18 +12,6 @@ import Mathlib.Tactic.Omega.Problem
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
-/-!
-# Abstract description of integer linear programming problems.
-
-We define `LinearCombo`, `Problem`, and `DisjunctiveProblem`.
-These are abstract descriptions of integer linear programming problems.
-
-In particular, they are intended to be easy to reason about,
-but need not be fast to compute with.
-
-Later we will define variants carrying additional data required to run Omega efficiently,
-and transfer the proofs from these simpler versions.
--/
 
 namespace UInt64
 
@@ -33,21 +21,17 @@ protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b :=
 protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
 protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
 
+protected theorem min_val_val {a b : UInt64} : (min a b).val.val = min a.val.val b.val.val := by
+  simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
+  split_ifs <;> rfl
+
 @[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
   rw [UInt64.le_def, UInt64.lt_def]
   exact Fin.not_le
 
 protected theorem min_comm {a b : UInt64} : min a b = min b a := by
-  simp [UInt64.min_def]
-  split_ifs with h₁ h₂ h₂
-  · rw [UInt64.le_def] at *
-    ext
-    exact Nat.le_antisymm h₁ h₂
-  · rfl
-  · rfl
-  · rw [UInt64.not_le, UInt64.lt_def] at *
-    exfalso
-    exact Nat.lt_irrefl _ (Nat.lt_trans h₁ h₂)
+  ext
+  simp [UInt64.min_val_val, Nat.min_comm]
 
 protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
   simp [UInt64.min_def, h]
@@ -58,22 +42,6 @@ protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
 end UInt64
 
 namespace IntList
-
-def trim (xs : IntList) : IntList :=
-  (xs.reverse.dropWhile (· == 0)).reverse
-
-@[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
-  simp [trim, List.dropWhile]
-
-@[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
-  simp [trim, neg_def, List.reverse_map]
-  generalize xs.reverse = xs'
-  induction xs' with
-  | nil => simp
-  | cons x xs' ih =>
-    simp only [List.map_cons, List.dropWhile_cons, Int.neg_eq_zero, beq_iff_eq]
-    split_ifs <;>
-    simp_all [List.reverse_map]
 
 /--
 We need two properties of this hash:
@@ -124,6 +92,9 @@ instance : Inhabited LinearCombo := ⟨{const := 1}⟩
 
 theorem ext_iff {a b : LinearCombo} : a = b ↔ a.const = b.const ∧ a.coeffs = b.coeffs :=
   ⟨by rintro rfl; simp, fun ⟨w₁, w₂⟩ => ext w₁ w₂⟩
+
+def sign (a : LinearCombo) : Int :=
+  IntList.leadingSign a.coeffs
 
 def coordinate (i : Nat) : LinearCombo where
   const := 0
@@ -971,22 +942,68 @@ theorem smallCoeffEquality_natAbs_Eq {p : Problem} (w : p.smallCoeffEquality = s
   split at h <;> simp_all
   exact e.smallCoeff_natAbs ‹_›
 
-def eliminateEasyEqualities_with_equiv (p : Problem) : Σ (p' : Problem), p'.equiv p :=
-  match h : p.smallCoeffEquality with
-  | some (e, i) =>
-    have m : e ∈ p.equalities := smallCoeffEquality_mem h
-    have : (p.equalities.erase e).length < p.equalities.length := by
-      rw [← p.eliminateEquality_equalities_length i m]
-      simp
-    let ⟨p', e⟩ := eliminateEasyEqualities_with_equiv (p.eliminateEquality e i)
-    ⟨p', e.trans (p.eliminateEquality_equiv m (smallCoeffEquality_natAbs_Eq h))⟩
-  | none => ⟨p, equiv.refl p⟩
-termination_by eliminateEasyEqualities_with_equiv p => p.equalities.length
+-- def eliminateEasyEqualities_with_equiv (p : Problem) : Σ (p' : Problem), p'.equiv p :=
+--   match h : p.smallCoeffEquality with
+--   | some (e, i) =>
+--     have m : e ∈ p.equalities := smallCoeffEquality_mem h
+--     have : (p.equalities.erase e).length < p.equalities.length := by
+--       rw [← p.eliminateEquality_equalities_length i m]
+--       simp
+--     let ⟨p', e⟩ := eliminateEasyEqualities_with_equiv (p.eliminateEquality e i)
+--     ⟨p', e.trans (p.eliminateEquality_equiv m (smallCoeffEquality_natAbs_Eq h))⟩
+--   | none => ⟨p, equiv.refl p⟩
+-- termination_by eliminateEasyEqualities_with_equiv p => p.equalities.length
 
-def eliminateEasyEqualities (p : Problem) : Problem := p.eliminateEasyEqualities_with_equiv.1
+-- def eliminateEasyEqualities (p : Problem) : Problem := p.eliminateEasyEqualities_with_equiv.1
 
-def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equiv p :=
-  p.eliminateEasyEqualities_with_equiv.2
+-- def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equiv p :=
+--   p.eliminateEasyEqualities_with_equiv.2
+
+def eliminateEasyEqualities' (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) : Problem :=
+  match n with
+  | 0 => p
+  | n+1 =>
+    match h : p.smallCoeffEquality with
+    | some (e, i) =>
+      have m : e ∈ p.equalities := smallCoeffEquality_mem h
+      have : (p.equalities.erase e).length < p.equalities.length := by
+        rw [← p.eliminateEquality_equalities_length i m]
+        simp
+      have : (p.eliminateEquality e i).equalities.length ≤ n := by
+        simpa using Nat.lt_succ.mp (Nat.lt_of_lt_of_le this w)
+      eliminateEasyEqualities' n (p.eliminateEquality e i) this
+    | none => p
+
+def eliminateEasyEqualities (p : Problem) : Problem :=
+  match p.equalities with
+  | [] => p
+  | _ => p.eliminateEasyEqualities' _ (Nat.le_refl _)
+
+def eliminateEasyEqualities_equiv' (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) :
+    (p.eliminateEasyEqualities' n w).equiv p :=
+  match n with
+  | 0 => equiv.refl p
+  | n+1 => by
+    dsimp [eliminateEasyEqualities']
+    split
+    -- TODO I'm unhappy to have to use `split` here.
+    -- Just using `match h : p.smallCoeffEquality with` results in `tag not found`.
+    · rename_i e i h
+      have m : e ∈ p.equalities := smallCoeffEquality_mem h
+      have : (p.equalities.erase e).length < p.equalities.length := by
+        rw [← p.eliminateEquality_equalities_length i m]
+        simp
+      have : (p.eliminateEquality e i).equalities.length ≤ n := by
+        simpa using Nat.lt_succ.mp (Nat.lt_of_lt_of_le this w)
+      exact (eliminateEasyEqualities_equiv' n (p.eliminateEquality e i) this).trans
+        (p.eliminateEquality_equiv m (smallCoeffEquality_natAbs_Eq h))
+    · exact equiv.refl p
+
+def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equiv p := by
+  dsimp [eliminateEasyEqualities]
+  split
+  · exact equiv.refl p
+  · exact p.eliminateEasyEqualities_equiv' _ (Nat.le_refl _)
 
 end Problem
 
