@@ -64,7 +64,9 @@ example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
   omega
 
 set_option trace.profiler true
+-- set_option trace.profiler.threshold 0
 set_option trace.Kernel true
+-- set_option trace.profiler.omega true
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
 #time
 example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₁ : 2 * x + 1 ≤ 0) : False := by

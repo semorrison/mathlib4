@@ -43,7 +43,10 @@ def mmmm!! (P : Prop) [Decidable P] {C : α → Sort _} (x : C a) (y : C b) :
     C (if P then a else b) :=
   if P then x else y
 
-run_cmd do if false then pure 3 else pure 7
+
+#print mmmm!!
+
+-- run_cmd do if false then pure 3 else pure 7
 
 
 def foo := do if true then return (← IO.println "true") else return (← IO.println "false")
