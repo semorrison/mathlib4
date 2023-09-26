@@ -238,7 +238,7 @@ def omega (hyps : List Expr) : MetaM Expr := do
   let p_expr := toExpr p
   let s ← mkAppM ``omega_algorithm' #[p_expr]
   let r ← profileitM Exception "omega" (← getOptions) do
-    whnf s -- No need to run `reduceAll` here, `reduce` will do.
+    whnf s
   match r.getAppFnArgs with
   | (``Prod.mk, #[_, _, q, sol?]) =>
     trace[omega] "{← evalProblem q}"
