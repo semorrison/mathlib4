@@ -236,17 +236,78 @@ deriving DecidableEq
 
 namespace Equality
 
--- def minCoeff (e : Equality) : Nat :=
---   match e.minCoeff? with
---   | some min => min
---   | none => e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.
+def minCoeff (e : Equality) : Nat :=
+  match e.minCoeff? with
+  | some min => min
+  | none => e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.foldr aux none |>.getD 0
+where
+  aux : Nat → Option Nat → Option Nat
+  | x, none => some x
+  | x, some y => some (min x y)
 
--- def calculateMinCoeff (e : Equality) : Equality :=
---   match e.minCoeffIdx? with
---   | some _ => e
---   | none =>
---     { e with
---       minCoeff? := e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.maximum}
+theorem minCoeff_spec (e : Equality) :
+    ∀ x ∈ e.linearCombo.coeffs, x = 0 ∨ e.minCoeff ≤ x.natAbs := by
+  intro x m
+  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
+  · dsimp [minCoeff]
+    by_cases h : x = 0
+    · left
+      exact h
+    · right
+      dsimp at m
+      dsimp
+      rcases lc with ⟨const, coeffs⟩
+      dsimp at m ⊢
+      clear spec
+      rename_i spec'
+      clear spec'
+      induction coeffs with
+      | nil => simp
+      | cons y ys ih =>
+        simp at m
+        cases m with
+        | inl m =>
+          subst m
+          rw [List.filter_cons_of_pos _ (by simpa using h)]
+          simp only [decide_not, List.map_cons, List.foldr_cons]
+          sorry
+        | inr m => sorry
+  · dsimp [minCoeff]
+    dsimp at m
+    rw [SatisfiesM_Option_eq] at spec
+    exact spec n rfl _ m
+
+def minCoeffIdx (e : Equality) : Nat :=
+  let m := e.minCoeff
+  e.linearCombo.coeffs.findIdx fun x => x.natAbs = m
+
+theorem minCoeffIdx_spec (e : Equality) :
+    (e.linearCombo.coeffs.get e.minCoeffIdx).natAbs = e.minCoeff := sorry
+
+def calculateMinCoeff (e : Equality) : Equality :=
+  match e.minCoeff? with
+  | some _ => e
+  | none =>
+    { linearCombo := e.linearCombo
+      minCoeff? := e.minCoeff
+      minCoeff?_spec := by
+        rw [SatisfiesM_Option_eq]
+        rintro a ⟨⟩
+        apply minCoeff_spec }
+
+def calculateMinCoeffIdx (e : Equality) : Equality :=
+  match e.minCoeffIdx? with
+  | some _ => e
+  | none =>
+    let e' := calculateMinCoeff e
+    { e' with
+      minCoeffIdx? := e'.minCoeffIdx
+      minCoeffIdx?_spec := by
+        rw [SatisfiesM_Option_eq]
+        rintro a ⟨⟩
+        rw [e'.minCoeffIdx_spec]
+        simp only [calculateMinCoeff]
+        split <;> simp_all [minCoeff] }
 
 instance : ToString Equality where
   toString eq := s!"{eq.linearCombo} = 0"
