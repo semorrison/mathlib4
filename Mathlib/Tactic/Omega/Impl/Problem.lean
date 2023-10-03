@@ -226,9 +226,36 @@ theorem eval_set {lc : LinearCombo} :
 
 end LinearCombo
 
+structure Equality where
+  linearCombo : LinearCombo
+  minCoeff? : Option Nat := none
+  minCoeffIdx? : Option Nat := none
+  minCoeff?_spec : SatisfiesM (fun min => ∀ x ∈ linearCombo.coeffs, x = 0 ∨ min ≤ x.natAbs) minCoeff? := by simp
+  minCoeffIdx?_spec : SatisfiesM (fun idx => (linearCombo.coeffs.get idx).natAbs = minCoeff?) minCoeffIdx? := by simp
+deriving DecidableEq
+
+namespace Equality
+
+-- def minCoeff (e : Equality) : Nat :=
+--   match e.minCoeff? with
+--   | some min => min
+--   | none => e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.
+
+-- def calculateMinCoeff (e : Equality) : Equality :=
+--   match e.minCoeffIdx? with
+--   | some _ => e
+--   | none =>
+--     { e with
+--       minCoeff? := e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.maximum}
+
+instance : ToString Equality where
+  toString eq := s!"{eq.linearCombo} = 0"
+
+end Equality
+
 structure Problem where
   possible : Bool := true
-  equalities : List LinearCombo := []
+  equalities : List Equality := []
   inequalities : List LinearCombo := []
   -- inequalities' : Lean.HashMap Nat (Option Int × Option Int) := {}
   -- constraintKeys : Lean.HashMap IntList Nat := {}
@@ -243,30 +270,30 @@ instance : ToString Problem where
         "trivial"
       else
         "\n".intercalate <|
-          (p.equalities.map fun e => s!"{e} = 0") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
+          (p.equalities.map fun e => s!"{e}") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
     else
       "impossible"
 
-def addEquality (p : Problem) (a : LinearCombo) : Problem :=
-  { p with
-    equalities := a :: p.equalities }
+-- def addEquality (p : Problem) (a : LinearCombo) : Problem :=
+--   { p with
+--     equalities := a :: p.equalities }
 
 
 @[simps]
 def of (p : Omega.Problem) : Problem where
   possible := p.possible
-  equalities := p.equalities.map .of
+  equalities := p.equalities.map fun lc => { linearCombo := .of lc }
   inequalities := p.inequalities.map .of
 
 @[simps]
 def to (p : Problem) : Omega.Problem where
   possible := p.possible
-  equalities := p.equalities.map LinearCombo.to
+  equalities := p.equalities.map fun eq => LinearCombo.to eq.linearCombo
   inequalities := p.inequalities.map LinearCombo.to
 
 structure sat (p : Problem) (values : List Int) : Prop where
   possible : p.possible = true := by trivial
-  equalities : lc ∈ p.equalities → lc.eval values = 0
+  equalities : eq ∈ p.equalities → eq.linearCombo.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
 @[simps]
@@ -402,8 +429,8 @@ Erasing an inequality results in a larger solution space.
 -/
 namespace Problem
 
-theorem eraseEquality_sat (p : Problem) (lc : LinearCombo) (v : List Int) (s : p.sat v) :
-    { p with equalities := p.equalities.erase lc }.sat v :=
+theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
+    { p with equalities := p.equalities.erase eq }.sat v :=
   { s with
     equalities := fun m => s.equalities (by simp at m; apply List.mem_of_mem_erase m) }
 
@@ -413,9 +440,9 @@ theorem eraseInequality_sat (p : Problem) (lc : LinearCombo) (v : List Int) (s :
     inequalities := fun m => s.inequalities (by simp at m; apply List.mem_of_mem_erase m) }
 
 /-- Any solution gives a solution after erasing an equality. -/
-def eraseEquality_map (p : Problem) (lc : LinearCombo) :
-    p → { p with equalities := p.equalities.erase lc } :=
-  map_of_sat (p.eraseEquality_sat lc)
+def eraseEquality_map (p : Problem) (eq : Equality) :
+    p → { p with equalities := p.equalities.erase eq } :=
+  map_of_sat (p.eraseEquality_sat eq)
 
 /-- Any solution gives a solution after erasing an inequality. -/
 def eraseInequality_map (p : Problem) (lc : LinearCombo) :
@@ -636,11 +663,11 @@ If we find any, the problem is impossible.
 Otherwise, we can discard all constants.
 -/
 def processConstants (p : Problem) : Problem :=
-  let equalityConstants := p.equalities.filterMap LinearCombo.constant?
+  let equalityConstants := p.equalities.filterMap fun eq => eq.linearCombo.constant?
   let inequalityConstants := p.inequalities.filterMap LinearCombo.constant?
   if equalityConstants.all (· = 0) ∧ inequalityConstants.all (· ≥ 0) then
     { p with
-      equalities := p.equalities.filter fun lc => lc.constant? = none
+      equalities := p.equalities.filter fun eq => eq.linearCombo.constant? = none
       inequalities := p.inequalities.filter fun lc => lc.constant? = none }
   else
     impossible
@@ -655,7 +682,7 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
       and_imp, not_forall, exists_prop, exists_and_left] at w
     rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
     · have := s.equalities w
-      simp [eq.eval_eq_of_constant m] at this
+      simp [eq.linearCombo.eval_eq_of_constant m] at this
       exact ne this
     · have := s.inequalities w
       simp [eq.eval_eq_of_constant m] at this
@@ -668,11 +695,11 @@ theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sa
     rcases w with ⟨eqs, ineqs⟩
     constructor
     · exact s.possible
-    · intro lc mem
-      match h : lc.constant? with
+    · intro eq mem
+      match h : eq.linearCombo.constant? with
       | some c =>
-        rw [lc.eval_eq_of_constant h]
-        exact eqs _ lc mem h
+        rw [eq.linearCombo.eval_eq_of_constant h]
+        exact eqs _ eq mem h
       | none =>
         apply s.equalities
         simp
@@ -695,9 +722,9 @@ theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sa
 def processConstants_equiv (p : Problem) : p.processConstants.equiv p :=
   equiv_of_sat_iff fun v => ⟨p.sat_of_processConstants_sat v, p.processConstants_sat v⟩
 
-example : processConstants { equalities := [{const := 1}] } = impossible := rfl
-example : processConstants { equalities := [{const := 1}] } |>.unsat := impossible_unsat
-example : Problem.unsat { equalities := [{const := 1}] } :=
+example : processConstants { equalities := [{linearCombo := {const := 1}}] } = impossible := rfl
+example : processConstants { equalities := [{linearCombo := {const := 1}}] } |>.unsat := impossible_unsat
+example : Problem.unsat { equalities := [{linearCombo := {const := 1}}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
 example : Problem.unsat { inequalities := [{const := -1}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
@@ -783,12 +810,24 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
     exact Int.dvd_of_emod_eq_zero w
 
 end LinearCombo
+
+namespace Equality
+
+@[simps]
+def normalize (eq : Equality) : Equality :=
+  { linearCombo := eq.linearCombo.normalizeEquality }
+  -- TODO copy other fields?
+
+theorem normalize_eval {eq : Equality} :
+  eq.normalize.linearCombo.eval v = 0 ↔ eq.linearCombo.eval v = 0 := by simp
+
+end Equality
 namespace Problem
 
 /-- To normalize a problem we normalize each equality and inequality. -/
 def normalize (p : Problem) : Problem where
   possible := p.possible
-  equalities := p.equalities.map LinearCombo.normalizeEquality
+  equalities := p.equalities.map Equality.normalize
   inequalities := p.inequalities.map LinearCombo.normalizeInequality
 
 theorem normalize_sat (p : Problem) (h : p.sat v) : p.normalize.sat v where
@@ -805,7 +844,7 @@ theorem normalize_sat (p : Problem) (h : p.sat v) : p.normalize.sat v where
 theorem sat_of_normalize_sat (p : Problem) (h : p.normalize.sat v) : p.sat v where
   possible := h.possible
   equalities m := by
-    rw [← LinearCombo.normalizeEquality_eval]
+    rw [← Equality.normalize_eval]
     apply h.equalities
     simp [normalize]
     refine ⟨_, m, rfl⟩
@@ -839,38 +878,52 @@ def substitute (b : LinearCombo) (i : Nat) (r : LinearCombo) : LinearCombo :=
       Int.mul_sub]
     simp only [Int.sub_eq_add_neg, Int.add_comm (_ * _)]
 
+end LinearCombo
+
+namespace Equality
+
 /--
 Assuming `a = 0`, solve for the variable `xᵢ`, as a `LinearCombo`.
 
 The result is only valid if `(a.coeff i).natAbs = 1`.
 -/
-def solveFor (a : LinearCombo) (i : Nat) : LinearCombo :=
-  (- (a.coeff i)) * a.setCoeff i 0
+def solveFor (a : Equality) (i : Nat) : LinearCombo :=
+  (- (a.linearCombo.coeff i)) * a.linearCombo.setCoeff i 0
+
+end Equality
 
 theorem Int.mul_self_eq_one_of_natAbs_eq_one {x : Int} (h : x.natAbs = 1) : x * x = 1 := by
   match x, h with
   | 1,            _ => simp
   | Int.negSucc 0, _ => simp
 
-theorem substitute_solveFor_eval (w : (a.coeff i).natAbs = 1) (h : a.eval v = 0) :
-    (substitute b i (solveFor a i)).eval v = b.eval v := by
-  simp only [solveFor, substitute_eval, smul_eval, setCoeff_eval, h, Int.zero_sub, Int.neg_mul,
+namespace LinearCombo
+
+theorem substitute_solveFor_eval (w : (a.linearCombo.coeff i).natAbs = 1) (h : a.linearCombo.eval v = 0) :
+    (LinearCombo.substitute b i (Equality.solveFor a i)).eval v = b.eval v := by
+  simp only [Equality.solveFor, substitute_eval, smul_eval, setCoeff_eval, h, Int.zero_sub, Int.neg_mul,
     Int.zero_add, Int.mul_neg, Int.neg_neg]
-  rw [← Int.mul_assoc (a.coeff i), Int.mul_self_eq_one_of_natAbs_eq_one w, Int.one_mul,
+  rw [← Int.mul_assoc (a.linearCombo.coeff i), Int.mul_self_eq_one_of_natAbs_eq_one w, Int.one_mul,
     Int.sub_self, Int.mul_zero, Int.add_zero]
 
+end LinearCombo
+
+namespace Equality
+
 -- Are we going to regret not storing matrices? Or row operations??
-def backSubstitution (a : LinearCombo) (i : Nat) (w : IntList) : IntList :=
+def backSubstitution (a : Equality) (i : Nat) (w : IntList) : IntList :=
   w.set i ((a.solveFor i).eval w)
 
 attribute [simp] Int.sub_self
 
-theorem eval_backSubstitution (a b : LinearCombo) (i : Nat) (w : IntList) :
-    b.eval (a.backSubstitution i w) = (substitute b i (solveFor a i)).eval w := by
+theorem eval_backSubstitution (a : Equality) (b : LinearCombo) (i : Nat) (w : IntList) :
+    b.eval (a.backSubstitution i w) = (b.substitute i (solveFor a i)).eval w := by
   simp [backSubstitution]
 
-theorem eval_backSubstitution_self (a : LinearCombo) (w : (a.coeff i).natAbs = 1) :
-    a.eval (a.backSubstitution i v) = 0 := by
+open LinearCombo
+
+theorem eval_backSubstitution_self (a : Equality) (w : (a.linearCombo.coeff i).natAbs = 1) :
+    a.linearCombo.eval (a.backSubstitution i v) = 0 := by
   simp only [backSubstitution, solveFor, smul_eval, setCoeff_eval, Int.zero_sub, Int.neg_mul,
     eval_set, Int.mul_sub, Int.mul_neg]
   rw [← Int.mul_assoc]
@@ -878,19 +931,24 @@ theorem eval_backSubstitution_self (a : LinearCombo) (w : (a.coeff i).natAbs = 1
   simp only [Int.one_mul, Int.neg_add, Int.neg_neg, Int.add_sub_cancel]
   simp only [← Int.sub_eq_add_neg, Int.sub_self]
 
-end LinearCombo
+@[simps]
+def substitute (a : Equality) (i : Nat) (r : LinearCombo) : Equality :=
+  { linearCombo := a.linearCombo.substitute i r }
+  -- TODO: Other fields?
+
+end Equality
 
 namespace Problem
 
--- This only makes sense when `a ∈ p.equalities` and `(a.coeff i).natAbs = 1`.
+-- This only makes sense when `a ∈ p.equalities` and `(a.linearCombo.coeff i).natAbs = 1`.
 @[simps]
-def eliminateEquality (p : Problem) (a : LinearCombo) (i : Nat) : Problem :=
+def eliminateEquality (p : Problem) (a : Equality) (i : Nat) : Problem :=
   let r := a.solveFor i
   { possible := p.possible
     equalities := (p.equalities.erase a).map fun eq => eq.substitute i r
-    inequalities := p.inequalities.map fun eq => eq.substitute i r }
+    inequalities := p.inequalities.map fun ineq => ineq.substitute i r }
 
-theorem eliminateEquality_equalities_length (p : Problem) {a : LinearCombo} (i : Nat)
+theorem eliminateEquality_equalities_length (p : Problem) {a : Equality} (i : Nat)
     (ma : a ∈ p.equalities) :
     (p.eliminateEquality a i).equalities.length + 1 = p.equalities.length := by
   simp only [eliminateEquality_equalities, List.length_map, ma, List.length_erase_of_mem]
@@ -898,43 +956,44 @@ theorem eliminateEquality_equalities_length (p : Problem) {a : LinearCombo} (i :
   rw [← @Nat.pos_iff_ne_zero]
   exact List.length_pos_of_mem ma
 
-theorem eliminateEquality_sat (p : Problem) {a : LinearCombo} {i : Nat} (ma : a ∈ p.equalities)
-    (w : (a.coeff i).natAbs = 1) (v) (s : p.sat v) : (p.eliminateEquality a i).sat v where
+theorem eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat} (ma : a ∈ p.equalities)
+    (w : (a.linearCombo.coeff i).natAbs = 1) (v) (s : p.sat v) : (p.eliminateEquality a i).sat v where
   possible := s.possible
   equalities mb := by
     simp only [eliminateEquality_equalities, List.mem_map, ne_eq] at mb
     obtain ⟨b, mb, rfl⟩ := mb
     have mb' : b ∈ p.equalities := List.mem_of_mem_erase mb
-    rw [LinearCombo.substitute_solveFor_eval w (s.equalities ma), s.equalities mb']
+    rw [Equality.substitute_linearCombo, LinearCombo.substitute_solveFor_eval w (s.equalities ma),
+      s.equalities mb']
   inequalities mb := by
     simp only [eliminateEquality_inequalities, List.mem_map, ne_eq] at mb
     obtain ⟨b, mb, rfl⟩ := mb
     rw [LinearCombo.substitute_solveFor_eval w (s.equalities ma)]
     exact s.inequalities mb
 
-theorem sat_of_eliminateEquality_sat (p : Problem) {a : LinearCombo} {i : Nat}
-    (m : a ∈ p.equalities) (w : (a.coeff i).natAbs = 1) (v) (s : (p.eliminateEquality a i).sat v) :
-    p.sat (a.backSubstitution i v) where
+theorem sat_of_eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat}
+    (m : a ∈ p.equalities) (w : (a.linearCombo.coeff i).natAbs = 1) (v)
+    (s : (p.eliminateEquality a i).sat v) : p.sat (a.backSubstitution i v) where
   possible := s.possible
   equalities := by
-    intro lc mb
-    by_cases h : lc = a
+    intro eq mb
+    by_cases h : eq = a
     · subst h
-      rw [LinearCombo.eval_backSubstitution_self _ w]
-    · rw [LinearCombo.eval_backSubstitution]
+      rw [Equality.eval_backSubstitution_self _ w]
+    · rw [Equality.eval_backSubstitution, ← Equality.substitute_linearCombo]
       apply s.equalities
       simp only [eliminateEquality_equalities, List.mem_map, ne_eq]
-      refine ⟨lc, ?_, rfl⟩
+      refine ⟨eq, ?_, rfl⟩
       exact (List.mem_erase_of_ne h).mpr mb
   inequalities mb := by
-    rw [LinearCombo.eval_backSubstitution]
+    rw [Equality.eval_backSubstitution]
     apply s.inequalities
     simp only [eliminateEquality_inequalities, List.mem_map]
     exact ⟨_, mb, rfl⟩
 
 /-- The normalization of a problem is equivalent to the problem. -/
-def eliminateEquality_equiv (p : Problem) {a : LinearCombo} {i : Nat} (m : a ∈ p.equalities)
-    (w : (a.coeff i).natAbs = 1) : (p.eliminateEquality a i).equiv p where
+def eliminateEquality_equiv (p : Problem) {a : Equality} {i : Nat} (m : a ∈ p.equalities)
+    (w : (a.linearCombo.coeff i).natAbs = 1) : (p.eliminateEquality a i).equiv p where
   mp := fun ⟨v, s⟩ => ⟨a.backSubstitution i v, p.sat_of_eliminateEquality_sat m w v s⟩
   mpr := fun ⟨v, s⟩ => ⟨v, p.eliminateEquality_sat m w v s⟩
 
@@ -944,8 +1003,8 @@ end Problem
 
 namespace Problem
 
-def smallCoeffEquality (p : Problem) : Option (LinearCombo × Nat) :=
-  p.equalities.findSome? fun e => match e.smallCoeff with | some i => some (e, i) | none => none
+def smallCoeffEquality (p : Problem) : Option (Equality × Nat) :=
+  p.equalities.findSome? fun e => match e.linearCombo.smallCoeff with | some i => some (e, i) | none => none
 
 theorem smallCoeffEquality_mem {p : Problem} (w : p.smallCoeffEquality = some (e, i)) :
     e ∈ p.equalities := by
@@ -953,10 +1012,10 @@ theorem smallCoeffEquality_mem {p : Problem} (w : p.smallCoeffEquality = some (e
   split at h <;> simp_all
 
 theorem smallCoeffEquality_natAbs_Eq {p : Problem} (w : p.smallCoeffEquality = some (e, i)) :
-    (LinearCombo.coeff e i).natAbs = 1 := by
+    (e.linearCombo.coeff i).natAbs = 1 := by
   obtain ⟨e', m, h⟩ := List.exists_of_findSome?_eq_some w
   split at h <;> simp_all
-  exact e.smallCoeff_natAbs ‹_›
+  exact e.linearCombo.smallCoeff_natAbs ‹_›
 
 -- def eliminateEasyEqualities_with_equiv (p : Problem) : Σ (p' : Problem), p'.equiv p :=
 --   match h : p.smallCoeffEquality with
