@@ -1,5 +1,6 @@
 import Mathlib.Tactic.Omega.tactic
 import Mathlib.Util.Time
+import Mathlib.Tactic.Conv
 
 /-!
 `n = 0` has no solutions if `n ≠ 0`, and `n ≥ 0` has no solutions if `n < 0`.
@@ -71,6 +72,8 @@ set_option trace.Kernel true
 #eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
 #time
 #eval omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
+#time
+#whnf omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
 
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
 #time

@@ -247,12 +247,15 @@ def omega_algorithm' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
   else
     (q, none)
 
+def blah {p : Impl.Problem} (h : (omega_algorithm₁ p).possible = false) : p.Solution :=
+  .unsat ((omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p)
+
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
 def omega_algorithm'' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
   let q := omega_algorithm₁ p
   if h : q.possible = false then
-    (q, some (.unsat (q.unsat_of_impossible h ∘ omega_algorithm₂ p)))
+    (q, some (blah h))
   else
     (q, none)
 
