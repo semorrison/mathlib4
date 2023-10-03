@@ -70,22 +70,14 @@ set_option trace.Kernel true
 
 #time
 #eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
-#time
-#eval omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
-#time
-#whnf omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
 
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
 #time
 example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : 2 * x + 1 ≤ 0) : False := by
   omega
 
--- set_option maxHeartbeats 10000000
-
 #time
 #eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [0, -2]}], equalities := [{const := 0, coeffs := [1, -1]}] }
-#time
-#eval omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [0, -2]}], equalities := [{const := 0, coeffs := [1, -1]}] }
 
 
 #time
@@ -96,6 +88,9 @@ example {x y : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : 2 * y + 1 �
 example {x y z : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : y = z) (h₄ : 2 * z + 1 ≤ 0) : False := by
   omega
 
+#time
+example {x1 x2 x3 x4 x5 x6 : Int} (h : 0 ≤ 2 * x1 + 1) (h : x1 = x2) (h : x2 = x3) (h : x3 = x4) (h : x4 = x5) (h : x5 = x6) (h : 2 * x6 + 1 ≤ 0) : False := by
+  omega
 
 
 /--
