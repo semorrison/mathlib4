@@ -247,15 +247,15 @@ def omega_algorithm' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
   else
     (q, none)
 
-def blah {p : Impl.Problem} (h : (omega_algorithm₁ p).possible = false) : p.Solution :=
-  .unsat ((omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p)
+def blah {p : Impl.Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
+  (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
 def omega_algorithm'' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
   let q := omega_algorithm₁ p
   if h : q.possible = false then
-    (q, some (blah h))
+    (q, some (.unsat (blah h)))
   else
     (q, none)
 
@@ -268,24 +268,30 @@ def Impl.Problem.of {p : Impl.Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
 def evalProblem (e : Expr) : MetaM Impl.Problem := unsafe do
   evalExpr Impl.Problem (mkConst ``Impl.Problem) e
 
+def mkEqFalse'' (e : Expr) : MetaM Expr := mkAppM ``Eq #[e, .const ``Bool.false []]
+
 def omega (hyps : List Expr) : MetaM Expr := do
   let (p, sat) ← omega_problem hyps
   trace[omega] "{p}"
   let p_expr := toExpr p
-  let s ← mkAppM ``omega_algorithm'' #[p_expr]
-  let r ← profileitM Exception "omega (whnf)" (← getOptions) do
-    whnf s
-  match r.getAppFnArgs with
-  | (``Prod.mk, #[_, _, q, sol?]) =>
-    trace[omega] "{← evalProblem q}"
-    match sol?.getAppFnArgs with
-    | (``Option.some, #[_, sol]) =>
-      match sol.getAppFnArgs with
-      | (``Impl.Problem.Solution.unsat, #[_, unsat]) =>
-        return unsat.app (← mkAppM ``Impl.Problem.of #[sat])
-      | _ => throwError "found satisfying values!"
-    | _ => throwError m!"omega algorithm is incomplete!"
-  | _ => throwError m!"omega algorithm did not reduce in the kernel: {r}"
+  let s ← mkAppM ``Impl.Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
+  let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
+  r.refl
+  return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Impl.Problem.of #[sat])
+
+  -- let r ← profileitM Exception "omega (whnf)" (← getOptions) do
+  --   whnf s
+  -- match r.getAppFnArgs with
+  -- | (``Prod.mk, #[_, _, q, sol?]) =>
+  --   trace[omega] "{← evalProblem q}"
+  --   match sol?.getAppFnArgs with
+  --   | (``Option.some, #[_, sol]) =>
+  --     match sol.getAppFnArgs with
+  --     | (``Impl.Problem.Solution.unsat, #[_, unsat]) =>
+  --       return unsat.app (← mkAppM ``Impl.Problem.of #[sat])
+  --     | _ => throwError "found satisfying values!"
+  --   | _ => throwError m!"omega algorithm is incomplete!"
+  -- | _ => throwError m!"omega algorithm did not reduce in the kernel: {r}"
 
 open Qq
 
