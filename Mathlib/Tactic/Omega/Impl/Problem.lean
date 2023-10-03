@@ -51,6 +51,9 @@ We need two properties of this hash:
 def hash (xs : IntList) : UInt64 :=
   min (Hashable.hash xs.trim) (Hashable.hash (-xs).trim)
 
+/-- We override the default `Hashable` instance. -/
+instance : Hashable IntList := ⟨hash⟩
+
 theorem hash_append_zero : hash (xs ++ [0]) = hash xs := by
   simp [hash]
 
@@ -227,7 +230,9 @@ structure Problem where
   possible : Bool := true
   equalities : List LinearCombo := []
   inequalities : List LinearCombo := []
-deriving Repr
+  -- inequalities' : Lean.HashMap Nat (Option Int × Option Int) := {}
+  -- constraintKeys : Lean.HashMap IntList Nat := {}
+  -- constraintKeys' : Array IntList := #[]
 
 namespace Problem
 
@@ -241,6 +246,11 @@ instance : ToString Problem where
           (p.equalities.map fun e => s!"{e} = 0") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
     else
       "impossible"
+
+def addEquality (p : Problem) (a : LinearCombo) : Problem :=
+  { p with
+    equalities := a :: p.equalities }
+
 
 @[simps]
 def of (p : Omega.Problem) : Problem where
@@ -331,6 +341,12 @@ theorem impossible_unsat : impossible.unsat := unsat_of_impossible rfl
 inductive Solution (p : Problem)
 | sat : p → Solution p
 | unsat : p.unsat → Solution p
+
+
+instance : ToString (Solution p) where
+  toString s := match s with
+  | .sat ⟨v, _⟩ => s!"satisfied at {v}"
+  | .unsat _ => "unsat"
 
 /--
 Two problems are equivalent if a solution to one gives an solution to the other.
@@ -623,7 +639,7 @@ def processConstants (p : Problem) : Problem :=
   let equalityConstants := p.equalities.filterMap LinearCombo.constant?
   let inequalityConstants := p.inequalities.filterMap LinearCombo.constant?
   if equalityConstants.all (· = 0) ∧ inequalityConstants.all (· ≥ 0) then
-    { possible := p.possible
+    { p with
       equalities := p.equalities.filter fun lc => lc.constant? = none
       inequalities := p.inequalities.filter fun lc => lc.constant? = none }
   else

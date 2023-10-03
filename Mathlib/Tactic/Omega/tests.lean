@@ -64,13 +64,36 @@ example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
   omega
 
 set_option trace.profiler true
--- set_option trace.profiler.threshold 0
+set_option trace.profiler.threshold 1
 set_option trace.Kernel true
--- set_option trace.profiler.omega true
+
+#time
+#eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
+#time
+#eval omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
+
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
 #time
-example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₁ : 2 * x + 1 ≤ 0) : False := by
+example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : 2 * x + 1 ≤ 0) : False := by
   omega
+
+-- set_option maxHeartbeats 10000000
+
+#time
+#eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [0, -2]}], equalities := [{const := 0, coeffs := [1, -1]}] }
+#time
+#eval omega_algorithm' { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [0, -2]}], equalities := [{const := 0, coeffs := [1, -1]}] }
+
+
+-- #time
+-- example {x y : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : 2 * y + 1 ≤ 0) : False := by
+--   omega
+
+-- #time
+-- example {x y z : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : y = z) (h₄ : 2 * z + 1 ≤ 0) : False := by
+--   omega
+
+
 
 /--
 error: omega algorithm is incomplete!

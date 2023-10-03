@@ -9,6 +9,9 @@ We define the minimally scoped `omega` tactic here.
 It does no preprocessing, and just looks for integer linear constraints amongst the hypotheses.
 -/
 
+-- Note to self:
+-- When there is something usable, see if it helps with https://github.com/leanprover/lean4/issues/2353
+
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -210,9 +213,30 @@ def omega_algorithm (p : Impl.Problem) : (q : Impl.Problem) × (p → q) :=
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
   let p₄ := p₃.eliminateEasyEqualities
-  -- let f : p₀ → p₃ := /-p₃.eliminateEasyEqualities_equiv.mpr ∘ -/p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr
-  -- let q := p₃.to
-  ⟨p₄, p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr⟩
+  let p₅ := p₄.normalize
+  let p₆ := p₅.processConstants
+  let p₇ := p₆.checkContradictions
+  ⟨p₇, p₆.checkContradictions_equiv.mpr ∘ p₅.processConstants_equiv.mpr ∘ p₄.normalize_equiv.mpr ∘ p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr⟩
+
+def omega_algorithm₁ (p : Impl.Problem) : Impl.Problem :=
+  let p₁ := p.normalize
+  let p₂ := p₁.processConstants
+  let p₃ := p₂.checkContradictions
+  let p₄ := p₃.eliminateEasyEqualities
+  let p₅ := p₄.normalize
+  let p₆ := p₅.processConstants
+  let p₇ := p₆.checkContradictions
+  p₇
+
+def omega_algorithm₂ (p : Impl.Problem) : p → (omega_algorithm₁ p) :=
+  let p₁ := p.normalize
+  let p₂ := p₁.processConstants
+  let p₃ := p₂.checkContradictions
+  let p₄ := p₃.eliminateEasyEqualities
+  let p₅ := p₄.normalize
+  let p₆ := p₅.processConstants
+  -- let p₇ := p₆.checkContradictions
+  p₆.checkContradictions_equiv.mpr ∘ p₅.processConstants_equiv.mpr ∘ p₄.normalize_equiv.mpr ∘ p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p.normalize_equiv.mpr
 
 -- Eventually we can remove the `Option` here. It's a decision procedure.
 -- But for a while it will only be a partial implementation.
@@ -220,6 +244,15 @@ def omega_algorithm' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
   let ⟨q, f⟩ := omega_algorithm p
   if h : q.possible = false then
     (q, some (.unsat (q.unsat_of_impossible h ∘ f)))
+  else
+    (q, none)
+
+-- Eventually we can remove the `Option` here. It's a decision procedure.
+-- But for a while it will only be a partial implementation.
+def omega_algorithm'' (p : Impl.Problem) : Impl.Problem × Option p.Solution :=
+  let q := omega_algorithm₁ p
+  if h : q.possible = false then
+    (q, some (.unsat (q.unsat_of_impossible h ∘ omega_algorithm₂ p)))
   else
     (q, none)
 
@@ -236,8 +269,8 @@ def omega (hyps : List Expr) : MetaM Expr := do
   let (p, sat) ← omega_problem hyps
   trace[omega] "{p}"
   let p_expr := toExpr p
-  let s ← mkAppM ``omega_algorithm' #[p_expr]
-  let r ← profileitM Exception "omega" (← getOptions) do
+  let s ← mkAppM ``omega_algorithm'' #[p_expr]
+  let r ← profileitM Exception "omega (whnf)" (← getOptions) do
     whnf s
   match r.getAppFnArgs with
   | (``Prod.mk, #[_, _, q, sol?]) =>
