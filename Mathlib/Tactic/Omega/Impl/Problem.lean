@@ -12,6 +12,13 @@ import Mathlib.Tactic.Omega.Problem
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+/-- A type synonym to equip a type with its lexicographic order. -/
+def Lex (α : Type _) := α
+
+@[inherit_doc] notation:35 α " ×ₗ " β:34 => Lex (Prod α β)
+
+instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
+  lt := Prod.Lex (· < ·) (· < ·)
 
 namespace UInt64
 
@@ -1154,6 +1161,115 @@ def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equi
   split
   · exact equiv.refl p
   · exact p.eliminateEasyEqualities_equiv_aux _ (Nat.le_refl _)
+
+end Problem
+
+def Int.bmod (x : Int) (m : Nat) : Int :=
+  let r := x % m
+  if r < (m + 1) / 2 then
+    r
+  else
+    r - m
+
+example : Int.bmod 3 7 = 3 := rfl
+example : Int.bmod 4 7 = -3 := rfl
+example : Int.bmod 3 8 = 3 := rfl
+example : Int.bmod 4 8 = -4 := rfl
+
+theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m := sorry
+theorem Int.le_bmod {x : Int} {m : Nat} : - m/2 ≤ Int.bmod x m := sorry
+theorem Int.bmod_lt {x : Int} {m : Nat} : Int.bmod x m < (m + 1) / 2 := sorry
+theorem Int.bmod_le {x : Int} {m : Nat} : Int.bmod x m ≤ (m - 1) / 2 := sorry
+
+
+@[simp] theorem Int.mod_self_plus_one {x : Int} (h : 0 ≤ x) : x % (x + 1) = x :=
+  sorry
+
+@[simp] theorem Int.sign_ofNat {x : Nat} : Int.sign x = 1 := sorry
+@[simp] theorem Int.sign_negSucc {x : Nat} : Int.sign (Int.negSucc x) = -1 := rfl
+
+theorem Int.bmod_abs_plus_one (x : Int) : Int.bmod x (x.natAbs + 1) = - x.sign := by
+  cases x with
+  | ofNat x =>
+    have : 0 ≤ (x : Int) := sorry
+    simp_all only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
+      mod_self_plus_one, sign_ofNat]
+    rw [if_neg]
+    · simp [← Int.sub_sub]
+    · sorry
+  | negSucc x =>
+    simp [Int.bmod]
+    rw [if_neg]
+    · sorry
+    · sorry
+
+namespace LinearCombo
+
+def shrinkingConstraint (eq : LinearCombo) (i : Nat) (n : Nat) : LinearCombo :=
+  sorry
+
+def shrinkingConstraint_solution {eq : LinearCombo} (i : Nat) (n : Nat) (v : IntList) : IntList :=
+  v.set n sorry
+
+theorem shrinkingConstraint_eval {eq : LinearCombo} (w : eq.eval v = 0) :
+    (eq.shrinkingConstraint i n).eval (eq.shrinkingConstraint_solution i n v) = 0 :=
+  sorry
+
+theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} :
+    ((eq.shrinkingConstraint i n).coeff i).natAbs = 1 :=
+  sorry
+
+end LinearCombo
+
+
+namespace Problem
+
+def addEquality (p : Problem) (eq : Equality) : Problem where
+  possible := p.possible
+  equalities := eq :: p.equalities
+  inequalities := p.inequalities
+
+-- TODO The maps connecting `p` and `p.addEquality eq`.
+
+def shrinkEqualityCoeffs (p : Problem) (eq : Equality) (i : Nat) : Problem :=
+  (p.addEquality eq).eliminateEquality eq i
+
+-- TODO The maps connecting `p` and `p.shrinkEqualityCoeffs eq i`.
+
+/-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
+def minEqualityCoeff (p : Problem) : Nat := sorry
+
+/--
+The maximal absolute value of a coefficient appearing in an equality which
+also contains a coefficient with absolute value `p.minEqualityCoeff`.
+-/
+def maxEqualityCoeff (p : Problem) : Nat := sorry
+
+def equalityCoeffPair (p : Problem) : Nat ×ₗ Nat :=
+  (p.minEqualityCoeff, p.maxEqualityCoeff)
+
+theorem shrinkTermination (p : Problem) (eq) (i) : (p.shrinkEqualityCoeffs eq i).equalityCoeffPair < p.equalityCoeffPair :=
+  sorry
+
+def eliminateEqualities_aux (n min max : Nat) (p : Problem) (hn : p.equalities.length ≤ n)
+    (hmin : p.minEqualityCoeff ≤ min) (hmax : p.maxEqualityCoeff ≤ max) : Problem :=
+  match n, min, max with
+  | 0, _ ,_ => p
+  | (n+1), 0, _ => sorry -- equalities are all zero?
+  | (n+1), 1, _ => sorry -- there's an easy equality to eliminate
+  | (n+1), (min + 2), 0 => sorry -- equalities are all zero
+  | (n+1), (min + 2), (max + 1) => -- turn the crank!
+    -- First check if we are done, or if there is an easy equality.
+    -- Otherwise, find an equality containing a minimal coefficient
+    let eq := sorry
+    let i := sorry
+    let p' := p.shrinkEqualityCoeffs eq i
+    have := p.shrinkTermination eq i
+    if p'.minEqualityCoeff < min then
+      p'.eliminateEqualities_aux (n+1) (min + 1) p'.maxEqualityCoeff sorry sorry sorry
+    else
+      p'.eliminateEqualities_aux (n+1) (min + 2) max sorry sorry sorry
+termination_by eliminateEqualities_aux n min max _ _ _ _ => (n, min, max)
 
 end Problem
 
