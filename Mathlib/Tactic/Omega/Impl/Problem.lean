@@ -196,18 +196,6 @@ theorem smul_eval (lc : LinearCombo) (i : Int) (v : List Int) :
 
 def coeff (lc : LinearCombo) (i : Nat) : Int := lc.coeffs.get i
 
-def smallCoeff (a : LinearCombo) : Option Nat := a.coeffs.findIdx? fun i => i.natAbs = 1
-
-theorem smallCoeff_natAbs {a : LinearCombo} (w : a.smallCoeff = some i) :
-    (a.coeff i).natAbs = 1 := by
-  -- simp [a.smallCoeff_eq] at w
-  replace w := List.findIdx?_of_eq_some w
-  dsimp [coeff, IntList.get]
-  revert w
-  match a.coeffs.get? i with
-  | none => simp
-  | some x => simp
-
 @[simps]
 def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo :=
   { lc with
@@ -231,9 +219,14 @@ structure Equality where
   minCoeff? : Option Nat := none
   minCoeffIdx? : Option Nat := none
   minCoeff?_spec : SatisfiesM (fun min => ∀ x ∈ linearCombo.coeffs, x = 0 ∨ min ≤ x.natAbs) minCoeff? := by simp
-  minCoeffIdx?_spec : SatisfiesM (fun idx => (linearCombo.coeffs.get idx).natAbs = minCoeff?) minCoeffIdx? := by simp
+  minCoeffIdx?_spec : SatisfiesM (fun idx => (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
 deriving DecidableEq
 
+theorem List.filter_cons :
+    (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
+  split_ifs with h
+  · rw [List.filter_cons_of_pos _ h]
+  · rw [List.filter_cons_of_neg _ h]
 namespace Equality
 
 def minCoeff (e : Equality) : Nat :=
@@ -269,9 +262,31 @@ theorem minCoeff_spec (e : Equality) :
         | inl m =>
           subst m
           rw [List.filter_cons_of_pos _ (by simpa using h)]
-          simp only [decide_not, List.map_cons, List.foldr_cons]
-          sorry
-        | inr m => sorry
+          simp only [List.map_cons, List.foldr_cons]
+          revert ih
+          generalize List.foldr _ _ _ = z
+          intro ih
+          cases z with
+          | none => simp [minCoeff.aux]
+          | some z =>
+            simp_all only [Option.getD_some, minCoeff.aux]
+            apply Nat.min_le_left
+        | inr m =>
+          specialize ih m
+          rw [List.filter_cons]
+          split_ifs
+          · simp only [List.map_cons, List.foldr_cons]
+            revert ih
+            generalize w : List.foldr _ _ _ = z
+            intro ih
+            cases z with
+            | none =>
+              -- We can get a contradiction from `h`, `m`, and `w`, but it is tedious.
+              sorry
+            | some z =>
+              simp_all only [Option.getD_some, minCoeff.aux]
+              exact Nat.le_trans (Nat.min_le_right _ _) ih
+          · exact ih
   · dsimp [minCoeff]
     dsimp at m
     rw [SatisfiesM_Option_eq] at spec
@@ -282,7 +297,9 @@ def minCoeffIdx (e : Equality) : Nat :=
   e.linearCombo.coeffs.findIdx fun x => x.natAbs = m
 
 theorem minCoeffIdx_spec (e : Equality) :
-    (e.linearCombo.coeffs.get e.minCoeffIdx).natAbs = e.minCoeff := sorry
+    (e.linearCombo.coeff e.minCoeffIdx).natAbs = e.minCoeff := by
+  simp [minCoeffIdx, IntList.get]
+  sorry
 
 def calculateMinCoeff (e : Equality) : Equality :=
   match e.minCoeff? with
@@ -311,6 +328,20 @@ def calculateMinCoeffIdx (e : Equality) : Equality :=
 
 instance : ToString Equality where
   toString eq := s!"{eq.linearCombo} = 0"
+
+-- TODO: make sure this is only called on `Equality`s with precomputed `minCoeff` and `minCoeffIdx`.
+def smallCoeff (a : Equality) : Option Nat :=
+  if a.minCoeff = 1 then
+    a.minCoeffIdx
+  else
+    none
+
+theorem smallCoeff_natAbs {a : Equality} (w : a.smallCoeff = some i) :
+    (a.linearCombo.coeff i).natAbs = 1 := by
+  dsimp [smallCoeff] at w
+  simp at w
+  rcases w with ⟨w, rfl⟩
+  rw [a.minCoeffIdx_spec, w]
 
 end Equality
 
@@ -1065,7 +1096,7 @@ end Problem
 namespace Problem
 
 def smallCoeffEquality (p : Problem) : Option (Equality × Nat) :=
-  p.equalities.findSome? fun e => match e.linearCombo.smallCoeff with | some i => some (e, i) | none => none
+  p.equalities.findSome? fun e => match e.smallCoeff with | some i => some (e, i) | none => none
 
 theorem smallCoeffEquality_mem {p : Problem} (w : p.smallCoeffEquality = some (e, i)) :
     e ∈ p.equalities := by
@@ -1076,26 +1107,9 @@ theorem smallCoeffEquality_natAbs_Eq {p : Problem} (w : p.smallCoeffEquality = s
     (e.linearCombo.coeff i).natAbs = 1 := by
   obtain ⟨e', m, h⟩ := List.exists_of_findSome?_eq_some w
   split at h <;> simp_all
-  exact e.linearCombo.smallCoeff_natAbs ‹_›
+  exact e.smallCoeff_natAbs ‹_›
 
--- def eliminateEasyEqualities_with_equiv (p : Problem) : Σ (p' : Problem), p'.equiv p :=
---   match h : p.smallCoeffEquality with
---   | some (e, i) =>
---     have m : e ∈ p.equalities := smallCoeffEquality_mem h
---     have : (p.equalities.erase e).length < p.equalities.length := by
---       rw [← p.eliminateEquality_equalities_length i m]
---       simp
---     let ⟨p', e⟩ := eliminateEasyEqualities_with_equiv (p.eliminateEquality e i)
---     ⟨p', e.trans (p.eliminateEquality_equiv m (smallCoeffEquality_natAbs_Eq h))⟩
---   | none => ⟨p, equiv.refl p⟩
--- termination_by eliminateEasyEqualities_with_equiv p => p.equalities.length
-
--- def eliminateEasyEqualities (p : Problem) : Problem := p.eliminateEasyEqualities_with_equiv.1
-
--- def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equiv p :=
---   p.eliminateEasyEqualities_with_equiv.2
-
-def eliminateEasyEqualities' (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) : Problem :=
+def eliminateEasyEqualities_aux (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) : Problem :=
   match n with
   | 0 => p
   | n+1 =>
@@ -1107,20 +1121,20 @@ def eliminateEasyEqualities' (n : Nat) (p : Problem) (w : p.equalities.length �
         simp
       have : (p.eliminateEquality e i).equalities.length ≤ n := by
         simpa using Nat.lt_succ.mp (Nat.lt_of_lt_of_le this w)
-      eliminateEasyEqualities' n (p.eliminateEquality e i) this
+      eliminateEasyEqualities_aux n (p.eliminateEquality e i) this
     | none => p
 
 def eliminateEasyEqualities (p : Problem) : Problem :=
   match p.equalities with
   | [] => p
-  | _ => p.eliminateEasyEqualities' _ (Nat.le_refl _)
+  | _ => p.eliminateEasyEqualities_aux _ (Nat.le_refl _)
 
-def eliminateEasyEqualities_equiv' (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) :
-    (p.eliminateEasyEqualities' n w).equiv p :=
+def eliminateEasyEqualities_equiv_aux (n : Nat) (p : Problem) (w : p.equalities.length ≤ n) :
+    (p.eliminateEasyEqualities_aux n w).equiv p :=
   match n with
   | 0 => equiv.refl p
   | n+1 => by
-    dsimp [eliminateEasyEqualities']
+    dsimp [eliminateEasyEqualities_aux]
     split
     -- TODO I'm unhappy to have to use `split` here.
     -- Just using `match h : p.smallCoeffEquality with` results in `tag not found`.
@@ -1131,7 +1145,7 @@ def eliminateEasyEqualities_equiv' (n : Nat) (p : Problem) (w : p.equalities.len
         simp
       have : (p.eliminateEquality e i).equalities.length ≤ n := by
         simpa using Nat.lt_succ.mp (Nat.lt_of_lt_of_le this w)
-      exact (eliminateEasyEqualities_equiv' n (p.eliminateEquality e i) this).trans
+      exact (eliminateEasyEqualities_equiv_aux n (p.eliminateEquality e i) this).trans
         (p.eliminateEquality_equiv m (smallCoeffEquality_natAbs_Eq h))
     · exact equiv.refl p
 
@@ -1139,7 +1153,7 @@ def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equi
   dsimp [eliminateEasyEqualities]
   split
   · exact equiv.refl p
-  · exact p.eliminateEasyEqualities_equiv' _ (Nat.le_refl _)
+  · exact p.eliminateEasyEqualities_equiv_aux _ (Nat.le_refl _)
 
 end Problem
 
