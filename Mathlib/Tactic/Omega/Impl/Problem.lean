@@ -20,6 +20,7 @@ def Lex (α : Type _) := α
 instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+
 namespace UInt64
 
 attribute [ext] UInt64
@@ -1142,9 +1143,9 @@ def eliminateEasyEqualities_equiv_aux (n : Nat) (p : Problem) (w : p.equalities.
   | 0 => equiv.refl p
   | n+1 => by
     dsimp [eliminateEasyEqualities_aux]
-    split
     -- TODO I'm unhappy to have to use `split` here.
     -- Just using `match h : p.smallCoeffEquality with` results in `tag not found`.
+    split
     · rename_i e i h
       have m : e ∈ p.equalities := smallCoeffEquality_mem h
       have : (p.equalities.erase e).length < p.equalities.length := by
@@ -1164,6 +1165,7 @@ def eliminateEasyEqualities_equiv (p : Problem) : p.eliminateEasyEqualities.equi
 
 end Problem
 
+/-- Balanced mod, taking values in the range [- m/2, (m - 1)/2]. -/
 def Int.bmod (x : Int) (m : Nat) : Int :=
   let r := x % m
   if r < (m + 1) / 2 then
@@ -1176,27 +1178,48 @@ example : Int.bmod 4 7 = -3 := rfl
 example : Int.bmod 3 8 = 3 := rfl
 example : Int.bmod 4 8 = -4 := rfl
 
-theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m := sorry
+theorem Int.dvd_emod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ x % m - x := by
+  apply Int.dvd_of_emod_eq_zero
+  simp [Int.sub_emod]
+
+theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m - x := by
+  dsimp [Int.bmod]
+  split_ifs
+  · exact Int.dvd_emod_sub_self
+  · rw [Int.sub_sub, Int.add_comm, ← Int.sub_sub]
+    exact Int.dvd_sub Int.dvd_emod_sub_self (Int.dvd_refl _)
+
 theorem Int.le_bmod {x : Int} {m : Nat} : - m/2 ≤ Int.bmod x m := sorry
 theorem Int.bmod_lt {x : Int} {m : Nat} : Int.bmod x m < (m + 1) / 2 := sorry
 theorem Int.bmod_le {x : Int} {m : Nat} : Int.bmod x m ≤ (m - 1) / 2 := sorry
 
 
-@[simp] theorem Int.mod_self_plus_one {x : Int} (h : 0 ≤ x) : x % (x + 1) = x :=
-  sorry
+@[simp] theorem Int.emod_self_add_one {x : Int} (h : 0 ≤ x) : x % (x + 1) = x :=
+  Int.emod_eq_of_lt h (Int.lt_succ x)
 
-@[simp] theorem Int.sign_ofNat {x : Nat} : Int.sign x = 1 := sorry
+@[simp] theorem Int.sign_ofNat_add_one {x : Nat} : Int.sign (x + 1) = 1 := rfl
 @[simp] theorem Int.sign_negSucc {x : Nat} : Int.sign (Int.negSucc x) = -1 := rfl
+
+example (a b : Nat) (w : a ≤ 2 * b) : a / 2 ≤ b :=
+  Nat.div_le_of_le_mul w
+
+theorem Int.ofNat_two : ((2 : Nat) : Int) = 2 := rfl
 
 theorem Int.bmod_abs_plus_one (x : Int) : Int.bmod x (x.natAbs + 1) = - x.sign := by
   cases x with
   | ofNat x =>
-    have : 0 ≤ (x : Int) := sorry
     simp_all only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
-      mod_self_plus_one, sign_ofNat]
-    rw [if_neg]
-    · simp [← Int.sub_sub]
-    · sorry
+      emod_self_add_one (Int.ofNat_nonneg x)]
+    match x with
+    | 0 => rw [if_pos] <;> simp
+    | (x+1) =>
+      rw [if_neg]
+      · simp [← Int.sub_sub]
+      · refine Int.not_lt.mpr ?_
+        simp only [← Int.natCast_add, ← Int.ofNat_one, ← Int.ofNat_two, ← Int.ofNat_ediv]
+        refine Int.ofNat_le.mpr ?hnc.a --
+        apply Nat.div_le_of_le_mul
+        sorry -- okay, doable from here.
   | negSucc x =>
     simp [Int.bmod]
     rw [if_neg]
@@ -1234,10 +1257,14 @@ def addEquality (p : Problem) (eq : Equality) : Problem where
 def shrinkEqualityCoeffs (p : Problem) (eq : Equality) (i : Nat) : Problem :=
   (p.addEquality eq).eliminateEquality eq i
 
--- TODO The maps connecting `p` and `p.shrinkEqualityCoeffs eq i`.
+-- This will require additional hypotheses?
+def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (i : Nat) (w : (sorry : Prop)) :
+    (p.shrinkEqualityCoeffs eq i).equiv p :=
+  sorry
 
 /-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
-def minEqualityCoeff (p : Problem) : Nat := sorry
+def minEqualityCoeff (p : Problem) : Nat :=
+  p.equalities.map (Equality.minCoeff) |>.minimum? |>.getD 0
 
 /--
 The maximal absolute value of a coefficient appearing in an equality which
@@ -1248,28 +1275,59 @@ def maxEqualityCoeff (p : Problem) : Nat := sorry
 def equalityCoeffPair (p : Problem) : Nat ×ₗ Nat :=
   (p.minEqualityCoeff, p.maxEqualityCoeff)
 
-theorem shrinkTermination (p : Problem) (eq) (i) : (p.shrinkEqualityCoeffs eq i).equalityCoeffPair < p.equalityCoeffPair :=
+theorem shrinkTermination (p : Problem) (eq) (i) :
+    (p.shrinkEqualityCoeffs eq i).equalityCoeffPair < p.equalityCoeffPair :=
   sorry
 
-def eliminateEqualities_aux (n min max : Nat) (p : Problem) (hn : p.equalities.length ≤ n)
-    (hmin : p.minEqualityCoeff ≤ min) (hmax : p.maxEqualityCoeff ≤ max) : Problem :=
-  match n, min, max with
-  | 0, _ ,_ => p
-  | (n+1), 0, _ => sorry -- equalities are all zero?
-  | (n+1), 1, _ => sorry -- there's an easy equality to eliminate
-  | (n+1), (min + 2), 0 => sorry -- equalities are all zero
-  | (n+1), (min + 2), (max + 1) => -- turn the crank!
-    -- First check if we are done, or if there is an easy equality.
-    -- Otherwise, find an equality containing a minimal coefficient
+def eliminateEqualities_of_minEqualityCoeff_le_one (p : Problem) (h : p.minEqualityCoeff ≤ 1) : Problem := sorry
+
+theorem _root_.Prod.Lex.right'' [LT α] [LT β] {a₁ a₂ : α} {b₁ b₂ : β} (ha : a₁ = a₂) (hb : b₁ < b₂) :
+    Prod.Lex (· < ·) (· < · ) (a₁, b₁) (a₂, b₂) :=
+  ha ▸ Prod.Lex.right a₁ hb
+
+def eliminateEqualities (p : Problem) : Problem :=
+  if h₁ : p.equalities.length = 0 then
+    p
+  else if h₂ : p.minEqualityCoeff = 0 then
+    p
+  else if h₃ : p.minEqualityCoeff = 1 then
+    sorry
+  else
     let eq := sorry
     let i := sorry
     let p' := p.shrinkEqualityCoeffs eq i
-    have := p.shrinkTermination eq i
-    if p'.minEqualityCoeff < min then
-      p'.eliminateEqualities_aux (n+1) (min + 1) p'.maxEqualityCoeff sorry sorry sorry
+    if h₄ : p'.minEqualityCoeff < p.minEqualityCoeff then
+      p'.eliminateEqualities
     else
-      p'.eliminateEqualities_aux (n+1) (min + 2) max sorry sorry sorry
-termination_by eliminateEqualities_aux n min max _ _ _ _ => (n, min, max)
+      have h₅ : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
+      have h₆ : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
+      have h₇ := Prod.Lex.right'' h₅ h₆
+      p'.eliminateEqualities
+termination_by eliminateEqualities p => (p.minEqualityCoeff, p.maxEqualityCoeff)
+decreasing_by
+  first | assumption | (constructor; assumption)
+
+theorem eliminateEqualities_equalities_length {p : Problem} :
+    p.eliminateEqualities.equalities.length = 0 :=
+  sorry
+
+def eliminateEqualities_equiv (p : Problem) : p.eliminateEqualities.equiv p := by
+  rw [eliminateEqualities]
+  split_ifs with h₁ h₂ h₃
+  · exact equiv.refl p
+  · exact equiv.refl p
+  · sorry
+  · dsimp
+    split_ifs with h₄
+    · exact equiv.trans (p.shrinkEqualityCoeffs sorry sorry).eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
+    · let p' := p.shrinkEqualityCoeffs sorry sorry
+      have h₅ : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
+      have h₆ : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
+      have h₇ := Prod.Lex.right'' h₅ h₆
+      exact equiv.trans (p.shrinkEqualityCoeffs sorry sorry).eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
+termination_by eliminateEqualities_equiv p => (p.minEqualityCoeff, p.maxEqualityCoeff)
+decreasing_by
+  first | assumption | (constructor; assumption)
 
 end Problem
 
