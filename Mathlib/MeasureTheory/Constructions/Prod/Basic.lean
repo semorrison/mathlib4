@@ -294,8 +294,8 @@ protected irreducible_def prod (μ : Measure α) (ν : Measure β) : Measure (α
   bind μ fun x : α => map (Prod.mk x) ν
 #align measure_theory.measure.prod MeasureTheory.Measure.prod
 
-instance prod.measureSpace {α β} [MeasureSpace α] [MeasureSpace β] : MeasureSpace (α × β)
-    where volume := volume.prod volume
+instance prod.measureSpace {α β} [MeasureSpace α] [MeasureSpace β] : MeasureSpace (α × β) where
+  volume := volume.prod volume
 #align measure_theory.measure.prod.measure_space MeasureTheory.Measure.prod.measureSpace
 
 variable [SigmaFinite ν]
@@ -344,6 +344,14 @@ theorem prod_prod (s : Set α) (t : Set β) : μ.prod ν (s ×ˢ t) = μ s * ν 
       _ = μ.prod ν ST := (prod_apply hSTm).symm
       _ = μ.prod ν (s ×ˢ t) := measure_toMeasurable _
 #align measure_theory.measure.prod_prod MeasureTheory.Measure.prod_prod
+
+@[simp] lemma map_fst_prod : Measure.map Prod.fst (μ.prod ν) = (ν univ) • μ := by
+  ext s hs
+  simp [Measure.map_apply measurable_fst hs, ← prod_univ, mul_comm]
+
+@[simp] lemma map_snd_prod : Measure.map Prod.snd (μ.prod ν) = (μ univ) • ν := by
+  ext s hs
+  simp [Measure.map_apply measurable_snd hs, ← univ_prod]
 
 instance prod.instIsOpenPosMeasure {X Y : Type*} [TopologicalSpace X] [TopologicalSpace Y]
     {m : MeasurableSpace X} {μ : Measure X} [IsOpenPosMeasure μ] {m' : MeasurableSpace Y}
