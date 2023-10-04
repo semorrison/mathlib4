@@ -1,4 +1,4 @@
-{"version": 5,
+{"version": 6,
  "packagesDir": "lake-packages",
  "packages":
  [{"git":
@@ -34,10 +34,11 @@
     "inputRev?": "master",
     "inherited": false}},
   {"git":
-   {"url": "https://github.com/semorrison/std4",
+   {"url": "https://github.com/leanprover/std4",
     "subDir?": null,
-    "rev": "d5cd25c768cd75a6fc0d14c4f02ed9be2e84d5ac",
+    "rev": "f2df4ab8c0726fce3bafb73a5727336b0c3120ea",
     "opts": {},
     "name": "std",
-    "inputRev?": "omega_sup",
-    "inherited": false}}]}
+    "inputRev?": "main",
+    "inherited": false}}],
+ "name": "mathlib"}

@@ -39,9 +39,9 @@ open Qq
 
 open Omega
 
-def mkEqReflOptionNat (x : Option Nat) : Expr :=
-  mkApp2 (mkConst ``Eq.refl [.succ .zero])
-    (mkApp (mkConst ``Option [.zero]) (mkConst ``Nat [])) (toExpr x)
+-- def mkEqReflOptionNat (x : Option Nat) : Expr :=
+--   mkApp2 (mkConst ``Eq.refl [.succ .zero])
+--     (mkApp (mkConst ``Option [.zero]) (mkConst ``Nat [])) (toExpr x)
 
 instance : ToExpr LinearCombo where
   toExpr lc :=
@@ -249,22 +249,11 @@ def omega (hyps : List Expr) : MetaM Expr := do
   let p_expr := toExpr p
   let s ← mkAppM ``Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
   let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
-  r.refl
+  try
+    r.refl
+  catch _ =>
+    throwError "omega did not find a contradiction" -- TODO later, show a witness?
   return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
-
-  -- let r ← profileitM Exception "omega (whnf)" (← getOptions) do
-  --   whnf s
-  -- match r.getAppFnArgs with
-  -- | (``Prod.mk, #[_, _, q, sol?]) =>
-  --   trace[omega] "{← evalProblem q}"
-  --   match sol?.getAppFnArgs with
-  --   | (``Option.some, #[_, sol]) =>
-  --     match sol.getAppFnArgs with
-  --     | (``Impl.Problem.Solution.unsat, #[_, unsat]) =>
-  --       return unsat.app (← mkAppM ``Impl.Problem.of #[sat])
-  --     | _ => throwError "found satisfying values!"
-  --   | _ => throwError m!"omega algorithm is incomplete!"
-  -- | _ => throwError m!"omega algorithm did not reduce in the kernel: {r}"
 
 open Qq
 

@@ -55,7 +55,7 @@ example {x y : Int} (h : x + x + y + y + 1 = 0) : False := by
 example {x y : Int} (h : 2 * x + 2 * y + 1 = 0) : False := by
   omega
 
-set_option trace.omega true
+-- set_option trace.omega true
 
 /-!
 If we have two inequalities with opposite coefficients `a + ∑ cᵢ * xᵢ ≥ 0` and `b - ∑ cᵢ * xᵢ ≥ 0`
@@ -64,9 +64,9 @@ then `-a > b` gives a contradiction.
 example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
   omega
 
-set_option trace.profiler true
-set_option trace.profiler.threshold 1
-set_option trace.Kernel true
+-- set_option trace.profiler true
+-- set_option trace.profiler.threshold 1
+-- set_option trace.Kernel true
 
 #time
 #eval omega_algorithm₁ { inequalities := [{const := 1, coeffs := [2]}, {const := -1, coeffs := [-2]}] }
@@ -92,13 +92,8 @@ example {x y z : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : y = z) (h�
 example {x1 x2 x3 x4 x5 x6 : Int} (h : 0 ≤ 2 * x1 + 1) (h : x1 = x2) (h : x2 = x3) (h : x3 = x4) (h : x4 = x5) (h : x5 = x6) (h : 2 * x6 + 1 ≤ 0) : False := by
   omega
 
-
 /--
-error: omega algorithm is incomplete!
----
-info:
-[omega] trivial
-[omega] trivial
+error: omega did not find a contradiction
 -/
 #guard_msgs in
 example : False := by

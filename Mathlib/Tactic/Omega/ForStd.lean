@@ -161,11 +161,6 @@ end List
 
 namespace List
 
-@[simp] theorem findSome?_none : ([] : List α).findSome? f = none := rfl
-theorem findSome?_cons {f : α → Option β} :
-    (x :: xs : List α).findSome? f = (match f x with | some b => some b | none => xs.findSome? f) :=
-  rfl
-
 theorem exists_of_findSome?_eq_some {l : List α} {f : α → Option β} (w : l.findSome? f = some b) :
     ∃ a, a ∈ l ∧ f a = b := by
   induction l with
