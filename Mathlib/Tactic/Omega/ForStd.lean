@@ -131,6 +131,23 @@ theorem List.findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findId
     · cases i <;> simp_all
     · cases i <;> simp_all
 
+theorem List.findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p = none) :
+    ∀ i, match xs.get? i with | some a => ¬ p a | none => true := by
+  intro i
+  induction xs generalizing i with
+  | nil => simp_all
+  | cons x xs ih =>
+    simp_all only [Bool.not_eq_true, findIdx?_cons, Nat.zero_add, findIdx?_succ]
+    cases i with
+    | zero =>
+      split_ifs at w
+      simp_all
+    | succ i =>
+      simp only [get?_cons_succ]
+      apply ih
+      split_ifs at w
+      simp_all
+
 namespace List
 
 theorem dropWhile_cons :

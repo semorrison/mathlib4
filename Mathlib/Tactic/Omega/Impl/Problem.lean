@@ -28,6 +28,38 @@ theorem filter_cons :
   · rw [filter_cons_of_pos _ h]
   · rw [filter_cons_of_neg _ h]
 
+theorem findIdx?_eq_eq_none [DecidableEq α] {xs : List α} (w : xs.findIdx? (· = y) = none) :
+    y ∉ xs := by
+  intro m
+  induction xs with
+  | nil => simp_all
+  | cons x xs ih =>
+    simp at m
+    rcases m with rfl | m
+    · simp at w
+    · simp at w
+      split_ifs at w
+      simp at w
+      exact ih w m
+
+private def idx_of_mem_aux [DecidableEq α] (xs : List α) (w : y ∈ xs) :
+    { i : Nat // xs.get? i = some y } := by
+  let i? := xs.findIdx? (· = y)
+  match h : i? with
+  | none =>
+    exfalso
+    exact findIdx?_eq_eq_none h w
+  | some i =>
+    refine ⟨i, ?_⟩
+    have w' := List.findIdx?_of_eq_some h
+    split at w' <;> simp_all
+
+def idx_of_mem [DecidableEq α] (xs : List α) (w : y ∈ xs) : Nat := (xs.idx_of_mem_aux w).1
+
+theorem idx_of_mem_spec [DecidableEq α] (xs : List α) (w : y ∈ xs) :
+    xs.get? (xs.idx_of_mem w) = some y :=
+  (xs.idx_of_mem_aux w).2
+
 def minNatAbs? (xs : List Int) : Option Nat :=
   match xs with
   | [] => none
@@ -168,7 +200,7 @@ We completely characterize the function via
 -/
 def minNatAbs (xs : List Int) : Nat := xs.minNatAbs?.getD 0
 
-theorem minNatAbs_eq_zero_iff {xs : List Int} : xs.minNatAbs = 0 ↔ ∀ y ∈ xs, y = 0 := by
+@[simp] theorem minNatAbs_eq_zero_iff {xs : List Int} : xs.minNatAbs = 0 ↔ ∀ y ∈ xs, y = 0 := by
   simp only [minNatAbs]
   cases h : xs.minNatAbs?
   · simp_all only [minNatAbs?_eq_none_iff, true_iff]
@@ -204,6 +236,12 @@ theorem minNatAbs_eq_nonzero_iff {xs : List Int} (w : z ≠ 0) :
     · intro w'
       replace w' := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
       simp_all
+
+-- theorem minNatAbs_eq_iff {xs : List Int} :
+--     xs.minNatAbs = z ↔
+--       (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0) ∧ (z ≠ 0 ∨ ∀ y ∈ xs, y = 0) := by
+--   cases z
+--   · simp
 
 end List
 
@@ -406,83 +444,111 @@ theorem eval_set {lc : LinearCombo} :
   simp [eval, Int.add_assoc]
   rfl
 
+@[simp] theorem coeff_zero {lc : LinearCombo} (w : ∀ x, x ∈ lc.coeffs → x = 0) :
+    lc.coeff i = 0 := by
+  simp [coeff, IntList.get]
+  cases h : lc.coeffs.get? i with
+  | none => simp
+  | some x' =>
+    apply w
+    simp only [Option.getD_some]
+    exact List.get?_mem h
+
 end LinearCombo
 
 structure Equality where
   linearCombo : LinearCombo
   minCoeff? : Option Nat := none
   minCoeffIdx? : Option Nat := none
-  minCoeff?_spec : SatisfiesM (fun min => ∀ x ∈ linearCombo.coeffs, x = 0 ∨ min ≤ x.natAbs) minCoeff? := by simp
-  minCoeffIdx?_spec : SatisfiesM (fun idx => (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
+  minCoeff?_spec : SatisfiesM (fun min =>
+    (∃ i, (linearCombo.coeff i).natAbs = min) ∧
+      (∀ i, min ≤ (linearCombo.coeff i).natAbs ∨ (linearCombo.coeff i) = 0) ∧
+      (min ≠ 0 ∨ ∀ i, (linearCombo.coeff i) = 0))
+    minCoeff? := by simp
+  minCoeffIdx?_spec :
+    SatisfiesM (fun idx => (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
 deriving DecidableEq
-
-
 
 
 namespace Equality
 
 def minCoeff (e : Equality) : Nat :=
   match e.minCoeff? with
+  | none => e.linearCombo.coeffs.minNatAbs
   | some min => min
-  | none => e.linearCombo.coeffs.filter (· ≠ 0) |>.map Int.natAbs |>.foldr aux none |>.getD 0
-where
-  aux : Nat → Option Nat → Option Nat
-  | x, none => some x
-  | x, some y => some (min x y)
 
-theorem minCoeff_spec (e : Equality) :
-    ∀ x ∈ e.linearCombo.coeffs, x = 0 ∨ e.minCoeff ≤ x.natAbs := by
-  intro x m
+theorem minCoeff_spec₁ (e : Equality) :
+    ∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff := by
   rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
   · dsimp [minCoeff]
-    by_cases h : x = 0
-    · left
-      exact h
-    · right
-      dsimp at m
-      dsimp
-      rcases lc with ⟨const, coeffs⟩
-      dsimp at m ⊢
-      clear spec
-      rename_i spec'
-      clear spec'
-      induction coeffs with
-      | nil => simp
-      | cons y ys ih =>
-        simp at m
-        cases m with
-        | inl m =>
-          subst m
-          rw [List.filter_cons_of_pos _ (by simpa using h)]
-          simp only [List.map_cons, List.foldr_cons]
-          revert ih
-          generalize List.foldr _ _ _ = z
-          intro ih
-          cases z with
-          | none => simp [minCoeff.aux]
-          | some z =>
-            simp_all only [Option.getD_some, minCoeff.aux]
-            apply Nat.min_le_left
-        | inr m =>
-          specialize ih m
-          rw [List.filter_cons]
-          split_ifs
-          · simp only [List.map_cons, List.foldr_cons]
-            revert ih
-            generalize w : List.foldr _ _ _ = z
-            intro ih
-            cases z with
-            | none =>
-              -- We can get a contradiction from `h`, `m`, and `w`, but it is tedious.
-              sorry
-            | some z =>
-              simp_all only [Option.getD_some, minCoeff.aux]
-              exact Nat.le_trans (Nat.min_le_right _ _) ih
-          · exact ih
+    cases h : lc.coeffs.minNatAbs with
+    | zero =>
+      sorry
+    | succ n =>
+      rw [List.minNatAbs_eq_nonzero_iff] at h
+      · sorry
+      · exact Nat.succ_ne_zero n
   · dsimp [minCoeff]
-    dsimp at m
     rw [SatisfiesM_Option_eq] at spec
-    exact spec n rfl _ m
+    exact (spec n rfl).1
+
+theorem minCoeff_spec₂ (e : Equality) :
+    ∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0 := by
+  intro i
+  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
+  · dsimp [minCoeff]
+    cases h : lc.coeffs.minNatAbs with
+    | zero =>
+      right
+      simp at h
+      exact h _ m
+    | succ n =>
+      rw [List.minNatAbs_eq_nonzero_iff] at h
+      · replace h := h.2 _ m
+        rcases h with h | rfl
+        · left; assumption
+        · simp
+      · exact Nat.succ_ne_zero n
+  · dsimp [minCoeff]
+    rw [SatisfiesM_Option_eq] at spec
+    apply (spec n rfl).2.1
+
+theorem minCoeff_spec₃ (e : Equality) :
+    e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0 := by
+  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
+  · dsimp [minCoeff]
+    cases h : lc.coeffs.minNatAbs with
+    | zero =>
+      sorry
+    | succ n =>
+      rw [List.minNatAbs_eq_nonzero_iff] at h
+      · sorry
+      · exact Nat.succ_ne_zero n
+  · dsimp [minCoeff]
+    rw [SatisfiesM_Option_eq] at spec
+    exact (spec n rfl).2.2
+
+theorem minCoeff_spec (e : Equality) :
+    (∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff) ∧
+      (∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0) ∧
+      (e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0) := by
+  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
+  · dsimp [minCoeff]
+    cases h : lc.coeffs.minNatAbs with
+    | zero => simp_all
+    | succ n =>
+      rw [List.minNatAbs_eq_nonzero_iff] at h
+      · obtain ⟨⟨y, m, h₁⟩, h₂⟩ := h
+        let i? := lc.coeffs.findIdx? (· = y)
+        have := lc.coeffs.findIdx?_
+        match h₃ : i? with
+        | none => sorry
+        | some i => sorry
+      · exact Nat.succ_ne_zero n
+  · dsimp [minCoeff]
+    rw [SatisfiesM_Option_eq] at spec
+    exact (spec n rfl)
+
 
 def minCoeffIdx (e : Equality) : Nat :=
   let m := e.minCoeff
@@ -502,7 +568,7 @@ def calculateMinCoeff (e : Equality) : Equality :=
       minCoeff?_spec := by
         rw [SatisfiesM_Option_eq]
         rintro a ⟨⟩
-        apply minCoeff_spec }
+        exact e.minCoeff_spec }
 
 def calculateMinCoeffIdx (e : Equality) : Equality :=
   match e.minCoeffIdx? with
