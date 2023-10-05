@@ -8,6 +8,7 @@ import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Omega.IntList
 import Std.Data.Option.Lemmas
 import Mathlib.Tactic.Omega.Problem
+import Mathlib.Init.Data.Nat.Lemmas -- yuck!
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -28,37 +29,26 @@ theorem filter_cons :
   · rw [filter_cons_of_pos _ h]
   · rw [filter_cons_of_neg _ h]
 
-theorem findIdx?_eq_eq_none [DecidableEq α] {xs : List α} (w : xs.findIdx? (· = y) = none) :
-    y ∉ xs := by
-  intro m
-  induction xs with
-  | nil => simp_all
-  | cons x xs ih =>
-    simp at m
-    rcases m with rfl | m
-    · simp at w
-    · simp at w
-      split_ifs at w
-      simp at w
-      exact ih w m
+-- theorem findIdx?_eq_eq_none [DecidableEq α] {xs : List α} (w : xs.findIdx? (· = y) = none) :
+--     y ∉ xs := by
+--   intro m
+--   induction xs with
+--   | nil => simp_all
+--   | cons x xs ih =>
+--     simp at m
+--     rcases m with rfl | m
+--     · simp at w
+--     · simp at w
+--       split_ifs at w
+--       simp at w
+--       exact ih w m
 
-private def idx_of_mem_aux [DecidableEq α] (xs : List α) (w : y ∈ xs) :
-    { i : Nat // xs.get? i = some y } := by
-  let i? := xs.findIdx? (· = y)
-  match h : i? with
-  | none =>
-    exfalso
-    exact findIdx?_eq_eq_none h w
-  | some i =>
-    refine ⟨i, ?_⟩
-    have w' := List.findIdx?_of_eq_some h
-    split at w' <;> simp_all
-
-def idx_of_mem [DecidableEq α] (xs : List α) (w : y ∈ xs) : Nat := (xs.idx_of_mem_aux w).1
+def idx_of_mem [DecidableEq α] (xs : List α) (w : y ∈ xs) : Nat :=
+  Nat.find (List.mem_iff_get?.mp w)
 
 theorem idx_of_mem_spec [DecidableEq α] (xs : List α) (w : y ∈ xs) :
     xs.get? (xs.idx_of_mem w) = some y :=
-  (xs.idx_of_mem_aux w).2
+  Nat.find_spec (List.mem_iff_get?.mp w)
 
 def minNatAbs? (xs : List Int) : Option Nat :=
   match xs with
@@ -477,78 +467,34 @@ def minCoeff (e : Equality) : Nat :=
   | none => e.linearCombo.coeffs.minNatAbs
   | some min => min
 
-theorem minCoeff_spec₁ (e : Equality) :
-    ∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff := by
-  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
-  · dsimp [minCoeff]
-    cases h : lc.coeffs.minNatAbs with
-    | zero =>
-      sorry
-    | succ n =>
-      rw [List.minNatAbs_eq_nonzero_iff] at h
-      · sorry
-      · exact Nat.succ_ne_zero n
-  · dsimp [minCoeff]
-    rw [SatisfiesM_Option_eq] at spec
-    exact (spec n rfl).1
-
-theorem minCoeff_spec₂ (e : Equality) :
-    ∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0 := by
-  intro i
-  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
-  · dsimp [minCoeff]
-    cases h : lc.coeffs.minNatAbs with
-    | zero =>
-      right
-      simp at h
-      exact h _ m
-    | succ n =>
-      rw [List.minNatAbs_eq_nonzero_iff] at h
-      · replace h := h.2 _ m
-        rcases h with h | rfl
-        · left; assumption
-        · simp
-      · exact Nat.succ_ne_zero n
-  · dsimp [minCoeff]
-    rw [SatisfiesM_Option_eq] at spec
-    apply (spec n rfl).2.1
-
-theorem minCoeff_spec₃ (e : Equality) :
-    e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0 := by
-  rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
-  · dsimp [minCoeff]
-    cases h : lc.coeffs.minNatAbs with
-    | zero =>
-      sorry
-    | succ n =>
-      rw [List.minNatAbs_eq_nonzero_iff] at h
-      · sorry
-      · exact Nat.succ_ne_zero n
-  · dsimp [minCoeff]
-    rw [SatisfiesM_Option_eq] at spec
-    exact (spec n rfl).2.2
-
 theorem minCoeff_spec (e : Equality) :
     (∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff) ∧
       (∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0) ∧
       (e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0) := by
   rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
   · dsimp [minCoeff]
+    clear spec
     cases h : lc.coeffs.minNatAbs with
     | zero => simp_all
     | succ n =>
       rw [List.minNatAbs_eq_nonzero_iff] at h
       · obtain ⟨⟨y, m, h₁⟩, h₂⟩ := h
-        let i? := lc.coeffs.findIdx? (· = y)
-        have := lc.coeffs.findIdx?_
-        match h₃ : i? with
-        | none => sorry
-        | some i => sorry
+        let i := lc.coeffs.idx_of_mem m
+        refine ⟨⟨i, ?_⟩, ?_, by simp⟩
+        · dsimp [LinearCombo.coeff, IntList.get]
+          simp_all [lc.coeffs.idx_of_mem_spec m]
+        · dsimp [LinearCombo.coeff, IntList.get]
+          intro j
+          match h : lc.coeffs.get? j with
+          | none => simp
+          | some y =>
+            apply h₂
+            rw [List.mem_iff_get?]
+            refine ⟨j, h⟩
       · exact Nat.succ_ne_zero n
   · dsimp [minCoeff]
     rw [SatisfiesM_Option_eq] at spec
     exact (spec n rfl)
-
 
 def minCoeffIdx (e : Equality) : Nat :=
   let m := e.minCoeff
