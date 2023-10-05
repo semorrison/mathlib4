@@ -20,6 +20,192 @@ def Lex (α : Type _) := α
 instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+namespace List
+
+theorem filter_cons :
+    (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
+  split_ifs with h
+  · rw [filter_cons_of_pos _ h]
+  · rw [filter_cons_of_neg _ h]
+
+def minNatAbs? (xs : List Int) : Option Nat :=
+  match xs with
+  | [] => none
+  | x :: xs => if x = 0 then
+      xs.minNatAbs?
+    else match xs.minNatAbs? with
+      | none => some x.natAbs
+      | some m => some (min x.natAbs m)
+
+@[simp]
+theorem minNatAbs?_eq_none_iff {xs : List Int} : xs.minNatAbs? = none ↔ ∀ y ∈ xs, y = 0 := by
+  constructor
+  · intro w
+    induction xs with
+    | nil => simp_all [minNatAbs?]
+    | cons x xs ih =>
+      simp only [minNatAbs?] at w
+      split_ifs at w with h
+      · intro y m
+        simp only [mem_cons] at m
+        rcases m with rfl | m
+        · assumption
+        · exact ih w y m
+      · split at w <;> simp_all
+  · induction xs <;> simp_all [minNatAbs?]
+
+@[simp] theorem minNatAbs?_ne_some_zero {xs : List Int} : xs.minNatAbs? ≠ some 0 := by
+  induction xs with
+  | nil => simp_all [minNatAbs?]
+  | cons x xs ih =>
+    simp only [minNatAbs?]
+    split_ifs with h
+    · assumption
+    · cases h : minNatAbs? xs
+      · simp_all
+      · simp
+        intro h
+        rw [Nat.min_def] at h
+        split_ifs at h <;> simp_all
+
+theorem minNatAbs?_exists_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z) :
+    ∃ y ∈ xs, y.natAbs = z := by
+  induction xs with
+  | nil => simp_all [minNatAbs?]
+  | cons x xs ih =>
+    simp only [minNatAbs?] at w
+    split_ifs at w with h
+    · specialize ih w
+      obtain ⟨x, m, rfl⟩ := ih
+      exact ⟨x, mem_cons_of_mem _ m, rfl⟩
+    · split at w
+      · simp only [Option.some.injEq] at w
+        refine ⟨x, mem_cons_self x xs, w⟩
+      · simp only [Option.some.injEq] at w
+        rename_i h'
+        rw [Nat.min_def] at w
+        split_ifs at w
+        · refine ⟨x, mem_cons_self x xs, w⟩
+        · subst w
+          obtain ⟨x, m, rfl⟩ := ih h'
+          refine ⟨x, mem_cons_of_mem _ m, rfl⟩
+
+theorem minNatAbs?_forall_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z) :
+    ∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0 := by
+  induction xs generalizing z with
+  | nil => simp_all [minNatAbs?]
+  | cons x xs ih =>
+    simp only [minNatAbs?] at w
+    split_ifs at w with h
+    · specialize ih w
+      intro y m
+      simp only [mem_cons] at m
+      rcases m with rfl | m
+      · right; assumption
+      · exact ih _ m
+    · split at w
+      · simp only [Option.some.injEq] at w
+        intro y m
+        simp only [mem_cons] at m
+        rcases m with rfl | m
+        · left; exact Nat.le_of_eq w.symm
+        · rename_i h'
+          simp only [minNatAbs?_eq_none_iff] at h'
+          right
+          exact h' _ m
+      · simp only [Option.some.injEq] at w
+        rename_i h₁
+        rw [Nat.min_def] at w
+        split_ifs at w with h₂
+        · subst w
+          intro y m
+          simp only [mem_cons] at m
+          rcases m with rfl | m
+          · left; exact Nat.le_refl _
+          · specialize ih h₁ _ m
+            rcases ih with ih | rfl
+            · left
+              exact Nat.le_trans h₂ ih
+            · simp
+        · subst w
+          intro y m
+          simp only [mem_cons] at m
+          rcases m with rfl | m
+          · left
+            exact Nat.le_of_not_le h₂
+          · exact ih h₁ _ m
+
+theorem minNatAbs?_eq_some_iff {xs : List Int} :
+    xs.minNatAbs? = some z ↔
+      (z ≠ 0 ∧ (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0)) := by
+  constructor
+  · intro w
+    exact ⟨by rintro rfl; simp_all, minNatAbs?_exists_of_eq_some w, minNatAbs?_forall_of_eq_some w⟩
+  · rintro ⟨w₁, ⟨y, m, rfl⟩, w₃⟩
+    cases h : minNatAbs? xs with
+    | none =>
+      simp only [minNatAbs?_eq_none_iff] at h
+      specialize h _ m
+      simp_all
+    | some z' =>
+      simp only [Option.some.injEq]
+      apply Nat.le_antisymm
+      · replace h := minNatAbs?_forall_of_eq_some h _ m
+        rcases h with h | rfl
+        · assumption
+        · simp_all
+      · obtain ⟨y', m', rfl⟩ := minNatAbs?_exists_of_eq_some h
+        specialize w₃ _ m'
+        rcases w₃ with w₂ | rfl
+        · assumption
+        · simp at h
+
+/--
+The minimum absolute value of a nonzero entry, or zero if all entries are zero.
+
+We completely characterize the function via
+`minNatAbs_eq_zero_iff` and `minNatAbs_eq_nonzero_iff` below.
+-/
+def minNatAbs (xs : List Int) : Nat := xs.minNatAbs?.getD 0
+
+theorem minNatAbs_eq_zero_iff {xs : List Int} : xs.minNatAbs = 0 ↔ ∀ y ∈ xs, y = 0 := by
+  simp only [minNatAbs]
+  cases h : xs.minNatAbs?
+  · simp_all only [minNatAbs?_eq_none_iff, true_iff]
+    assumption
+  · simp
+    constructor
+    · rintro rfl
+      simp_all
+    · replace h := minNatAbs?_exists_of_eq_some h
+      obtain ⟨y, m, rfl⟩ := h
+      intro w
+      specialize w _ m
+      simp_all
+
+theorem minNatAbs_eq_nonzero_iff {xs : List Int} (w : z ≠ 0) :
+    xs.minNatAbs = z ↔
+      (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0) := by
+  simp only [minNatAbs]
+  cases h : xs.minNatAbs? with
+  | none =>
+    simp only [Option.getD_none]
+    constructor
+    · rintro rfl
+      simp_all
+    · intro w'
+      have := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
+      simp_all
+  | some z' =>
+    simp
+    constructor
+    · rintro rfl
+      exact (minNatAbs?_eq_some_iff.mp h).2
+    · intro w'
+      replace w' := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
+      simp_all
+
+end List
 
 namespace UInt64
 
@@ -230,11 +416,9 @@ structure Equality where
   minCoeffIdx?_spec : SatisfiesM (fun idx => (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
 deriving DecidableEq
 
-theorem List.filter_cons :
-    (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
-  split_ifs with h
-  · rw [List.filter_cons_of_pos _ h]
-  · rw [List.filter_cons_of_neg _ h]
+
+
+
 namespace Equality
 
 def minCoeff (e : Equality) : Nat :=
