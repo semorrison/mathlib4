@@ -1,5 +1,6 @@
 import Std
 import Mathlib.Tactic.SplitIfs
+import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -100,10 +101,16 @@ attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zer
     (if P then some x else none) = some y ↔ P ∧ x = y := by
   split_ifs <;> simp_all
 
-@[simp] theorem List.findIdx?_nil : ([] : List α).findIdx? p i = none := rfl
-@[simp] theorem List.findIdx?_cons :
+namespace List
+
+theorem dropWhile_cons :
+    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
+  split_ifs <;> simp_all [dropWhile]
+
+@[simp] theorem findIdx?_nil : ([] : List α).findIdx? p i = none := rfl
+@[simp] theorem findIdx?_cons :
     (x :: xs).findIdx? p i = if p x then some i else findIdx? p xs (i + 1) := rfl
-@[simp] theorem List.findIdx?_succ :
+@[simp] theorem findIdx?_succ :
     (xs : List α).findIdx? p (i+1) = (xs.findIdx? p i).map fun i => i + 1 := by
   induction xs generalizing i with
   | nil => simp
@@ -111,7 +118,7 @@ attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zer
     simp only [findIdx?_cons]
     split_ifs <;> simp_all
 
-theorem List.findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
+theorem findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
     xs.findIdx? p = some i ↔ (xs.take (i + 1)).map p = List.replicate i false ++ [true] := by
   induction xs generalizing i with
   | nil => simp
@@ -121,7 +128,7 @@ theorem List.findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
     · cases i <;> simp_all
     · cases i <;> simp_all
 
-theorem List.findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findIdx? p = some i) :
+theorem findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findIdx? p = some i) :
     match xs.get? i with | some a => p a | none => false := by
   induction xs generalizing i with
   | nil => simp_all
@@ -131,7 +138,7 @@ theorem List.findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findId
     · cases i <;> simp_all
     · cases i <;> simp_all
 
-theorem List.findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p = none) :
+theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p = none) :
     ∀ i, match xs.get? i with | some a => ¬ p a | none => true := by
   intro i
   induction xs generalizing i with
@@ -147,12 +154,6 @@ theorem List.findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findId
       apply ih
       split_ifs at w
       simp_all
-
-namespace List
-
-theorem dropWhile_cons :
-    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
-  split_ifs <;> simp_all [dropWhile]
 
 @[simp] theorem findIdx?_append :
     (xs ++ ys : List α).findIdx? p =
@@ -173,6 +174,53 @@ theorem dropWhile_cons :
   | succ n ih =>
     simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
     split_ifs <;> simp_all
+
+@[simp] theorem findIdx_nil {α : Type _} (p : α → Bool) : [].findIdx p = 0 := rfl
+
+theorem findIdx_cons (p : α → Bool) (b : α) (l : List α) :
+    (b :: l).findIdx p = bif p b then 0 else (l.findIdx p) + 1 := by
+  cases H : p b with
+  | true => simp [H, findIdx, findIdx.go]
+  | false => simp [H, findIdx, findIdx.go, findIdx_go_succ]
+where
+  findIdx_go_succ (p : α → Bool) (l : List α) (n : Nat) :
+      List.findIdx.go p l (n + 1) = (List.findIdx.go p l n) + 1 := by
+    cases l with
+    | nil => unfold List.findIdx.go; exact Nat.succ_eq_add_one n
+    | cons head tail =>
+      unfold List.findIdx.go
+      cases p head <;> simp only [cond_false, cond_true]
+      exact findIdx_go_succ p tail (n + 1)
+
+theorem findIdx_of_get?_eq_some {xs : List α} (w : xs.get? (xs.findIdx p) = some y) : p y := by
+  induction xs with
+  | nil => simp_all
+  | cons x xs ih => by_cases h : p x <;> simp_all [findIdx_cons]
+
+theorem findIdx_get {xs : List α} {w : xs.findIdx p < xs.length} :
+    p (xs.get ⟨xs.findIdx p, w⟩) :=
+  xs.findIdx_of_get?_eq_some (get?_eq_get w)
+
+theorem findIdx_lt_length_of_exists {xs : List α} (h : ∃ x ∈ xs, p x) :
+    xs.findIdx p < xs.length := by
+  induction xs with
+  | nil => simp_all
+  | cons x xs ih =>
+    by_cases p x
+    · simp_all only [forall_exists_index, and_imp, mem_cons, exists_eq_or_imp, true_or,
+        findIdx_cons, cond_true, length_cons]
+      apply Nat.succ_pos
+    · simp_all [findIdx_cons]
+      refine Nat.succ_lt_succ ?_
+      obtain ⟨x', m', h'⟩ := h
+      exact ih x' m' h'
+
+-- TODO delete List.get!_eq_get
+
+theorem findIdx_get?_eq_get_of_exists {xs : List α} (h : ∃ x ∈ xs, p x) :
+    xs.get? (xs.findIdx p) = some (xs.get ⟨xs.findIdx p, xs.findIdx_lt_length_of_exists h⟩) :=
+  get?_eq_get (findIdx_lt_length_of_exists h)
+
 
 end List
 

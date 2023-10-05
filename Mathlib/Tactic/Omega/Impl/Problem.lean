@@ -205,7 +205,7 @@ def minNatAbs (xs : List Int) : Nat := xs.minNatAbs?.getD 0
       specialize w _ m
       simp_all
 
-theorem minNatAbs_eq_nonzero_iff {xs : List Int} (w : z ≠ 0) :
+theorem minNatAbs_eq_nonzero_iff (xs : List Int) (w : z ≠ 0) :
     xs.minNatAbs = z ↔
       (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0) := by
   simp only [minNatAbs]
@@ -226,12 +226,6 @@ theorem minNatAbs_eq_nonzero_iff {xs : List Int} (w : z ≠ 0) :
     · intro w'
       replace w' := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
       simp_all
-
--- theorem minNatAbs_eq_iff {xs : List Int} :
---     xs.minNatAbs = z ↔
---       (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0) ∧ (z ≠ 0 ∨ ∀ y ∈ xs, y = 0) := by
---   cases z
---   · simp
 
 end List
 
@@ -450,13 +444,9 @@ structure Equality where
   linearCombo : LinearCombo
   minCoeff? : Option Nat := none
   minCoeffIdx? : Option Nat := none
-  minCoeff?_spec : SatisfiesM (fun min =>
-    (∃ i, (linearCombo.coeff i).natAbs = min) ∧
-      (∀ i, min ≤ (linearCombo.coeff i).natAbs ∨ (linearCombo.coeff i) = 0) ∧
-      (min ≠ 0 ∨ ∀ i, (linearCombo.coeff i) = 0))
-    minCoeff? := by simp
+  minCoeff?_spec : SatisfiesM (fun min => min = linearCombo.coeffs.minNatAbs) minCoeff? := by simp
   minCoeffIdx?_spec :
-    SatisfiesM (fun idx => (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
+    SatisfiesM (fun idx => minCoeff?.isSome ∧ (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
 deriving DecidableEq
 
 
@@ -467,43 +457,69 @@ def minCoeff (e : Equality) : Nat :=
   | none => e.linearCombo.coeffs.minNatAbs
   | some min => min
 
-theorem minCoeff_spec (e : Equality) :
-    (∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff) ∧
-      (∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0) ∧
-      (e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0) := by
+theorem minCoeff_spec (e : Equality) : e.minCoeff = e.linearCombo.coeffs.minNatAbs := by
   rcases e with ⟨lc, ⟨⟩|⟨n⟩, _, spec, _⟩
-  · dsimp [minCoeff]
-    clear spec
-    cases h : lc.coeffs.minNatAbs with
-    | zero => simp_all
-    | succ n =>
-      rw [List.minNatAbs_eq_nonzero_iff] at h
-      · obtain ⟨⟨y, m, h₁⟩, h₂⟩ := h
-        let i := lc.coeffs.idx_of_mem m
-        refine ⟨⟨i, ?_⟩, ?_, by simp⟩
-        · dsimp [LinearCombo.coeff, IntList.get]
-          simp_all [lc.coeffs.idx_of_mem_spec m]
-        · dsimp [LinearCombo.coeff, IntList.get]
-          intro j
-          match h : lc.coeffs.get? j with
-          | none => simp
-          | some y =>
-            apply h₂
-            rw [List.mem_iff_get?]
-            refine ⟨j, h⟩
-      · exact Nat.succ_ne_zero n
+  · rfl
   · dsimp [minCoeff]
     rw [SatisfiesM_Option_eq] at spec
     exact (spec n rfl)
 
+-- Needs a better name
+theorem minCoeff_spec' (e : Equality) :
+    (∃ i, (e.linearCombo.coeff i).natAbs = e.minCoeff) ∧
+      (∀ i, e.minCoeff ≤ (e.linearCombo.coeff i).natAbs ∨ (e.linearCombo.coeff i) = 0) ∧
+      (e.minCoeff ≠ 0 ∨ ∀ i, (e.linearCombo.coeff i) = 0) := by
+  rw [minCoeff_spec]
+  dsimp [minCoeff]
+  cases h : e.linearCombo.coeffs.minNatAbs with
+  | zero => simp_all
+  | succ n =>
+    rw [List.minNatAbs_eq_nonzero_iff] at h
+    · obtain ⟨⟨y, m, h₁⟩, h₂⟩ := h
+      let i := e.linearCombo.coeffs.idx_of_mem m
+      refine ⟨⟨i, ?_⟩, ?_, by simp⟩
+      · dsimp [LinearCombo.coeff, IntList.get]
+        simp_all [e.linearCombo.coeffs.idx_of_mem_spec m]
+      · dsimp [LinearCombo.coeff, IntList.get]
+        intro j
+        match h : e.linearCombo.coeffs.get? j with
+        | none => simp
+        | some y =>
+          apply h₂
+          rw [List.mem_iff_get?]
+          refine ⟨j, h⟩
+    · exact Nat.succ_ne_zero n
+
 def minCoeffIdx (e : Equality) : Nat :=
-  let m := e.minCoeff
-  e.linearCombo.coeffs.findIdx fun x => x.natAbs = m
+  match e.minCoeffIdx? with
+  | some i => i
+  | none =>
+    let m := e.minCoeff
+    e.linearCombo.coeffs.findIdx fun x => x.natAbs = m
 
 theorem minCoeffIdx_spec (e : Equality) :
     (e.linearCombo.coeff e.minCoeffIdx).natAbs = e.minCoeff := by
-  simp [minCoeffIdx, IntList.get]
-  sorry
+  rcases e with ⟨lc, m?, ⟨⟩|⟨n⟩, spec, specIdx⟩
+  · dsimp [minCoeffIdx, LinearCombo.coeff, IntList.get]
+    rw [minCoeff_spec]
+    dsimp
+    by_cases h : lc.coeffs.minNatAbs = 0
+    · simp only [h, Int.natAbs_eq_zero]
+      cases h' : lc.coeffs.get? (lc.coeffs.findIdx (· = 0))
+      · simp
+      · simpa using List.findIdx_of_get?_eq_some h'
+    · have h₁ := lc.coeffs.minNatAbs_eq_nonzero_iff h
+      simp at h₁
+      have h₂ := List.findIdx_get?_eq_get_of_exists
+        (p := fun x : Int => x.natAbs = lc.coeffs.minNatAbs)
+        (by simpa using h₁.1)
+      simp only [h₂]
+      simpa using List.findIdx_get (p := fun x : Int => x.natAbs = lc.coeffs.minNatAbs)
+  · dsimp [minCoeffIdx]
+    rw [SatisfiesM_Option_eq] at specIdx
+    obtain ⟨i, h⟩ := specIdx n rfl
+    match m?, i with
+    | some m, _ => simpa using h
 
 def calculateMinCoeff (e : Equality) : Equality :=
   match e.minCoeff? with
