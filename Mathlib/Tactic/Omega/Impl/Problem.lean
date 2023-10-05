@@ -43,6 +43,7 @@ theorem filter_cons :
 --       simp at w
 --       exact ih w m
 
+-- TODO return a `Fin xs.length`.
 def idx_of_mem [DecidableEq α] (xs : List α) (w : y ∈ xs) : Nat :=
   Nat.find (List.mem_iff_get?.mp w)
 
