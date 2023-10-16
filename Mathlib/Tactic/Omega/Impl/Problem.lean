@@ -2,11 +2,11 @@ import Mathlib.Tactic.Simps.Basic
 import Mathlib.Tactic.LibrarySearch
 import Mathlib.Tactic.Rewrites
 import Mathlib.Tactic.Have
-import Mathlib.Tactic.SplitIfs
+import Mathlib.Tactic.LeftRight
+import Mathlib.Tactic.Change
 import Mathlib.Logic.Basic -- yuck!
 import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Omega.IntList
-import Std.Data.Option.Lemmas
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Init.Data.Nat.Lemmas -- yuck!
 
@@ -82,14 +82,14 @@ theorem minNatAbs?_eq_none_iff {xs : List Int} : xs.minNatAbs? = none ↔ ∀ y 
   | nil => simp_all [minNatAbs?]
   | cons x xs ih =>
     simp only [minNatAbs?]
-    split_ifs with h
+    split
     · assumption
     · cases h : minNatAbs? xs
       · simp_all
       · simp
         intro h
         rw [Nat.min_def] at h
-        split_ifs at h <;> simp_all
+        split at h <;> simp_all
 
 theorem minNatAbs?_exists_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z) :
     ∃ y ∈ xs, y.natAbs = z := by
@@ -97,7 +97,7 @@ theorem minNatAbs?_exists_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z
   | nil => simp_all [minNatAbs?]
   | cons x xs ih =>
     simp only [minNatAbs?] at w
-    split_ifs at w with h
+    split at w
     · specialize ih w
       obtain ⟨x, m, rfl⟩ := ih
       exact ⟨x, mem_cons_of_mem _ m, rfl⟩
@@ -107,7 +107,7 @@ theorem minNatAbs?_exists_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z
       · simp only [Option.some.injEq] at w
         rename_i h'
         rw [Nat.min_def] at w
-        split_ifs at w
+        split at w
         · refine ⟨x, mem_cons_self x xs, w⟩
         · subst w
           obtain ⟨x, m, rfl⟩ := ih h'
@@ -119,7 +119,7 @@ theorem minNatAbs?_forall_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z
   | nil => simp_all [minNatAbs?]
   | cons x xs ih =>
     simp only [minNatAbs?] at w
-    split_ifs at w with h
+    split at w
     · specialize ih w
       intro y m
       simp only [mem_cons] at m
@@ -240,7 +240,7 @@ protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff
 
 protected theorem min_val_val {a b : UInt64} : (min a b).val.val = min a.val.val b.val.val := by
   simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
-  split_ifs <;> rfl
+  split <;> rfl
 
 @[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
   rw [UInt64.le_def, UInt64.lt_def]
@@ -351,8 +351,8 @@ def add (l₁ l₂ : LinearCombo) : LinearCombo where
 
 instance : Add LinearCombo := ⟨add⟩
 
-@[simp] lemma add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
-@[simp] lemma add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
+@[simp] theorem add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
+@[simp] theorem add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
 
 def sub (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const - l₂.const
@@ -360,8 +360,8 @@ def sub (l₁ l₂ : LinearCombo) : LinearCombo where
 
 instance : Sub LinearCombo := ⟨sub⟩
 
-@[simp] lemma sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
-@[simp] lemma sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
+@[simp] theorem sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
+@[simp] theorem sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
 
 /-- Negating a linear combination means negating the constant term and the coefficients. -/
 def neg (lc : LinearCombo) : LinearCombo where
@@ -370,8 +370,8 @@ def neg (lc : LinearCombo) : LinearCombo where
 
 instance : Neg LinearCombo := ⟨neg⟩
 
-@[simp] lemma neg_const {l : LinearCombo} : (-l).const = -l.const := rfl
-@[simp] lemma neg_coeffs {l : LinearCombo} : (-l).coeffs = -l.coeffs  := rfl
+@[simp] theorem neg_const {l : LinearCombo} : (-l).const = -l.const := rfl
+@[simp] theorem neg_coeffs {l : LinearCombo} : (-l).coeffs = -l.coeffs  := rfl
 
 theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ := by
   rcases l₁ with ⟨a₁, c₁⟩; rcases l₂ with ⟨a₂, c₂⟩
@@ -385,8 +385,8 @@ def smul (lc : LinearCombo) (i : Int) : LinearCombo where
 
 instance : HMul Int LinearCombo LinearCombo := ⟨fun i lc => lc.smul i⟩
 
-@[simp] lemma smul_const {lc : LinearCombo} {i : Int} : (i * lc).const = i * lc.const := rfl
-@[simp] lemma smul_coeffs {lc : LinearCombo} {i : Int} : (i * lc).coeffs = i * lc.coeffs := rfl
+@[simp] theorem smul_const {lc : LinearCombo} {i : Int} : (i * lc).const = i * lc.const := rfl
+@[simp] theorem smul_coeffs {lc : LinearCombo} {i : Int} : (i * lc).coeffs = i * lc.coeffs := rfl
 
 @[simp]
 theorem add_eval (l₁ l₂ : LinearCombo) (v : List Int) : (l₁ + l₂).eval v = l₁.eval v + l₂.eval v := by
@@ -1118,7 +1118,7 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
   · simp only [IntList.dot_nil_left, Int.add_zero, false_iff]
     intro w
     apply h
-    replace w := congr_arg (fun x : Int => x % coeffs.gcd) w
+    replace w := congrArg (fun x : Int => x % coeffs.gcd) w
     simp [Int.add_emod] at w
     exact Int.dvd_of_emod_eq_zero w
 
@@ -1185,7 +1185,7 @@ def substitute (b : LinearCombo) (i : Nat) (r : LinearCombo) : LinearCombo :=
 @[simp] theorem substitute_eval :
     (substitute b i r).eval v = b.eval v + b.coeff i * (r.eval v - v.get i) := by
   rw [substitute]
-  split_ifs
+  split
   · simp_all
   · simp only [add_eval, setCoeff_eval, Int.zero_sub, Int.neg_mul, smul_eval, Int.add_assoc,
       Int.mul_sub]
@@ -1397,7 +1397,7 @@ theorem Int.dvd_emod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ x % m - x := b
 
 theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m - x := by
   dsimp [Int.bmod]
-  split_ifs
+  split
   · exact Int.dvd_emod_sub_self
   · rw [Int.sub_sub, Int.add_comm, ← Int.sub_sub]
     exact Int.dvd_sub Int.dvd_emod_sub_self (Int.dvd_refl _)

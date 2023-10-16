@@ -1,5 +1,4 @@
 import Std
-import Mathlib.Tactic.SplitIfs
 import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
@@ -50,17 +49,17 @@ attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zer
 
 @[simp] theorem ite_some_none_eq_none [Decidable P] :
     (if P then some x else none) = none ↔ ¬ P := by
-  split_ifs <;> simp_all
+  split <;> simp_all
 
 @[simp] theorem ite_some_none_eq_some [Decidable P] :
     (if P then some x else none) = some y ↔ P ∧ x = y := by
-  split_ifs <;> simp_all
+  split <;> simp_all
 
 namespace List
 
 theorem dropWhile_cons :
     (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
-  split_ifs <;> simp_all [dropWhile]
+  split <;> simp_all [dropWhile]
 
 @[simp] theorem findIdx?_nil : ([] : List α).findIdx? p i = none := rfl
 @[simp] theorem findIdx?_cons :
@@ -71,7 +70,7 @@ theorem dropWhile_cons :
   | nil => simp
   | cons x xs ih =>
     simp only [findIdx?_cons]
-    split_ifs <;> simp_all
+    split <;> simp_all
 
 theorem findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
     xs.findIdx? p = some i ↔ (xs.take (i + 1)).map p = List.replicate i false ++ [true] := by
@@ -79,7 +78,7 @@ theorem findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
   | nil => simp
   | cons x xs ih =>
     simp only [findIdx?_cons, Nat.zero_add, findIdx?_succ, take_succ_cons, map_cons]
-    split_ifs with h
+    split
     · cases i <;> simp_all
     · cases i <;> simp_all
 
@@ -89,7 +88,7 @@ theorem findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
   | nil => simp_all
   | cons x xs ih =>
     simp_all only [findIdx?_cons, Nat.zero_add, findIdx?_succ]
-    split_ifs at w with h
+    split at w
     · cases i <;> simp_all
     · cases i <;> simp_all
 
@@ -102,12 +101,12 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
     simp_all only [Bool.not_eq_true, findIdx?_cons, Nat.zero_add, findIdx?_succ]
     cases i with
     | zero =>
-      split_ifs at w
+      split at w <;>
       simp_all
     | succ i =>
       simp only [get?_cons_succ]
       apply ih
-      split_ifs at w
+      split at w <;>
       simp_all
 
 @[simp] theorem findIdx?_append :
@@ -117,7 +116,7 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
   | nil => simp
   | cons x xs ih =>
     simp only [cons_append, findIdx?_cons, Nat.zero_add, findIdx?_succ]
-    split_ifs
+    split
     · simp
     · simp_all only [Bool.not_eq_true, Option.map_orElse, Option.map_map, length_cons]
       rfl
@@ -128,7 +127,7 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
   | zero => simp
   | succ n ih =>
     simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
-    split_ifs <;> simp_all
+    split <;> simp_all
 
 end List
 

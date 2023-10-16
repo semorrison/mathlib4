@@ -1,5 +1,6 @@
 import Mathlib.Tactic.Omega.ForStd
 import Mathlib.Tactic.Rewrites
+import Mathlib.Tactic.SplitIfs
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -361,7 +362,7 @@ def trim (xs : IntList) : IntList :=
   | nil => simp
   | cons x xs' ih =>
     simp only [List.map_cons, List.dropWhile_cons, Int.neg_eq_zero, beq_iff_eq]
-    split_ifs <;>
+    split <;>
     simp_all [List.reverse_map]
 
 end IntList
