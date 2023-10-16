@@ -4,11 +4,10 @@ import Mathlib.Tactic.Rewrites
 import Mathlib.Tactic.Have
 import Mathlib.Tactic.LeftRight
 import Mathlib.Tactic.Change
-import Mathlib.Logic.Basic -- yuck!
+import Mathlib.Logic.Basic -- yuck! hopefully https://github.com/leanprover/std4/pull/298 suffices
 import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
-import Mathlib.Init.Data.Nat.Lemmas -- yuck!
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -43,13 +42,19 @@ theorem filter_cons :
 --       simp at w
 --       exact ih w m
 
--- TODO return a `Fin xs.length`.
-def idx_of_mem [DecidableEq α] (xs : List α) (w : y ∈ xs) : Nat :=
-  Nat.find (List.mem_iff_get?.mp w)
+-- TODO return a `Fin xs.length`?
+def idx_of_mem [DecidableEq α] (xs : List α) (_ : y ∈ xs) : Nat :=
+  xs.findIdx (· = y)
 
 theorem idx_of_mem_spec [DecidableEq α] (xs : List α) (w : y ∈ xs) :
-    xs.get? (xs.idx_of_mem w) = some y :=
-  Nat.find_spec (List.mem_iff_get?.mp w)
+    xs.get? (xs.idx_of_mem w) = some y := by
+  -- This is really lame.
+  dsimp [idx_of_mem]
+  rw [List.findIdx_get?_eq_get_of_exists]
+  have := List.findIdx_get (p := (· = y)) (xs := xs) (w := ?_)
+  simp_all
+  exact xs.findIdx_lt_length_of_exists ⟨y, w, by simp⟩
+  exact ⟨y, w, by simp⟩
 
 def minNatAbs? (xs : List Int) : Option Nat :=
   match xs with
@@ -238,17 +243,17 @@ protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b :=
 protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
 protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
 
-protected theorem min_val_val {a b : UInt64} : (min a b).val.val = min a.val.val b.val.val := by
-  simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
-  split <;> rfl
-
 @[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
   rw [UInt64.le_def, UInt64.lt_def]
   exact Fin.not_le
 
 protected theorem min_comm {a b : UInt64} : min a b = min b a := by
   ext
-  simp [UInt64.min_val_val, Nat.min_comm]
+  have min_val_val : ∀ a b : UInt64, (min a b).val.val = min a.val.val b.val.val := by
+    intros
+    simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
+    split <;> rfl
+  simp [min_val_val, Nat.min_comm]
 
 protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
   simp [UInt64.min_def, h]
@@ -990,7 +995,7 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
   split_ifs with w
   · exact Problem.filterEqualities_sat _ _ _ (Problem.filterInequalities_sat _ _ _ s)
   · exfalso
-    simp only [not_and_or] at w
+    simp only [Decidable.not_and] at w
     simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
       and_imp, not_forall, exists_prop, exists_and_left] at w
     rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
