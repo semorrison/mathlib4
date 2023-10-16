@@ -1407,10 +1407,39 @@ theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m -
   · rw [Int.sub_sub, Int.add_comm, ← Int.sub_sub]
     exact Int.dvd_sub Int.dvd_emod_sub_self (Int.dvd_refl _)
 
-theorem Int.le_bmod {x : Int} {m : Nat} : - m/2 ≤ Int.bmod x m := sorry
-theorem Int.bmod_lt {x : Int} {m : Nat} : Int.bmod x m < (m + 1) / 2 := sorry
-theorem Int.bmod_le {x : Int} {m : Nat} : Int.bmod x m ≤ (m - 1) / 2 := sorry
+theorem Int.le_bmod {x : Int} {m : Nat} (h : 0 < m) : - m/2 ≤ Int.bmod x m := by
+  dsimp [Int.bmod]
+  split
+  · apply Int.le_trans
+    · show _ ≤ 0
+      sorry
+    · exact Int.emod_nonneg _ (Int.natAbs_pos.mp h)
+  · rename_i h
+    rw [Int.not_lt] at h
+    sorry
 
+theorem Int.bmod_lt {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m < (m + 1) / 2 := by
+  dsimp [Int.bmod]
+  split
+  · assumption
+  · apply Int.lt_of_lt_of_le
+    · show _ < 0
+      have : x % m < m := Int.emod_lt_of_pos x (Int.ofNat_pos.mpr h)
+      exact Int.sub_neg_of_lt this
+    · exact Int.le.intro_sub _ rfl
+
+theorem Int.bmod_le {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m ≤ (m - 1) / 2 := by
+  refine Int.lt_add_one_iff.mp ?_
+  calc
+    bmod x m < (m + 1) / 2  := Int.bmod_lt h
+    _ = ((m + 1 - 2) + 2)/2 := by simp
+    _ = (m - 1) / 2 + 1     := by
+      rw [Int.add_ediv_of_dvd_right]
+      · simp only [Int.ediv_self]
+        congr 2
+        rw [Int.add_sub_assoc, ← Int.sub_neg]
+        congr
+      · trivial
 
 @[simp] theorem Int.emod_self_add_one {x : Int} (h : 0 ≤ x) : x % (x + 1) = x :=
   Int.emod_eq_of_lt h (Int.lt_succ x)
@@ -1423,10 +1452,20 @@ example (a b : Nat) (w : a ≤ 2 * b) : a / 2 ≤ b :=
 
 theorem Int.ofNat_two : ((2 : Nat) : Int) = 2 := rfl
 
-theorem Int.bmod_abs_plus_one (x : Int) : Int.bmod x (x.natAbs + 1) = - x.sign := by
+theorem foo (x : Nat) : x % (x + 2) = x := by
+  rw [Nat.mod_eq_of_lt]
+  refine Nat.lt_succ_of_lt ?h
+  exact Nat.lt.base x
+
+theorem foo' (x : Int) (h : 0 ≤ x) : x % (x + 2) = x := by
+  -- `lift` would be nice!
+  sorry
+
+#eval Int.bmod (-1 : Int) 2
+theorem Int.bmod_natAbs_plus_one (x : Int) : Int.bmod x (x.natAbs + 1) = - x.sign := by
   cases x with
   | ofNat x =>
-    simp_all only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
+    simp only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
       emod_self_add_one (Int.ofNat_nonneg x)]
     match x with
     | 0 => rw [if_pos] <;> simp
@@ -1435,14 +1474,27 @@ theorem Int.bmod_abs_plus_one (x : Int) : Int.bmod x (x.natAbs + 1) = - x.sign :
       · simp [← Int.sub_sub]
       · refine Int.not_lt.mpr ?_
         simp only [← Int.natCast_add, ← Int.ofNat_one, ← Int.ofNat_two, ← Int.ofNat_ediv]
-        refine Int.ofNat_le.mpr ?hnc.a --
-        apply Nat.div_le_of_le_mul
-        sorry -- okay, doable from here.
+        match x with
+        | 0 => apply Int.le_refl
+        | (x+1) =>
+          refine Int.ofNat_le.mpr ?_
+          apply Nat.div_le_of_le_mul
+          simp only [Nat.two_mul, Nat.add_assoc]
+          apply Nat.add_le_add_left
+          apply Nat.add_le_add_left
+          apply Nat.add_le_add_left
+          exact Nat.le_add_left (1 + 1) x
   | negSucc x =>
-    simp [Int.bmod]
-    rw [if_neg]
-    · sorry
-    · sorry
+    simp only [bmod, Int.natAbs_negSucc, Int.natCast_add, Int.ofNat_one, sign_negSucc, Int.neg_neg]
+    rw [Nat.succ_eq_add_one]
+    rw [Int.negSucc_emod]
+    erw [foo']
+    · simp only [Int.natCast_add, Int.ofNat_one, Int.add_sub_cancel]
+      rw [Int.add_comm, Int.add_sub_cancel]
+      rw [if_pos]
+      · sorry
+    · exact Int.ofNat_nonneg x
+    · exact Int.succ_ofNat_pos (x + 1)
 
 namespace LinearCombo
 
