@@ -5,41 +5,8 @@ import Mathlib.Tactic.LibrarySearch
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
-namespace Option
-
-@[simp] theorem map_id'' {x : Option α} : (x.map fun a => a) = x := by cases x <;> rfl
-
-theorem map_orElse {x y : Option α} : (x <|> y).map f = (x.map f <|> y.map f) := by
-  cases x <;> simp
-
-end Option
-
 @[simp]
 theorem List.map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
-
-theorem List.zip_map_left' (l₁ : List α) (l₂ : List β) (f : α → γ) :
-    List.zip (l₁.map f) l₂ = (List.zip l₁ l₂).map fun p => (f p.1, p.2) := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zip_map_right' (l₁ : List α) (l₂ : List β) (f : β → γ) :
-    List.zip l₁ (l₂.map f) = (List.zip l₁ l₂).map fun p => (p.1, f p.2) := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zipWith_map_left' (l₁ : List α) (l₂ : List β) (f : α → α') (g : α' → β → γ) :
-    List.zipWith g (l₁.map f) l₂ = List.zipWith (fun a b => g (f a) b) l₁ l₂ := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zipWith_map_right' (l₁ : List α) (l₂ : List β) (f : β → β') (g : α → β' → γ) :
-    List.zipWith g l₁ (l₂.map f) = List.zipWith (fun a b => g a (f b)) l₁ l₂ := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zipWith_foldr_eq_zip_foldr {f : α → β → γ} (i : δ):
-    (List.zipWith f l₁ l₂).foldr g i = (List.zip l₁ l₂).foldr (fun p r => g (f p.1 p.2) r) i := by
-  induction l₁ generalizing l₂ <;> cases l₂ <;> simp_all
-
-theorem List.zipWith_foldl_eq_zip_foldl {f : α → β → γ} (i : δ):
-    (List.zipWith f l₁ l₂).foldl g i = (List.zip l₁ l₂).foldl (fun r p => g r (f p.1 p.2)) i := by
-  induction l₁ generalizing i l₂ <;> cases l₂ <;> simp_all
 
 theorem List.mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
   (mem_filter.mp h).1
@@ -66,18 +33,6 @@ def List.zipWithAll (f : Option α → Option β → γ) : List α → List β �
 
 @[simp] theorem List.zipWithAll_cons_cons :
     List.zipWithAll f (a :: as) (b :: bs) = f (some a) (some b) :: zipWithAll f as bs := rfl
-
-theorem Nat.gcd_eq_iff (a b : Nat) :
-    gcd a b = g ↔ g ∣ a ∧ g ∣ b ∧ (∀ c, c ∣ a → c ∣ b → c ∣ g) := by
-  constructor
-  · rintro rfl
-    exact ⟨gcd_dvd_left _ _, gcd_dvd_right _ _, fun _ => Nat.dvd_gcd⟩
-  · rintro ⟨ha, hb, hc⟩
-    apply Nat.dvd_antisymm
-    · apply hc
-      · exact gcd_dvd_left a b
-      · exact gcd_dvd_right a b
-    · exact Nat.dvd_gcd ha hb
 
 theorem Int.div_nonneg_iff_of_pos {a b : Int} (h : 0 < b) : a / b ≥ 0 ↔ a ≥ 0 := by
   rw [Int.div_def]
@@ -174,53 +129,6 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
   | succ n ih =>
     simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
     split_ifs <;> simp_all
-
-@[simp] theorem findIdx_nil {α : Type _} (p : α → Bool) : [].findIdx p = 0 := rfl
-
-theorem findIdx_cons (p : α → Bool) (b : α) (l : List α) :
-    (b :: l).findIdx p = bif p b then 0 else (l.findIdx p) + 1 := by
-  cases H : p b with
-  | true => simp [H, findIdx, findIdx.go]
-  | false => simp [H, findIdx, findIdx.go, findIdx_go_succ]
-where
-  findIdx_go_succ (p : α → Bool) (l : List α) (n : Nat) :
-      List.findIdx.go p l (n + 1) = (List.findIdx.go p l n) + 1 := by
-    cases l with
-    | nil => unfold List.findIdx.go; exact Nat.succ_eq_add_one n
-    | cons head tail =>
-      unfold List.findIdx.go
-      cases p head <;> simp only [cond_false, cond_true]
-      exact findIdx_go_succ p tail (n + 1)
-
-theorem findIdx_of_get?_eq_some {xs : List α} (w : xs.get? (xs.findIdx p) = some y) : p y := by
-  induction xs with
-  | nil => simp_all
-  | cons x xs ih => by_cases h : p x <;> simp_all [findIdx_cons]
-
-theorem findIdx_get {xs : List α} {w : xs.findIdx p < xs.length} :
-    p (xs.get ⟨xs.findIdx p, w⟩) :=
-  xs.findIdx_of_get?_eq_some (get?_eq_get w)
-
-theorem findIdx_lt_length_of_exists {xs : List α} (h : ∃ x ∈ xs, p x) :
-    xs.findIdx p < xs.length := by
-  induction xs with
-  | nil => simp_all
-  | cons x xs ih =>
-    by_cases p x
-    · simp_all only [forall_exists_index, and_imp, mem_cons, exists_eq_or_imp, true_or,
-        findIdx_cons, cond_true, length_cons]
-      apply Nat.succ_pos
-    · simp_all [findIdx_cons]
-      refine Nat.succ_lt_succ ?_
-      obtain ⟨x', m', h'⟩ := h
-      exact ih x' m' h'
-
--- TODO delete List.get!_eq_get
-
-theorem findIdx_get?_eq_get_of_exists {xs : List α} (h : ∃ x ∈ xs, p x) :
-    xs.get? (xs.findIdx p) = some (xs.get ⟨xs.findIdx p, xs.findIdx_lt_length_of_exists h⟩) :=
-  get?_eq_get (findIdx_lt_length_of_exists h)
-
 
 end List
 
