@@ -694,7 +694,7 @@ instance : ToString (Solution p) where
   | .unsat _ => "unsat"
 
 /--
-Two problems are equivalent if a solution to one gives an solution to the other.
+Two problems are equivalent if a solution to one gives a solution to the other.
 We don't care that this is bijective,
 just that the solution sets are either both empty or both non-empty.
 -/
@@ -1612,20 +1612,60 @@ end LinearCombo
 
 namespace Problem
 
+@[simps]
 def addEquality (p : Problem) (eq : Equality) : Problem where
   possible := p.possible
   equalities := eq :: p.equalities
   inequalities := p.inequalities
 
--- TODO The maps connecting `p` and `p.addEquality eq`.
+def addEquality_equiv (p : Problem) {eq : Equality} (f : p → p)
+    (w : ∀ x : p, eq.linearCombo.eval (f x).1 = 0) :
+    (p.addEquality eq).equiv p where
+  mp := fun ⟨v, h⟩ => ⟨v, { h with equalities := fun m => h.equalities (by simpa using Or.inr m) }⟩
+  mpr := fun x => ⟨(f x).1,
+    { possible := (f x).2.possible
+      equalities := fun m => by
+        simp at m
+        rcases m with rfl | m
+        · exact w x
+        · exact (f x).2.equalities m
+      inequalities := fun m => (f x).2.inequalities m }⟩
 
-def shrinkEqualityCoeffs (p : Problem) (eq : Equality) (i : Nat) : Problem :=
+def addAndEliminateEquality (p : Problem) (eq : Equality) (i : Nat) : Problem :=
   (p.addEquality eq).eliminateEquality eq i
 
--- This will require additional hypotheses?
-def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (i : Nat) (w : (sorry : Prop)) :
-    (p.shrinkEqualityCoeffs eq i).equiv p :=
+def addAndEliminateEquality_equiv (p : Problem) (eq : Equality) (i : Nat)
+    (f : p → p)
+    (w : ∀ x : p, eq.linearCombo.eval (f x).1 = 0)
+    (h : (eq.linearCombo.coeff i).natAbs = 1) :
+    (p.addAndEliminateEquality eq i).equiv p :=
+  equiv.trans (eliminateEquality_equiv _ (by simp) h) (addEquality_equiv _ f w)
+
+-- We will need to prove properties of this.
+-- Should we store the value?
+def freshVar (p : Problem) : Nat :=
+  List.foldr (Nat.max)
+    (List.foldr (Nat.max) 0 (p.equalities.map (fun eq => eq.linearCombo.coeffs.length)))
+    (p.inequalities.map (fun ineq => ineq.coeffs.length))
+
+def shrinkEqualitySolution (p : Problem) (eq : Equality) (i : Nat) : p → p :=
   sorry
+
+theorem shrinkEqualitySolution_spec (p : Problem) (eq : Equality) (i : Nat) :
+    ∀ x : p, (eq.linearCombo.shrinkingConstraint i n).eval (p.shrinkEqualitySolution eq i x).1 = 0 := by
+  sorry
+
+def shrinkEqualityCoeffs (p : Problem) (eq : Equality) (i : Nat) : Problem :=
+  let n := p.freshVar
+  p.addAndEliminateEquality { linearCombo := eq.linearCombo.shrinkingConstraint i n } i
+
+-- This will require additional hypotheses?
+def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (i : Nat) :
+    (p.shrinkEqualityCoeffs eq i).equiv p :=
+  addAndEliminateEquality_equiv _ _ _
+    (p.shrinkEqualitySolution eq i)
+    (p.shrinkEqualitySolution_spec eq i)
+    sorry
 
 /-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
 def minEqualityCoeff (p : Problem) : Nat :=
