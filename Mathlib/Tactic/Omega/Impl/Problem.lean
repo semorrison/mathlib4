@@ -1396,6 +1396,24 @@ example : Int.bmod 4 7 = -3 := rfl
 example : Int.bmod 3 8 = 3 := rfl
 example : Int.bmod 4 8 = -4 := rfl
 
+theorem Int.ofNat_two : ((2 : Nat) : Int) = 2 := rfl
+
+@[simp] theorem Int.bmod_zero : Int.bmod 0 m = 0 := by
+  dsimp [Int.bmod]
+  simp only [Int.zero_emod, Int.zero_sub, ite_eq_left_iff, Int.neg_eq_zero]
+  -- `omega` would be helpful here.
+  intro h
+  rw [@Int.not_lt] at h
+  match m with
+  | 0 => rfl
+  | (m+1) =>
+    exfalso
+    rw [Int.natCast_add, Int.ofNat_one, Int.add_assoc, Int.add_ediv_of_dvd_right] at h
+    change _ + 2 / 2 ≤ 0 at h
+    rw [Int.ediv_self, ← Int.ofNat_two, ← Int.ofNat_ediv, Int.add_one_le_iff, ← @Int.not_le] at h
+    exact h (Int.ofNat_nonneg _)
+    all_goals decide
+
 theorem Int.dvd_emod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ x % m - x := by
   apply Int.dvd_of_emod_eq_zero
   simp [Int.sub_emod]
@@ -1407,16 +1425,18 @@ theorem Int.dvd_bmod_sub_self {x : Int} {m : Nat} : (m : Int) ∣ Int.bmod x m -
   · rw [Int.sub_sub, Int.add_comm, ← Int.sub_sub]
     exact Int.dvd_sub Int.dvd_emod_sub_self (Int.dvd_refl _)
 
-theorem Int.le_bmod {x : Int} {m : Nat} (h : 0 < m) : - m/2 ≤ Int.bmod x m := by
-  dsimp [Int.bmod]
-  split
-  · apply Int.le_trans
-    · show _ ≤ 0
-      sorry
-    · exact Int.emod_nonneg _ (Int.natAbs_pos.mp h)
-  · rename_i h
-    rw [Int.not_lt] at h
-    sorry
+-- theorem Int.le_bmod {x : Int} {m : Nat} (h : 0 < m) : - m/2 ≤ Int.bmod x m := by
+--   dsimp [Int.bmod]
+--   split
+--   · apply Int.le_trans
+--     · show _ ≤ 0
+--       sorry
+--     · exact Int.emod_nonneg _ (Int.natAbs_pos.mp h)
+--   · rename_i h
+--     rw [Int.not_lt] at h
+--     have : ((m : Int) + 1)/ 2 - m ≤ x % m - m := by exact Int.sub_le_sub_right h ↑m
+--     refine Int.le_trans ?_ this
+--     sorry
 
 theorem Int.bmod_lt {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m < (m + 1) / 2 := by
   dsimp [Int.bmod]
@@ -1447,23 +1467,16 @@ theorem Int.bmod_le {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m ≤ (m - 1) /
 @[simp] theorem Int.sign_ofNat_add_one {x : Nat} : Int.sign (x + 1) = 1 := rfl
 @[simp] theorem Int.sign_negSucc {x : Nat} : Int.sign (Int.negSucc x) = -1 := rfl
 
-example (a b : Nat) (w : a ≤ 2 * b) : a / 2 ≤ b :=
-  Nat.div_le_of_le_mul w
 
-theorem Int.ofNat_two : ((2 : Nat) : Int) = 2 := rfl
-
-theorem foo (x : Nat) : x % (x + 2) = x := by
-  rw [Nat.mod_eq_of_lt]
-  refine Nat.lt_succ_of_lt ?h
-  exact Nat.lt.base x
-
-theorem foo' (x : Int) (h : 0 ≤ x) : x % (x + 2) = x := by
-  -- `lift` would be nice!
-  sorry
 
 -- In fact the only exceptional value we need to rule out if `x = -1`,
 -- but in our application we know `w : 1 < x.natAbs`, so just use that.
 theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) : Int.bmod x (x.natAbs + 1) = - x.sign := by
+  have t₁ : ∀ (x : Nat), x % (x + 2) = x :=
+    fun x => Nat.mod_eq_of_lt (Nat.lt_succ_of_lt (Nat.lt.base x))
+  have t₂ : ∀ (x : Int), 0 ≤ x → x % (x + 2) = x := fun x h => by
+    match x, h with
+    | Int.ofNat x, _ => erw [← Int.ofNat_two, ←Int.ofNat_add, ← Int.ofNat_emod, t₁]; rfl
   cases x with
   | ofNat x =>
     simp only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
@@ -1488,9 +1501,8 @@ theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) : Int.bmod x (x.na
           exact Nat.le_add_left (1 + 1) x
   | negSucc x =>
     simp only [bmod, Int.natAbs_negSucc, Int.natCast_add, Int.ofNat_one, sign_negSucc, Int.neg_neg]
-    rw [Nat.succ_eq_add_one]
-    rw [Int.negSucc_emod]
-    erw [foo']
+    rw [Nat.succ_eq_add_one, Int.negSucc_emod]
+    erw [t₂]
     · simp only [Int.natCast_add, Int.ofNat_one, Int.add_sub_cancel]
       rw [Int.add_comm, Int.add_sub_cancel]
       rw [if_pos]
@@ -1510,22 +1522,90 @@ theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) : Int.bmod x (x.na
           all_goals decide
     · exact Int.ofNat_nonneg x
     · exact Int.succ_ofNat_pos (x + 1)
-
 namespace LinearCombo
 
-def shrinkingConstraint (eq : LinearCombo) (i : Nat) (n : Nat) : LinearCombo :=
-  sorry
+@[simps]
+def bmod (lc : LinearCombo) (m : Nat) : LinearCombo where
+  const := Int.bmod lc.const m
+  coeffs := lc.coeffs.map (fun a => Int.bmod a m)
 
-def shrinkingConstraint_solution {eq : LinearCombo} (i : Nat) (n : Nat) (v : IntList) : IntList :=
-  v.set n sorry
+@[simp] theorem coeff_bmod (lc : LinearCombo) (m : Nat) (k : Nat) :
+    (lc.bmod m).coeff k = Int.bmod (lc.coeff k) m := by
+  simp [bmod, coeff, IntList.get_map]
 
-theorem shrinkingConstraint_eval {eq : LinearCombo} (w : eq.eval v = 0) :
-    (eq.shrinkingConstraint i n).eval (eq.shrinkingConstraint_solution i n v) = 0 :=
-  sorry
+def set (lc : LinearCombo) (n : Nat) (x : Int) : LinearCombo where
+  const := lc.const
+  coeffs := lc.coeffs.set n x
 
-theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} :
-    ((eq.shrinkingConstraint i n).coeff i).natAbs = 1 :=
-  sorry
+@[simp] theorem coeff_set (lc : LinearCombo) (n : Nat) (x : Int) : (lc.set n x).coeff n = x := by
+  simp_all [set, coeff]
+
+theorem coeff_set_of_ne (lc : LinearCombo) (k n : Nat) (w : k ≠ n) (x : Int) :
+    (lc.set n x).coeff k = lc.coeff k := by
+  simp_all [set, coeff, w.symm]
+
+@[simp] theorem set_eval (lc : LinearCombo) (n : Nat) (x : Int) (v : IntList) :
+    (lc.set n x).eval v = lc.eval v + (x - lc.coeff n) * v.get n := by
+  simp [set, eval, Int.add_assoc, Int.sub_mul]
+  rfl
+
+theorem dvd_eval_sub_bmod_eval (lc : LinearCombo) (m : Nat) (v : IntList) :
+    (m : Int) ∣ lc.eval v - (lc.bmod m).eval v := by
+  dsimp [eval]
+  rw [← Int.sub_sub, Int.sub_eq_add_neg, Int.sub_eq_add_neg, Int.add_right_comm lc.const,
+    Int.add_assoc, ←Int.sub_eq_add_neg, ←Int.sub_eq_add_neg, ←IntList.dot_sub_left]
+  apply Int.dvd_add
+  · rw [← Int.neg_sub, Int.dvd_neg]
+    exact Int.dvd_bmod_sub_self
+  · apply IntList.dvd_dot_of_dvd_left
+    intro x m
+    obtain ⟨i, h⟩ := List.get?_of_mem m
+    replace h := congrArg (fun o => o.getD 0) h
+    change IntList.get _ _ = _ at h
+    simp only [IntList.get_map, IntList.sub_get, Int.bmod_zero, Option.getD_some] at h
+    rw [← h, ← Int.neg_sub, Int.dvd_neg]
+    exact Int.dvd_bmod_sub_self
+
+/--
+Given an equation `eq : c + ∑ aᵢ * xᵢ = 0` and an index `k`, produce the equation
+`bmod c m + ∑ (bmod aᵢ m) * xᵢ + m xₙ`
+where `m = |aₖ| + 1`.
+
+(Here `n` is large enough to be a fresh variable in all constraints in the problem.)
+
+Since `bmod x m` differs from `x` by a multiple of `m`, this equation must admit a solution.
+Note that the coefficient of `xᵢ` in the new equation is `- sign aₖ`, so we can solve for `xᵢ`.
+-/
+def shrinkingConstraint (eq : LinearCombo) (k : Nat) (n : Nat) : LinearCombo :=
+  let m := (eq.coeff k).natAbs + 1
+  (eq.bmod m).set n m
+
+theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} (h : 1 < (eq.coeff k).natAbs) (w : k < n) :
+    ((eq.shrinkingConstraint k n).coeff k).natAbs = 1 := by
+  rw [shrinkingConstraint, coeff_set_of_ne, coeff_bmod, Int.bmod_natAbs_plus_one _ h]
+  · rw [Int.natAbs_neg, Int.natAbs_sign, if_neg]
+    intro
+    simp_all
+  · exact Nat.ne_of_lt w
+
+def shrinkingConstraintSolution {eq : LinearCombo} (k : Nat) (n : Nat) (v : IntList) : IntList :=
+  let m := (eq.coeff k).natAbs + 1
+  v.set n (((eq - eq.shrinkingConstraint k n).eval v) / m)
+
+attribute [simp] Int.dvd_neg
+
+theorem shrinkingConstraint_eval {eq : LinearCombo} (w : eq.eval v = 0)
+    (h₁ : eq.coeffs.length ≤ n) (h₂ : v.length ≤ n) :
+    (eq.shrinkingConstraint k n).eval (eq.shrinkingConstraintSolution k n v) = 0 := by
+  dsimp [shrinkingConstraint, shrinkingConstraintSolution]
+  simp only [Int.natCast_add, Int.ofNat_one, sub_eval, set_eval, coeff_bmod, eval_set, coeff_set]
+  replace h₁ : eq.coeff n = 0 := IntList.get_of_length_le h₁
+  replace h₂ : v.get n = 0 := IntList.get_of_length_le h₂
+  rw [Int.mul_sub, Int.mul_ediv_cancel']
+  · simp [h₁, h₂, w, ← Int.sub_eq_add_neg]
+  · -- Side goal about divisibility.
+    simp only [h₁, h₂, Int.bmod_zero, Int.sub_zero, Int.mul_zero, Int.add_zero]
+    apply dvd_eval_sub_bmod_eval
 
 end LinearCombo
 
@@ -1564,52 +1644,91 @@ theorem shrinkTermination (p : Problem) (eq) (i) :
     (p.shrinkEqualityCoeffs eq i).equalityCoeffPair < p.equalityCoeffPair :=
   sorry
 
-def eliminateEqualities_of_minEqualityCoeff_eq_one (p : Problem) (h : p.minEqualityCoeff = 1) : Problem := sorry
+def eliminateEasyEquality (p : Problem) (h : p.minEqualityCoeff = 1) : Problem := sorry
+
+def eliminateEasyEquality_equiv (p : Problem) (h) :
+    (p.eliminateEasyEquality h).equiv p :=
+  sorry
+
+theorem eliminateEasyEquality_equalities_length (p : Problem) (h) :
+    (p.eliminateEasyEquality h).equalities.length + 1 = p.equalities.length :=
+  sorry
+
 
 theorem _root_.Prod.Lex.right'' [LT α] {a₁ a₂ : α} {b₁ b₂ : β} (ha : a₁ = a₂) (hb : s b₁ b₂) :
     Prod.Lex (· < ·) s (a₁, b₁) (a₂, b₂) :=
   ha ▸ Prod.Lex.right a₁ hb
 
 def eliminateEqualities (p : Problem) : Problem :=
-  if h₁ : p.equalities.length = 0 then
+  if lengthEqZero : p.equalities.length = 0 then
+    -- We are done!
     p
-  else if h₂ : p.minEqualityCoeff = 0 then
+  else if minEqZero : p.minEqualityCoeff = 0 then
+    -- This probably shouldn't happen if equalities are being normalized as we go?
     p
-  else if h₃ : p.minEqualityCoeff = 1 then
-    sorry
+  else if minEqOne : p.minEqualityCoeff = 1 then
+    let p' := p.eliminateEasyEquality minEqOne
+    have lengthLt : p'.equalities.length < p.equalities.length := by
+      rw [← p.eliminateEasyEquality_equalities_length minEqOne]
+      apply Nat.lt.base
+    p'.eliminateEqualities
   else
     let eq := sorry
     let i := sorry
     let p' := p.shrinkEqualityCoeffs eq i
-    have h₄ : p'.equalities.length = p.equalities.length := sorry
-    if h₅ : p'.minEqualityCoeff < p.minEqualityCoeff then
+    have lengthEq : p'.equalities.length = p.equalities.length := sorry
+    if minLt : p'.minEqualityCoeff < p.minEqualityCoeff then
       p'.eliminateEqualities
     else
-      have h₆ : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
-      have h₇ : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
+      have minEq : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
+      have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
       p'.eliminateEqualities
 termination_by eliminateEqualities p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
+  -- TODO: solve_by_elim needs to move to Std asap
   simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
 
 theorem eliminateEqualities_equalities_length {p : Problem} :
-    p.eliminateEqualities.equalities.length = 0 :=
-  sorry
+    p.eliminateEqualities.equalities.length = 0 := by
+  rw [eliminateEqualities]
+  split_ifs with lengthEqZero minEqZero minEqOne
+  · assumption
+  · sorry
+  · let p' := p.eliminateEasyEquality minEqOne
+    have lengthLt : p'.equalities.length < p.equalities.length := by
+      rw [← p.eliminateEasyEquality_equalities_length minEqOne]
+      apply Nat.lt.base
+    apply eliminateEqualities_equalities_length
+  · dsimp
+    let p' := p.shrinkEqualityCoeffs sorry sorry
+    have lengthEq : p'.equalities.length = p.equalities.length := sorry
+    split_ifs with minLt
+    · apply eliminateEqualities_equalities_length
+    · have minEq : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
+      have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
+      apply eliminateEqualities_equalities_length
+termination_by eliminateEqualities_equalities_length p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
+decreasing_by
+  simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
 
 def eliminateEqualities_equiv (p : Problem) : p.eliminateEqualities.equiv p := by
   rw [eliminateEqualities]
-  split_ifs with h₁ h₂ h₃
+  split_ifs with lengthEqZero minEqZero minEqOne
   · exact equiv.refl p
   · exact equiv.refl p
-  · sorry
+  · let p' := p.eliminateEasyEquality minEqOne
+    have lengthLt : p'.equalities.length < p.equalities.length := by
+      rw [← p.eliminateEasyEquality_equalities_length minEqOne]
+      apply Nat.lt.base
+    exact equiv.trans p'.eliminateEqualities_equiv (p.eliminateEasyEquality_equiv minEqOne)
   · dsimp
     let p' := p.shrinkEqualityCoeffs sorry sorry
-    have h₄ : p'.equalities.length = p.equalities.length := sorry
-    split_ifs with h₅
-    · exact equiv.trans (p.shrinkEqualityCoeffs sorry sorry).eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
-    · have h₆ : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
-      have h₇ : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
-      exact equiv.trans (p.shrinkEqualityCoeffs sorry sorry).eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
+    have lengthEq : p'.equalities.length = p.equalities.length := sorry
+    split_ifs with minLt
+    · exact equiv.trans p'.eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
+    · have minEq : p'.minEqualityCoeff = p.minEqualityCoeff := sorry
+      have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff := sorry
+      exact equiv.trans p'.eliminateEqualities_equiv (p.shrinkEqualityCoeffs_equiv sorry sorry sorry)
 termination_by eliminateEqualities_equiv p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
   simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']

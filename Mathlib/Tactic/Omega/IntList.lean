@@ -16,6 +16,14 @@ def get (xs : IntList) (i : Nat) : Int := (xs.get? i).getD 0
 @[simp] theorem get_cons_zero : get (x :: xs) 0 = x := rfl
 @[simp] theorem get_cons_succ : get (x :: xs) (i+1) = get xs i := rfl
 
+theorem get_map {xs : IntList} (h : f 0 = 0) : get (xs.map f) i = f (xs.get i) := by
+  simp only [get, List.get?_map]
+  cases xs.get? i <;> simp_all
+
+theorem get_of_length_le {xs : IntList} (h : xs.length ≤ i) : xs.get i = 0 := by
+  rw [get, List.get?_eq_none.mpr h]
+  rfl
+
 /-- Like `List.set`, but right-pad with zeroes as necessary first. -/
 def set (xs : IntList) (i : Nat) (y : Int) : IntList :=
   match xs, i with
@@ -52,12 +60,20 @@ theorem add_def (xs ys : IntList) :
     xs + ys = List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys :=
   rfl
 
+@[simp] theorem add_get (xs ys : IntList) (i : Nat) : (xs + ys).get i = xs.get i + ys.get i := by
+  simp only [add_def, get, List.zipWithAll_get?, List.get?_eq_none]
+  cases xs.get? i <;> cases ys.get? i <;> simp
+
 def mul (xs ys : IntList) : IntList := List.zipWith (· * ·) xs ys
 
 instance : Mul IntList := ⟨mul⟩
 
 theorem mul_def (xs ys : IntList) : xs * ys = List.zipWith (· * ·) xs ys :=
   rfl
+
+@[simp] theorem mul_get (xs ys : IntList) (i : Nat) : (xs * ys).get i = xs.get i * ys.get i := by
+  simp only [mul_def, get, List.zipWith_get?]
+  cases xs.get? i <;> cases ys.get? i <;> simp
 
 @[simp] theorem mul_nil_left : ([] : IntList) * ys = [] := rfl
 @[simp] theorem mul_nil_right : xs * ([] : IntList) = [] := List.zipWith_nil_right
@@ -68,6 +84,10 @@ def neg (xs : IntList) : IntList := xs.map fun x => -x
 instance : Neg IntList := ⟨neg⟩
 
 theorem neg_def (xs : IntList) : - xs = xs.map fun x => -x := rfl
+
+@[simp] theorem neg_get (xs : IntList) (i : Nat) : (- xs).get i = - xs.get i := by
+  simp only [neg_def, get, List.get?_map]
+  cases xs.get? i <;> simp
 
 @[simp] theorem neg_nil : (- ([] : IntList)) = [] := rfl
 @[simp] theorem neg_cons : (- (x::xs : IntList)) = -x :: -xs := rfl
@@ -88,6 +108,10 @@ instance : HMul Int IntList IntList where
   hMul i xs := xs.smul i
 
 theorem smul_def (xs : IntList) (i : Int) : i * xs = xs.map fun x => i * x := rfl
+
+@[simp] theorem smul_get (xs : IntList) (a : Int) (i : Nat) : (a * xs).get i = a * xs.get i := by
+  simp only [smul_def, get, List.get?_map]
+  cases xs.get? i <;> simp
 
 @[simp] theorem smul_nil {i : Int} : i * ([] : IntList) = [] := rfl
 @[simp] theorem smul_cons {i : Int} : i * (x::xs : IntList) = i * x :: i * xs := rfl
@@ -134,6 +158,9 @@ theorem sub_eq_add_neg (xs ys : IntList) : xs - ys = xs + (-ys) := by
     cases ys with
     | nil => simp
     | cons y ys => simp_all [Int.sub_eq_add_neg]
+
+@[simp] theorem sub_get (xs ys : IntList) (i : Nat) : (xs - ys).get i = xs.get i - ys.get i := by
+  rw [sub_eq_add_neg, add_get, neg_get, ← Int.sub_eq_add_neg]
 
 @[simp] theorem mul_smul_left {i : Int} {xs ys : IntList} : (i * xs) * ys = i * (xs * ys) := by
   induction xs generalizing ys with
@@ -211,6 +238,9 @@ theorem dot_distrib_left (xs ys zs : IntList) : (xs + ys).dot zs = xs.dot zs + y
 @[simp] theorem dot_smul_left (xs ys : IntList) (i : Int) : (i * xs).dot ys = i * xs.dot ys := by
   simp [dot]
 
+theorem dot_sub_left (xs ys zs : IntList) : (xs - ys).dot zs = xs.dot zs - ys.dot zs := by
+  rw [sub_eq_add_neg, dot_distrib_left, dot_neg_left, ← Int.sub_eq_add_neg]
+
 theorem dot_of_left_zero (w : ∀ x, x ∈ xs → x = 0) : dot xs ys = 0 := by
   induction xs generalizing ys with
   | nil => simp
@@ -223,6 +253,25 @@ theorem dot_of_left_zero (w : ∀ x, x ∈ xs → x = 0) : dot xs ys = 0 := by
       · intro x m
         apply w
         exact List.mem_cons_of_mem _ m
+
+theorem dvd_dot_of_dvd_left (w : ∀ x, x ∈ xs → m ∣ x) : m ∣ dot xs ys := by
+  induction xs generalizing ys with
+  | nil => exact Int.dvd_zero m
+  | cons x xs ih =>
+    cases ys with
+    | nil => exact Int.dvd_zero m
+    | cons y ys =>
+      rw [dot_cons₂]
+      apply Int.dvd_add
+      · apply Int.dvd_trans
+        rotate_left
+        · apply Int.dvd_mul_right
+        · apply w
+          apply List.mem_cons_self
+      · apply ih
+        intro x m
+        apply w x
+        apply List.mem_cons_of_mem _ m
 
 def sdiv (xs : IntList) (g : Int) : IntList := xs.map fun x => x / g
 
