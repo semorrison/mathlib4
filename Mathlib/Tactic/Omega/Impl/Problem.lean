@@ -1809,7 +1809,11 @@ def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equal
 
 /-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
 def minEqualityCoeff (p : Problem) : Nat :=
-  p.equalities.map (fun eq => eq.minCoeff) |>.minimum? |>.getD 0
+  p.equalities.map (fun eq => eq.minCoeff) |>.filter (· ≠ 0) |>.minimum? |>.getD 0
+
+theorem tidy_equalities_of_minEqualityCoeff_eq_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
+    p.tidy.equalities.length = 0 :=
+  sorry
 
 theorem shrinkEqualityCoeffs_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
     (p.shrinkEqualityCoeffs eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
@@ -1886,6 +1890,8 @@ theorem shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt (p : Problem) (eq : Equa
   -- Some work hiding here!
   sorry
 
+attribute [irreducible] tidy tidy_equiv shrinkEqualityCoeffsAndTidy shrinkEqualityCoeffsAndTidy_equiv
+
 theorem _root_.Prod.Lex.right'' [LT α] {a₁ a₂ : α} {b₁ b₂ : β} (ha : a₁ = a₂) (hb : s b₁ b₂) :
     Prod.Lex (· < ·) s (a₁, b₁) (a₂, b₂) :=
   ha ▸ Prod.Lex.right a₁ hb
@@ -1909,7 +1915,7 @@ def noop (p : Problem) : Problem := p.normalize.processConstants.checkContradict
 
 -- The maxHeartbeats bump is required because we use `shrinkEqualityCoeffsAndTidy`.
 -- If we just do `shrinkEqualityCoeffs` it is fast. I don't understand!
-set_option maxHeartbeats 400000
+set_option maxHeartbeats 800000
 -- The linter incorrectly complains about our decreasing witnesses.
 set_option linter.unusedVariables false in
 def eliminateEqualities (p : Problem) : Problem :=
@@ -1917,8 +1923,8 @@ def eliminateEqualities (p : Problem) : Problem :=
     -- We are done!
     p
   else if minEqZero : p.minEqualityCoeff = 0 then
-    -- This probably shouldn't happen if equalities are being normalized as we go?
-    p
+    -- This can only happen if `p` was not normalized: do that now.
+    p.tidy
   else if minEqOne : p.minEqualityCoeff = 1 then
     let p' := p.eliminateEasyEquality minEqOne
     have lengthLt : p'.equalities.length < p.equalities.length :=
@@ -1945,75 +1951,96 @@ def eliminateEqualities (p : Problem) : Problem :=
 termination_by eliminateEqualities p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
   -- TODO: solve_by_elim needs to move to Std asap
-  simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
+  solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
 
-set_option maxHeartbeats 800000
+-- The linter incorrectly complains about our decreasing witnesses.
+set_option linter.unusedVariables false in
+-- set_option maxHeartbeats 1600000 in
 theorem eliminateEqualities_equalities_length {p : Problem} :
     p.eliminateEqualities.equalities.length = 0 := by
   rw [eliminateEqualities]
-  split_ifs with lengthEqZero minEqZero minEqOne
-  · assumption
-  · sorry
-  · let p' := p.eliminateEasyEquality minEqOne
-    have lengthLt : p'.equalities.length < p.equalities.length :=
-      p.eliminateEasyEquality_equalities_length minEqOne
-    apply eliminateEqualities_equalities_length
-  · dsimp
-    let eq := p.minCoeffEquality minEqZero
-    let i := eq.minCoeffIdx
-    let p' := p.shrinkEqualityCoeffsAndTidy eq i
-    split <;> rename_i lengthLt
-    · apply eliminateEqualities_equalities_length
-    · have lengthEq : p'.equalities.length = p.equalities.length :=
-        (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
-      split <;> rename_i minLt
-      · apply eliminateEqualities_equalities_length
-      · have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-          (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
-        have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
-          p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
+  -- Use `split` (or `split_ifs`) for splitting the outer `if` statements
+  -- results in a giant blow up in elaboration time.
+  -- It makes some very expensive calls to the simplifier!
+  by_cases lengthEqZero : p.equalities.length = 0
+  · rw [dif_pos lengthEqZero]
+    assumption
+  · rw [dif_neg lengthEqZero]
+    by_cases minEqZero : p.minEqualityCoeff = 0
+    · rw [dif_pos minEqZero]
+      exact tidy_equalities_of_minEqualityCoeff_eq_zero minEqZero
+    · rw [dif_neg minEqZero]
+      by_cases minEqOne : p.minEqualityCoeff = 1
+      · rw [dif_pos minEqOne]
+        let p' := p.eliminateEasyEquality minEqOne
+        have lengthLt : p'.equalities.length < p.equalities.length :=
+          p.eliminateEasyEquality_equalities_length minEqOne
         apply eliminateEqualities_equalities_length
+      · rw [dif_neg minEqOne]
+        dsimp
+        let eq := p.minCoeffEquality minEqZero
+        let i := eq.minCoeffIdx
+        let p' := p.shrinkEqualityCoeffsAndTidy eq i
+        split <;> rename_i lengthLt
+        · apply eliminateEqualities_equalities_length
+        · have lengthEq : p'.equalities.length = p.equalities.length :=
+            (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+          split <;> rename_i minLt
+          · apply eliminateEqualities_equalities_length
+          · have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+              (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+            have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
+              p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
+            apply eliminateEqualities_equalities_length
 termination_by eliminateEqualities_equalities_length p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
-  simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
+  solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
 
 -- The linter incorrectly complains about our decreasing witnesses.
 set_option linter.unusedVariables false in
 def eliminateEqualities_equiv (p : Problem) : p.eliminateEqualities.equiv p := by
   rw [eliminateEqualities]
-  split_ifs with lengthEqZero minEqZero minEqOne
-  · exact equiv.refl p
-  · exact equiv.refl p
-  · let p' := p.eliminateEasyEquality minEqOne
-    have lengthLt : p'.equalities.length < p.equalities.length :=
-      p.eliminateEasyEquality_equalities_length minEqOne
-    exact equiv.trans p'.eliminateEqualities_equiv (p.eliminateEasyEquality_equiv minEqOne)
-  · dsimp
-    let eq := p.minCoeffEquality minEqZero
-    let i := eq.minCoeffIdx
-    have big : 1 < (eq.linearCombo.coeff i).natAbs := by
-      rw [eq.minCoeffIdx_spec, minCoeffEquality_minCoeff]
-      match p.minEqualityCoeff, minEqZero, minEqOne with
-      | (i+2), _, _ => exact Nat.lt_of_sub_eq_succ rfl
-    let p' := p.shrinkEqualityCoeffsAndTidy eq i
-    have m := p.minCoeffEquality_mem minEqZero
-    let e' := p.shrinkEqualityCoeffsAndTidy_equiv eq m i big (p.minCoeffIdx_lt_numVars m)
-    -- Can't use `split` here, it only works in `Prop`. :-(
-    split_ifs with lengthLt minLt
-    · exact equiv.trans p'.eliminateEqualities_equiv e'
-    · have lengthEq : p'.equalities.length = p.equalities.length :=
-        (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
-      exact equiv.trans p'.eliminateEqualities_equiv e'
-    · have lengthEq : p'.equalities.length = p.equalities.length :=
-        (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
-      have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-        (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
-      have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
-        p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
-      exact equiv.trans p'.eliminateEqualities_equiv e'
+  by_cases lengthEqZero : p.equalities.length = 0
+  · rw [dif_pos lengthEqZero]
+    exact equiv.refl p
+  · rw [dif_neg lengthEqZero]
+    by_cases minEqZero : p.minEqualityCoeff = 0
+    · rw [dif_pos minEqZero]
+      exact p.tidy_equiv
+    · rw [dif_neg minEqZero]
+      by_cases minEqOne : p.minEqualityCoeff = 1
+      · rw [dif_pos minEqOne]
+        let p' := p.eliminateEasyEquality minEqOne
+        have lengthLt : p'.equalities.length < p.equalities.length :=
+          p.eliminateEasyEquality_equalities_length minEqOne
+        exact equiv.trans p'.eliminateEqualities_equiv (p.eliminateEasyEquality_equiv minEqOne)
+      · rw [dif_neg minEqOne]
+        dsimp
+        let eq := p.minCoeffEquality minEqZero
+        let i := eq.minCoeffIdx
+        have big : 1 < (eq.linearCombo.coeff i).natAbs := by
+          rw [eq.minCoeffIdx_spec, minCoeffEquality_minCoeff]
+          match p.minEqualityCoeff, minEqZero, minEqOne with
+          | (i+2), _, _ => exact Nat.lt_of_sub_eq_succ rfl
+        let p' := p.shrinkEqualityCoeffsAndTidy eq i
+        have m := p.minCoeffEquality_mem minEqZero
+        let e' := p.shrinkEqualityCoeffsAndTidy_equiv eq m i big (p.minCoeffIdx_lt_numVars m)
+        -- Can't use `split` here, it only works in `Prop`. :-(
+        split_ifs with lengthLt minLt
+        · exact equiv.trans p'.eliminateEqualities_equiv e'
+        · have lengthEq : p'.equalities.length = p.equalities.length :=
+            (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+          exact equiv.trans p'.eliminateEqualities_equiv e'
+        · have lengthEq : p'.equalities.length = p.equalities.length :=
+            (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+          have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+            (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+          have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
+            p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
+          exact equiv.trans p'.eliminateEqualities_equiv e'
 termination_by eliminateEqualities_equiv p => (p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
-  simp_wf; solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
+  solve_by_elim [Prod.Lex.left, Prod.Lex.right'']
 
 end Problem
 
