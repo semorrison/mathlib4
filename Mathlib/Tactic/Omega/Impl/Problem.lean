@@ -1259,6 +1259,7 @@ end Equality
 namespace Problem
 
 -- This only makes sense when `a ∈ p.equalities` and `(a.linearCombo.coeff i).natAbs = 1`.
+-- FIXME we should delete the variable, too!
 @[simps]
 def eliminateEquality (p : Problem) (a : Equality) (i : Nat) : Problem :=
   let r := a.solveFor i
@@ -1588,24 +1589,30 @@ theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} (h : 1 < (eq.coeff k
     simp_all
   · exact Nat.ne_of_lt w
 
-def shrinkingConstraintSolution {eq : LinearCombo} (k : Nat) (n : Nat) (v : IntList) : IntList :=
+def shrinkingConstraintSolution (eq : LinearCombo) (k : Nat) (n : Nat) (v : IntList) : IntList :=
   let m := (eq.coeff k).natAbs + 1
-  v.set n (((eq - eq.shrinkingConstraint k n).eval v) / m)
+  -- It might be more natural to leave out the `v.get n` term here,
+  -- as we will only use this with `n` a fresh variable, so `v.get n = 0`.
+  -- The calculations are slightly smoother with this term, however.
+  v.set n (v.get n + ((eq - eq.shrinkingConstraint k n).eval v) / m)
 
 attribute [simp] Int.dvd_neg
 
 theorem shrinkingConstraint_eval {eq : LinearCombo} (w : eq.eval v = 0)
-    (h₁ : eq.coeffs.length ≤ n) (h₂ : v.length ≤ n) :
+    (h₁ : eq.coeffs.length ≤ n) :
     (eq.shrinkingConstraint k n).eval (eq.shrinkingConstraintSolution k n v) = 0 := by
   dsimp [shrinkingConstraint, shrinkingConstraintSolution]
   simp only [Int.natCast_add, Int.ofNat_one, sub_eval, set_eval, coeff_bmod, eval_set, coeff_set]
   replace h₁ : eq.coeff n = 0 := IntList.get_of_length_le h₁
-  replace h₂ : v.get n = 0 := IntList.get_of_length_le h₂
-  rw [Int.mul_sub, Int.mul_ediv_cancel']
-  · simp [h₁, h₂, w, ← Int.sub_eq_add_neg]
+  -- replace h₂ : v.get n = 0 := IntList.get_of_length_le h₂
+  rw [Int.mul_sub, Int.mul_add, Int.add_comm (a := _ * _), Int.add_sub_cancel, Int.mul_ediv_cancel']
+  · simp [h₁, w, ← Int.sub_eq_add_neg]
   · -- Side goal about divisibility.
-    simp only [h₁, h₂, Int.bmod_zero, Int.sub_zero, Int.mul_zero, Int.add_zero]
-    apply dvd_eval_sub_bmod_eval
+    simp only [h₁, Int.bmod_zero, Int.sub_zero, Int.mul_zero, Int.add_zero, ← Int.sub_sub]
+    apply Int.dvd_add
+    · apply dvd_eval_sub_bmod_eval
+    · rw [Int.dvd_neg]
+      apply Int.dvd_mul_right
 
 end LinearCombo
 
@@ -1631,9 +1638,22 @@ def addEquality_equiv (p : Problem) {eq : Equality} (f : p → p)
         · exact (f x).2.equalities m
       inequalities := fun m => (f x).2.inequalities m }⟩
 
+/--
+Add a new equality to a problem,
+and then immediately solve that equality for the `i`-th variable.
+-/
 def addAndEliminateEquality (p : Problem) (eq : Equality) (i : Nat) : Problem :=
   (p.addEquality eq).eliminateEquality eq i
 
+/--
+Suppose for every solution to `p` we can find a solution to `p`
+at which an equality `eq` also vanishes.
+
+Further suppose that the `i`-th coefficient of `eq` has absolute value `1`.
+
+Then adding `eq` and solving for the `i`-th variable produces
+a problem equivalent to the original problem.
+-/
 def addAndEliminateEquality_equiv (p : Problem) (eq : Equality) (i : Nat)
     (f : p → p)
     (w : ∀ x : p, eq.linearCombo.eval (f x).1 = 0)
@@ -1648,23 +1668,54 @@ def freshVar (p : Problem) : Nat :=
     (List.foldr (Nat.max) 0 (p.equalities.map (fun eq => eq.linearCombo.coeffs.length)))
     (p.inequalities.map (fun ineq => ineq.coeffs.length))
 
-def shrinkEqualitySolution (p : Problem) (eq : Equality) (i : Nat) : p → p :=
+theorem equality_length_le_freshVar {p : Problem} {eq : Equality} (m : eq ∈ p.equalities) :
+    eq.linearCombo.coeffs.length ≤ p.freshVar :=
   sorry
 
-theorem shrinkEqualitySolution_spec (p : Problem) (eq : Equality) (i : Nat) :
-    ∀ x : p, (eq.linearCombo.shrinkingConstraint i n).eval (p.shrinkEqualitySolution eq i x).1 = 0 := by
+theorem equality_eval_set_freshVar {p : Problem} {eq : Equality} (m : eq ∈ p.equalities) :
+    eq.linearCombo.eval (v.set (p.freshVar) x) = eq.linearCombo.eval v :=
   sorry
+
+theorem inequality_eval_set_freshVar {p : Problem} {ineq : LinearCombo} (m : ineq ∈ p.inequalities) :
+    ineq.eval (v.set (p.freshVar) x) = ineq.eval v :=
+  sorry
+
+/--
+Given an equation `eq` in a problem, and a solution to that problem,
+generate a new solution at which `eq.linearCombo.shrinkingConstraint` also vanishes.
+
+(This is possible because that constraint introduces a new variable `α`, and is of the form
+`m * α = ...` where the RHS is divisible by `m`.)
+-/
+def shrinkEqualitySolution (p : Problem) (eq : Equality) (i : Nat) : p → p :=
+  let n := p.freshVar
+  fun ⟨v, h⟩ => ⟨eq.linearCombo.shrinkingConstraintSolution i n v,
+  { possible := h.possible
+    equalities := fun m => by
+      rw [LinearCombo.shrinkingConstraintSolution, equality_eval_set_freshVar m]
+      exact h.equalities m
+    inequalities := fun m => by
+      rw [LinearCombo.shrinkingConstraintSolution, inequality_eval_set_freshVar m]
+      exact h.inequalities m }⟩
+
+theorem shrinkEqualitySolution_spec (p : Problem) (eq : Equality) (m : eq ∈ p.equalities) (i : Nat) :
+    ∀ x : p, (eq.linearCombo.shrinkingConstraint i p.freshVar).eval (p.shrinkEqualitySolution eq i x).1 = 0 := by
+  rintro ⟨v, h⟩
+  dsimp [shrinkEqualitySolution]
+  apply LinearCombo.shrinkingConstraint_eval
+  · exact h.equalities m
+  · exact equality_length_le_freshVar m
 
 def shrinkEqualityCoeffs (p : Problem) (eq : Equality) (i : Nat) : Problem :=
   let n := p.freshVar
   p.addAndEliminateEquality { linearCombo := eq.linearCombo.shrinkingConstraint i n } i
 
 -- This will require additional hypotheses?
-def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (i : Nat) :
+def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equalities) (i : Nat) :
     (p.shrinkEqualityCoeffs eq i).equiv p :=
   addAndEliminateEquality_equiv _ _ _
     (p.shrinkEqualitySolution eq i)
-    (p.shrinkEqualitySolution_spec eq i)
+    (p.shrinkEqualitySolution_spec eq m i)
     sorry
 
 /-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
