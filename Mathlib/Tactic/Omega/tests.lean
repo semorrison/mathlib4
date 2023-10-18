@@ -96,11 +96,10 @@ example {x : Int} (_ : 1 ≤ -3 * x) (_ : 1 ≤ 2 * x) : False := by
   omega
 
 def s : Omega.Problem := { inequalities := [{const := -1, coeffs := [1, 0]}, {const := -1, coeffs := [0, 1]}], equalities := [{const := 0, coeffs := [2, 3]}] }
-#eval Omega.Impl.Problem.of s
--- #eval (Omega.Impl.Problem.of s).eliminateEqualities
+#eval (Omega.Impl.Problem.of s).eliminateEqualities
 
-example {x y : Int} (_ : 2 * x + 3 * y = 0) (_ : 1 ≤ x) (_ : 1 ≤ y) : False := by
-  omega
+#time
+example {x y : Int} (_ : 2 * x + 3 * y = 0) (_ : 1 ≤ x) (_ : 1 ≤ y) : False := by omega
 
 /--
 error: omega did not find a contradiction
