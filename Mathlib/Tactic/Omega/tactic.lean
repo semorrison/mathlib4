@@ -212,7 +212,7 @@ def omega_algorithm₁ (p : Problem) : Problem :=
   let p₁ := p₀.normalize
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEasyEqualities
+  let p₄ := p₃.eliminateEqualities
   let p₅ := p₄.normalize
   let p₆ := p₅.processConstants
   let p₇ := p₆.checkContradictions
@@ -223,11 +223,11 @@ def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
   let p₁ := p₀.normalize
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEasyEqualities
+  let p₄ := p₃.eliminateEqualities
   let p₅ := p₄.normalize
   let p₆ := p₅.processConstants
   let p₇ := p₆.checkContradictions
-  Impl.Problem.map_to p₇ ∘ p₆.checkContradictions_equiv.mpr ∘ p₅.processConstants_equiv.mpr ∘ p₄.normalize_equiv.mpr ∘ p₃.eliminateEasyEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p
+  Impl.Problem.map_to p₇ ∘ p₆.checkContradictions_equiv.mpr ∘ p₅.processConstants_equiv.mpr ∘ p₄.normalize_equiv.mpr ∘ p₃.eliminateEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p
 
 def blah {p : Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
   (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p

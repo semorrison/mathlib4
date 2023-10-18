@@ -92,6 +92,16 @@ example {x y z : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : x = y) (h₃ : y = z) (h�
 example {x1 x2 x3 x4 x5 x6 : Int} (h : 0 ≤ 2 * x1 + 1) (h : x1 = x2) (h : x2 = x3) (h : x3 = x4) (h : x4 = x5) (h : x5 = x6) (h : 2 * x6 + 1 ≤ 0) : False := by
   omega
 
+example {x : Int} (_ : 1 ≤ -3 * x) (_ : 1 ≤ 2 * x) : False := by
+  omega
+
+def s : Omega.Problem := { inequalities := [{const := -1, coeffs := [1, 0]}, {const := -1, coeffs := [0, 1]}], equalities := [{const := 0, coeffs := [2, 3]}] }
+#eval Omega.Impl.Problem.of s
+-- #eval (Omega.Impl.Problem.of s).eliminateEqualities
+
+example {x y : Int} (_ : 2 * x + 3 * y = 0) (_ : 1 ≤ x) (_ : 1 ≤ y) : False := by
+  omega
+
 /--
 error: omega did not find a contradiction
 -/
