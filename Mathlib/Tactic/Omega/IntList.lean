@@ -24,6 +24,10 @@ theorem get_of_length_le {xs : IntList} (h : xs.length ≤ i) : xs.get i = 0 := 
   rw [get, List.get?_eq_none.mpr h]
   rfl
 
+theorem lt_length_of_get_nonzero {xs : IntList} (h : xs.get i ≠ 0) : i < xs.length := by
+  revert h
+  simpa using mt get_of_length_le
+
 /-- Like `List.set`, but right-pad with zeroes as necessary first. -/
 def set (xs : IntList) (i : Nat) (y : Int) : IntList :=
   match xs, i with
