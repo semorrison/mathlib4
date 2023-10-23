@@ -20,7 +20,54 @@ def Lex (α : Type _) := α
 instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+namespace Option
+
+theorem getD_eq_iff {o : Option α} {a b} : o.getD a = b ↔ (o = some b ∨ o = none ∧ a = b) := by
+  cases o <;> simp
+
+end Option
 namespace List
+
+@[simp] theorem minimum?_nil [Min α] : ([] : List α).minimum? = none := rfl
+
+-- We don't provide a `@[simp]` lemma `minimum?_cons`,
+-- because the definition in terms of `foldl` is not useful for proofs.
+theorem minimum?_cons [Min α] {xs : List α} : (x :: xs).minimum? = foldl min x xs := rfl
+
+@[simp] theorem minimum?_eq_none_iff {xs : List α} [Min α] : xs.minimum? = none ↔ xs = [] := by
+  cases xs <;> simp [minimum?]
+
+theorem minimum?_eq_some_iff {xs : List Nat} :
+    xs.minimum? = some a ↔ (a ∈ xs ∧ ∀ b ∈ xs, a ≤ b) := by
+  cases xs with
+  | nil => simp
+  | cons x xs =>
+    rw [minimum?]
+    simp only [Option.some.injEq, mem_cons, forall_eq_or_imp]
+    induction xs generalizing x with
+    | nil => constructor <;> simp_all
+    | cons x' xs ih =>
+      simp only [foldl_cons, mem_cons, forall_eq_or_imp]
+      rw [ih]
+      constructor
+      · rintro ⟨rfl | h₁, h₂, h₃⟩
+        · refine ⟨?_, Nat.min_le_left _ _, Nat.min_le_right _ _, h₃⟩
+          · rw [Nat.min_def]
+            split <;> simp
+        · exact ⟨Or.inr (Or.inr h₁), Nat.le_trans h₂ (Nat.min_le_left x x'),
+            Nat.le_trans h₂ (Nat.min_le_right x x'), h₃⟩
+      · rintro ⟨rfl | rfl | h₁, h₂, h₃, h₄⟩
+        · have : min a x' = a := by rw [Nat.min_def, if_pos h₃]
+          exact ⟨Or.inl this.symm, by rw [this]; apply Nat.le_refl, h₄⟩
+        · have : min x a = a := by
+            rw [Nat.min_def]
+            by_cases h : x = a
+            · simp_all
+            · rw [if_neg]
+              simpa using Nat.lt_of_le_of_ne h₂ (Ne.symm h)
+          exact ⟨Or.inl this.symm, by rw [this]; apply Nat.le_refl, h₄⟩
+        · exact ⟨Or.inr h₁, by rw [Nat.min_def]; split <;> assumption, h₄⟩
+
 
 theorem filter_cons :
     (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
@@ -417,6 +464,9 @@ theorem smul_eval (lc : LinearCombo) (i : Int) (v : List Int) :
   simp [eval, Int.mul_add]
 
 def coeff (lc : LinearCombo) (i : Nat) : Int := lc.coeffs.get i
+
+@[simp]
+theorem coeff_mk {const} {coeffs} {i} : LinearCombo.coeff { const, coeffs } i = coeffs.get i := rfl
 
 @[simps]
 def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo :=
@@ -977,6 +1027,7 @@ end Problem
 
 namespace LinearCombo
 
+/-- Return the constant term if all coefficients of variables are zero. -/
 def constant? (lc : LinearCombo) : Option Int :=
   if lc.coeffs.all (· = 0) then
     some lc.const
@@ -1086,8 +1137,15 @@ example : Problem.unsat { inequalities := [{const := -1}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
 
 theorem processConstants_equalities_of_equalitiesZero {p : Problem} (w : p.equalitiesZero) :
-    p.processConstants.equalities.length = 0 :=
-  sorry
+    p.processConstants.equalities.length = 0 := by
+  dsimp [processConstants]
+  split <;> (rename_i h; simp at h)
+  · simp [List.length_eq_zero, List.filter_eq_nil, LinearCombo.constant?]
+    intro eq m x m'
+    rw [@List.mem_iff_get] at m'
+    obtain ⟨n, rfl⟩ := m'
+    simpa [LinearCombo.coeff, IntList.get, List.get?_coe] using w m n
+  · rfl
 
 end Problem
 
@@ -1221,7 +1279,13 @@ def normalize_equiv (p : Problem) : p.normalize.equiv p :=
 
 theorem normalize_equalitiesZero_of_equalitiesZero {p : Problem} (w : p.equalitiesZero) :
     p.normalize.equalitiesZero := by
-  sorry
+  dsimp [equalitiesZero] at *
+  intro eq m i
+  simp only [normalize, List.mem_map] at m
+  obtain ⟨eq', m', rfl⟩ := m
+  specialize w m' i
+  simp only [Equality.normalize, LinearCombo.normalizeEquality]
+  split <;> simp_all [LinearCombo.coeff]
 
 -- TODO: make sure this is fast and idempotent, because we do it a lot!
 def tidy (p : Problem) : Problem :=
@@ -1851,7 +1915,16 @@ def minEqualityCoeff (p : Problem) : Nat :=
 
 theorem equalitiesZero_of_minEqualityCoeff_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
     p.equalitiesZero := by
-  sorry
+  intro eq m
+  have : eq.minCoeff = 0 := by
+    by_contra h
+    dsimp [minEqualityCoeff] at w
+    rw [Option.getD_eq_iff] at w
+    rcases w with w | ⟨w, -⟩
+    · sorry
+    · sorry
+
+  apply eq.coeff_zero_of_minCoeff_zero this
 
 theorem tidy_equalities_of_minEqualityCoeff_eq_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
     p.tidy.equalities.length = 0 := by

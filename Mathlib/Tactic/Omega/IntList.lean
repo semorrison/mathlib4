@@ -282,6 +282,10 @@ def sdiv (xs : IntList) (g : Int) : IntList := xs.map fun x => x / g
 @[simp] theorem sdiv_nil : sdiv [] g = [] := rfl
 @[simp] theorem sdiv_cons : sdiv (x::xs) g = (x / g) :: sdiv xs g := rfl
 
+@[simp] theorem sdiv_get {xs : IntList} {g : Int} {i} : (xs.sdiv g).get i = xs.get i / g := by
+  simp only [sdiv, get, List.get?_map]
+  cases xs.get? i <;> simp
+
 def gcd (xs : IntList) : Nat := xs.foldr (fun x g => Nat.gcd x.natAbs g) 0
 
 @[simp] theorem gcd_nil : gcd [] = 0 := rfl

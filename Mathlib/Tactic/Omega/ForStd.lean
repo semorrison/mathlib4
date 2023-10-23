@@ -65,6 +65,9 @@ attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zer
 
 namespace List
 
+theorem get?_coe {xs : List α} {i : Fin xs.length} : xs.get? i = some (xs.get i) :=
+   get?_eq_some.mpr ⟨i.2, rfl⟩
+
 theorem dropWhile_cons :
     (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
   split <;> simp_all [dropWhile]
