@@ -28,22 +28,6 @@ theorem List.zipWith_get? {f : α → β → γ} :
     | nil => simp
     | cons b bs => cases i <;> simp_all
 
-def List.zipWithAll (f : Option α → Option β → γ) : List α → List β → List γ
-  | [], bs => bs.map fun b => f none (some b)
-  | a :: as, [] => (a :: as).map fun a => f (some a) none
-  | a :: as, b :: bs => f a b :: zipWithAll f as bs
-
-@[simp] theorem List.zipWithAll_nil_right :
-    List.zipWithAll f as [] = as.map fun a => f (some a) none := by
-  cases as <;> rfl
-
-@[simp] theorem List.zipWithAll_nil_left :
-    List.zipWithAll f [] bs = bs.map fun b => f none (some b) := by
-  rw [List.zipWithAll]
-
-@[simp] theorem List.zipWithAll_cons_cons :
-    List.zipWithAll f (a :: as) (b :: bs) = f (some a) (some b) :: zipWithAll f as bs := rfl
-
 theorem List.zipWithAll_get? {f : Option α → Option β → γ} :
     (List.zipWithAll f as bs).get? i = match as.get? i, bs.get? i with
       | none, none => .none | a?, b? => some (f a? b?) := by
