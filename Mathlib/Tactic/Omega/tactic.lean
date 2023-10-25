@@ -244,7 +244,7 @@ def omega (hyps : List Expr) : MetaM Expr := do
   let s ← mkAppM ``Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
   let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
   try
-    r.refl
+    r.refl -- should we skip the checks??
   catch _ =>
     throwError "omega did not find a contradiction" -- TODO later, show a witness?
   return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
