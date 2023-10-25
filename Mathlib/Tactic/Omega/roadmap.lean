@@ -1,5 +1,4 @@
-
-/-
+/-!
 # `omega` roadmap
 
 I'm following William Pugh's
@@ -73,7 +72,7 @@ Simplifying slightly, we could now express a semi-decision procedure as a pair
 
 and execute it as follows:
 
-* Construct the `Eq.refl` proof that `u : (f p).possible = false`.
+* Attempt to construct the `Eq.refl` proof that `u : (f p).possible = false`.
 * From this construct the proofs `u' : (f p).unsat` and `u'' : p.unsat := t u'`.
 * Assign `Expr.app r u''`, to complete our proof of `False`.
 
@@ -119,13 +118,16 @@ For each inequality:
   Divide through, rounding down `c / g` to the next integer.
 
 Now check if there is a pair of inequalities `c + ∑ aᵢ * xᵢ ≥ 0` and `c' - ∑ aᵢ * xᵢ ≥ 0`
-(i.e. with the opposite nonconstant terms) such that `c < -c'`,
+(i.e. with the opposite non-constant coefficients) such that `c < -c'`,
 and if so conclude the problem is impossible.
 
 These steps are call "normalization",
 and we run them repeatedly so it is important that they are efficient.
 
 Note that during normalization the number of equation or inequalities can only decrease.
+
+**Status:** Implemented, but I need to add a hashtable to allow fast discovery of inequalities with
+opposite non-constant coefficients.
 
 #### Eliminating equalities
 
@@ -157,6 +159,10 @@ and so will be removed by normalization.
 * The critical inequality (that `M` strictly decreases) is just a `sorry`.
   It's hopefully at most a day's work, but I've been avoiding thinking about. :-)
 
+**TODO**
+* Before completing the termination proof, add an optional fuel parameter
+  so this part is usable as a semi-decision procedure even before writing the termination proof.
+
 #### Eliminating inequalities
 
 We now have a problem `P` consisting solely of inequalities `c + ∑ aᵢ * xᵢ ≥ 0`.
@@ -167,13 +173,14 @@ then we can reduce the problem by deleting all inequalities involving that varia
 Now, given any choice of bounded variable, we can construct an equivalence
 
 ```
-P ↔ RealShadow ∧ (DarkShadow ∨ GreyShadow₁ ∨ ... ∨ GreyShadowₖ)
+P ↔ RealShadow ∧ (DarkShadow ∨ GreyShadows)
 ```
 
-where all the "shadow" problems are again integer linear arithmetic problems
-(possibly with equalities again).
+where the "real shadow" and "dark shadow" problems are again integer linear arithmetic problems
+(still with no equalities), and the "grey shadow" problem is itself a somewhat complicated recursive
+clause built out of integer linear arithmetic problems with additional equalities and inequalities.
 
-It will be important here that we evaluate this clause from left to right,
+It will be important here that we evaluate theses clauses from left to right,
 and only lazily construct the later problems.
 
 We are hoping that the real shadow is unsatisfiable
@@ -215,12 +222,88 @@ There are two criteria for deciding if eliminating `xᵢ` is exact:
 2. A criteria that I can't interpret clearly in the original paper, haven't found elsewhere,
   and haven't found time to try to reconstruct with pen and paper!
 
-**Status**
+We now describe the grey shadow for eliminating `xᵢ`.
+Let `m` be the most negative coefficient of `xᵢ` in any inequality.
+For any lower bound `e ≥ 0` with coefficient `aᵢ > 0` of `xᵢ`,
+define `r e := (|m * aᵢ| - |m| - aᵢ)/|m|`
+(note that division is in `Int`, so implicitly has a "floor").
+
+To describe the grey shadow, we pick an ordering of the lower bounds `eₖ ≥ 0` for `xᵢ`, with
+`k ∈ {0, ..., n}`.
+Then
+```
+GreyShadow = GreyShadow' (n+1) 0
+GreyShadow' (a+1) b = R b ∨ (Q (b+1) ∧ GreyShadow' a (b+1))
+GreyShadow' 0 b = unsat
+```
+where
+* `R k` is the disjunction over `j` in the range `0, ..., r eₖ` of `Q k` with the additional
+  equality constraints `eₖ = j`
+* `Q 0 = P`
+* `Q (k+1)` is `Q k` with `eₖ ≥ 0` replaced by `eₖ ≥ 1 + r eₖ`.
+
+This is a little complicated, so we'll spell out how it evaluates, considering the case `n = 1`
+(i.e. we have two lower bounds).
+Because we eagerly evaluate the left-hand-side of `∧` and `∨`,
+we begin with
+`GreyShadow' 2 0 = R 0 ∨ (Q 1 ∧ GreyShadow' 1 1) = R 0 ∨ (Q 1 ∧ (R 1 ∨ (Q 2 ∧ unsat)))`.
+Then `R 0` is a disjunction over `j` of `Q 0 = P` with the additional equality constraints `e₀ = j`.
+If we find one of these is satisfied we short-circuit and
+do not need to consider the rest of the clause.
+However if `R 0` is unsat, we turn to `(Q 1 ∧ (R 1 ∨ (Q 1 ∧ unsat)))`, and
+next decide `Q 1`. This is `Q 0 = P` with `e₀ ≥ 0` replaced by `e₀ ≥ 1 + r e₀`.
+If this is unsat, we can short-circuit.
+Otherwise we need to decide `R 1`, which a disjunction over `j` of `Q 1` as just described,
+with the additional equality constraints `e₁ = j`.
+Finally, when we reach `Q 1 ∧ unsat`, we hope we are clever enough to avoid thinking about `Q 1`
+and can just say the problem is unsatisfiable.
+
+Termination is a little tricky here. The new problems `RealShadow`, `DarkShadow`, and each `R k`
+are straightforward: they have strictly fewer variables than `P`.
+It turns out the `Q k` terms are not strictly needed, but are helpful for algorithmic efficiency.
+Thus we define a modified version `Q' f k`, for `f : Nat`, such that
+* `Q' 0 k` is trivially satisfiable
+* `Q' (f+1) k = Q k`
+
+The disjunctions `R k` are stil constructed by adding a equality constraint to `Q k` itself,
+without the `f` parameter. Our modified `GreyShadow` is given by
+```
+GreyShadow' (f+1) (a+1) b = R b ∨ (Q f (b+1) ∧ GreyShadow' (f+1) a (b+1))
+GreyShadow' 0 (a+1) b = R b ∨ GreyShadow' 0 a (b+1)
+```
+
+With this, we can show termination of inequality elimination by decreasing along the lexicographic
+order on `(# of variables, f)`, starting at any arbitrary `f`
+(in practice chosen large enough that it won't exhaust).
+Each recursive call to inequality elimination either strictly decreased `# of variables`,
+or leaves it unchanged and strictly decreases `f`.
+
+**Note:** I haven't found discussion of termination in the literature;
+if anyone knows a way to do this without the fuel parameter, please let me know.
+
+**Status:**
 * No code!
 
-**Still to write:**
-* Describe the grey shadows!
-* Explain why inequalities elimination terminates.
-* Describe optimisations (mostly, indexing inequalities so we can find opposite ones quickly).
+## Optimizations
+
+During inequality elimination it is essential that we perform exact elimination where possible,
+and amongst those chose eliminations that result in the fewest new constraints
+(i.e. minimizing the product of the numbers of upper and lower bounds).
+During inexact elimination, we choose a variable `xᵢ` and order the lower bounds to consider
+so as to minimize the branching factor in the disjunctions `R k`.
+
+We spend a lot of time in the algorithm:
+
+* looking up pairs of inequalities with opposite nonconstant coefficients (during normalization)
+* looking up coefficients with minimal absolute value (during equality elimination)
+* looking up inequalities which are upper/lower bounds for a given variable
+  (during inequality elimination)
+
+so it's important that our data structures cache this information accessibly.
+
+Currently coefficients of a constraint are just stored as a `List Int`.
+We could explore replacing this with either `AssocList Nat Int` or `HashMap Nat Int`
+(or even a data data structure that dynamically switches between these).
+Hopefully this isn't too hard as there is a thin API in place around `List Int` already.
 
 -/
