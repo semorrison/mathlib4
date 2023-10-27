@@ -212,7 +212,7 @@ def omega_algorithm₁ (p : Problem) : Problem :=
   let p₁ := p₀.normalize
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEqualities
+  let p₄ := p₃.eliminateEqualities 100
   p₄.to
 
 def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
@@ -220,8 +220,8 @@ def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
   let p₁ := p₀.normalize
   let p₂ := p₁.processConstants
   let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEqualities
-  Impl.Problem.map_to p₄ ∘ p₃.eliminateEqualities_equiv.mpr ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p
+  let p₄ := p₃.eliminateEqualities 100
+  Impl.Problem.map_to p₄ ∘ p₃.eliminateEqualities_equiv 100 ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p
 
 def blah {p : Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
   (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p
@@ -240,14 +240,18 @@ def mkEqFalse'' (e : Expr) : MetaM Expr := mkAppM ``Eq #[e, .const ``Bool.false 
 def omega (hyps : List Expr) : MetaM Expr := do
   let (p, sat) ← omega_problem hyps
   trace[omega] "{p}"
-  let p_expr := toExpr p
-  let s ← mkAppM ``Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
-  let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
-  try
-    r.refl -- should we skip the checks??
-  catch _ =>
+  if (omega_algorithm₁ p).possible then
     throwError "omega did not find a contradiction" -- TODO later, show a witness?
-  return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
+  else
+    let p_expr := toExpr p
+    let s ← mkAppM ``Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
+    let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
+    try
+      r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
+      -- r.refl -- should we skip the checks??
+    catch _ =>
+      throwError "omega did not find a contradiction" -- TODO later, show a witness?
+    return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
 
 open Qq
 
