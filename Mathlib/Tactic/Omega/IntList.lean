@@ -1,6 +1,5 @@
 import Mathlib.Tactic.Omega.ForStd
 import Mathlib.Tactic.Rewrites
-import Mathlib.Tactic.SplitIfs
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -388,7 +387,7 @@ def leadingSign (xs : IntList) : Int :=
 @[simp] theorem leadingSign_nil : leadingSign [] = 0 := rfl
 @[simp] theorem leadingSign_cons_zero : leadingSign (0 :: xs) = leadingSign xs := rfl
 theorem leadingSign_cons : leadingSign (x :: xs) = if x = 0 then leadingSign xs else x.sign := by
-  split_ifs with h
+  split <;> rename_i h
   · subst h
     rfl
   · rw [leadingSign]
