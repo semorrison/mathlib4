@@ -15,6 +15,31 @@ set_option relaxedAutoImplicit true
 
 open Classical
 
+
+namespace List
+
+def nonzeroMinimum? (xs : List Nat) : Nat := xs.filter (· ≠ 0) |>.minimum? |>.getD 0
+
+theorem nonzeroMinimum?_eq_zero_iff {xs : List Nat} :
+    xs.nonzeroMinimum? = 0 ↔ ∀ {x}, x ∈ xs → x = 0 := by
+  simp [nonzeroMinimum?, Option.getD_eq_iff, minimum?_eq_none_iff, minimum?_eq_some_iff, filter_eq_nil, mem_filter]
+
+theorem nonzeroMinimum?_mem {xs : List Nat} (w : xs.nonzeroMinimum? ≠ 0) :
+    xs.nonzeroMinimum? ∈ xs := by
+  dsimp [nonzeroMinimum?] at *
+  generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m at *
+  match m, w with
+  | some (m+1), _ => simp_all [minimum?_eq_some_iff, mem_filter]
+
+theorem nonzeroMinimum?_pos {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : 0 < xs.nonzeroMinimum? := by
+  sorry
+
+theorem nonzeroMinimum?_le {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : xs.nonzeroMinimum? ≤ a := by
+  dsimp [nonzeroMinimum?]
+  have : (xs.filter (· ≠ 0) |>.minimum?) = some xs.nonzeroMinimum? := sorry
+  generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m
+
+end List
 namespace UInt64
 
 attribute [ext] UInt64
@@ -1648,6 +1673,22 @@ def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equal
 def minEqualityCoeff (p : Problem) : Nat :=
   p.equalities.map (fun eq => eq.minCoeff) |>.filter (· ≠ 0) |>.minimum? |>.getD 0
 
+-- TODO fast lookup!
+def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
+  match h : p.equalities.find? fun eq => eq.minCoeff = p.minEqualityCoeff with
+  | some eq => eq
+  | none => by
+    exfalso
+    sorry
+
+theorem minCoeffEquality_mem (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
+    p.minCoeffEquality w ∈ p.equalities :=
+  sorry
+
+theorem minCoeffEquality_minCoeff (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
+    (p.minCoeffEquality w).minCoeff = p.minEqualityCoeff :=
+  sorry
+
 theorem equalitiesZero_of_minEqualityCoeff_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
     p.equalitiesZero := by
   intro eq m
@@ -1751,27 +1792,6 @@ theorem _root_.Prod.Lex.right'' [LT α] {a₁ a₂ : α} {b₁ b₂ : β} (ha : 
     Prod.Lex (· < ·) s (a₁, b₁) (a₂, b₂) :=
   ha ▸ Prod.Lex.right a₁ hb
 
--- TODO fast lookup!
-def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
-  match h : p.equalities.find? fun eq => eq.minCoeff = p.minEqualityCoeff with
-  | some eq => eq
-  | none => by
-    exfalso
-    sorry
-
-theorem minCoeffEquality_mem (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
-    p.minCoeffEquality w ∈ p.equalities :=
-  sorry
-
-theorem minCoeffEquality_minCoeff (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
-    (p.minCoeffEquality w).minCoeff = p.minEqualityCoeff :=
-  sorry
-
-def noop (p : Problem) : Problem := p.normalize.processConstants.checkContradictions
-
--- The maxHeartbeats bump is required because we use `shrinkEqualityCoeffsAndTidy`.
--- If we just do `shrinkEqualityCoeffs` it is fast. I don't understand!
--- set_option maxHeartbeats 800000
 -- The linter incorrectly complains about our decreasing witnesses.
 set_option linter.unusedVariables false in
 def eliminateEqualities : Nat → Problem → Problem
@@ -1814,7 +1834,6 @@ decreasing_by
 
 -- The linter incorrectly complains about our decreasing witnesses.
 set_option linter.unusedVariables false in
--- set_option maxHeartbeats 1600000 in
 theorem eliminateEqualities_equalities_length {fuel : Nat} {p : Problem} :
     (p.eliminateEqualities fuel).equalities.length = 0 := by
   match fuel with
