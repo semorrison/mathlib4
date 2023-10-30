@@ -94,14 +94,6 @@ theorem Int.div_nonneg_iff_of_pos {a b : Int} (h : 0 < b) : a / b ≥ 0 ↔ a �
     rcases a with ⟨a⟩ <;> simp [Int.ediv]
     exact decide_eq_decide.mp rfl
 
--- The next two are in https://github.com/leanprover/std4/pull/326
-
-theorem Int.mul_eq_mul_left_iff {a b c : Int} (h : c ≠ 0) : c * a = c * b ↔ a = b :=
-  ⟨Int.eq_of_mul_eq_mul_left h, fun w => congrArg (fun x => c * x) w⟩
-
-theorem Int.mul_eq_mul_right_iff {a b c : Int} (h : c ≠ 0) : a * c = b * c ↔ a = b :=
-  ⟨Int.eq_of_mul_eq_mul_right h, fun w => congrArg (fun x => x * c) w⟩
-
 @[simp] theorem ite_some_none_eq_none [Decidable P] :
     (if P then some x else none) = none ↔ ¬ P := by
   split <;> simp_all
@@ -185,19 +177,5 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
   | succ n ih =>
     simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
     split <;> simp_all
-
-end List
-
-namespace List
-
--- https://github.com/leanprover/std4/pull/327
-
-theorem exists_of_findSome?_eq_some {l : List α} {f : α → Option β} (w : l.findSome? f = some b) :
-    ∃ a, a ∈ l ∧ f a = b := by
-  induction l with
-  | nil => simp_all
-  | cons h l ih =>
-    simp_all only [findSome?_cons, mem_cons, exists_eq_or_imp]
-    split at w <;> simp_all
 
 end List
