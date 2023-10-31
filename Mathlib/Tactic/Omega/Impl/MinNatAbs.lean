@@ -1,5 +1,6 @@
 import Mathlib.Tactic.LeftRight
 import Mathlib.Tactic.Change
+import Mathlib.Tactic.Omega.ForStd
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -19,7 +20,7 @@ theorem minimum?_cons [Min α] {xs : List α} : (x :: xs).minimum? = foldl min x
 
 -- This could be generalized away from `Nat`.
 -- The standard library doesn't yet have the order typeclasses
--- that would be neccessary for such a generalization.
+-- that would be necessary for such a generalization.
 theorem minimum?_eq_some_iff {xs : List Nat} :
     xs.minimum? = some a ↔ (a ∈ xs ∧ ∀ b ∈ xs, a ≤ b) := by
   cases xs with
@@ -51,137 +52,61 @@ theorem minimum?_eq_some_iff {xs : List Nat} :
           exact ⟨Or.inl this.symm, by rw [this]; apply Nat.le_refl, h₄⟩
         · exact ⟨Or.inr h₁, by rw [Nat.min_def]; split <;> assumption, h₄⟩
 
-def minNatAbs? (xs : List Int) : Option Nat :=
-  match xs with
-  | [] => none
-  | x :: xs => if x = 0 then
-      xs.minNatAbs?
-    else match xs.minNatAbs? with
-      | none => some x.natAbs
-      | some m => some (min x.natAbs m)
+/--
+The minimum non-zero entry in a list of natural numbers, or zero if all entries are zero.
 
-@[simp]
-theorem minNatAbs?_eq_none_iff {xs : List Int} : xs.minNatAbs? = none ↔ ∀ y ∈ xs, y = 0 := by
+We completely characterize the function via
+`nonzeroMinimum_eq_zero_iff` and `nonzeroMinimum_eq_nonzero_iff` below.
+-/
+def nonzeroMinimum (xs : List Nat) : Nat := xs.filter (· ≠ 0) |>.minimum? |>.getD 0
+
+@[simp] theorem nonzeroMinimum_eq_zero_iff {xs : List Nat} :
+    xs.nonzeroMinimum = 0 ↔ ∀ {x}, x ∈ xs → x = 0 := by
+  simp [nonzeroMinimum, Option.getD_eq_iff, minimum?_eq_none_iff, minimum?_eq_some_iff,
+    filter_eq_nil, mem_filter]
+
+theorem nonzeroMinimum_mem {xs : List Nat} (w : xs.nonzeroMinimum ≠ 0) :
+    xs.nonzeroMinimum ∈ xs := by
+  dsimp [nonzeroMinimum] at *
+  generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m at *
+  match m, w with
+  | some (m+1), _ => simp_all [minimum?_eq_some_iff, mem_filter]
+
+theorem nonzeroMinimum_pos {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : 0 < xs.nonzeroMinimum :=
+  Nat.pos_iff_ne_zero.mpr fun w => h (nonzeroMinimum_eq_zero_iff.mp w m)
+
+theorem nonzeroMinimum_le {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : xs.nonzeroMinimum ≤ a := by
+  have : (xs.filter (· ≠ 0) |>.minimum?) = some xs.nonzeroMinimum := by
+    have w := nonzeroMinimum_pos m h
+    dsimp [nonzeroMinimum] at *
+    generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m? at *
+    match m?, w with
+    | some m?, _ => rfl
+  rw [minimum?_eq_some_iff] at this
+  apply this.2
+  simp [List.mem_filter]
+  exact ⟨m, h⟩
+
+theorem nonzeroMinimum_eq_nonzero_iff {xs : List Nat} {x : Nat} (h : x ≠ 0) :
+    xs.nonzeroMinimum = x ↔ x ∈ xs ∧ (∀ y ∈ xs, x ≤ y ∨ y = 0) := by
   constructor
-  · intro w
-    induction xs with
-    | nil => simp_all [minNatAbs?]
-    | cons x xs ih =>
-      simp only [minNatAbs?] at w
-      split at w <;> rename_i h
-      · intro y m
-        simp only [mem_cons] at m
-        rcases m with rfl | m
-        · assumption
-        · exact ih w y m
-      · split at w <;> simp_all
-  · induction xs <;> simp_all [minNatAbs?]
-
-@[simp] theorem minNatAbs?_ne_some_zero {xs : List Int} : xs.minNatAbs? ≠ some 0 := by
-  induction xs with
-  | nil => simp_all [minNatAbs?]
-  | cons x xs ih =>
-    simp only [minNatAbs?]
-    split
-    · assumption
-    · cases h : minNatAbs? xs
-      · simp_all
-      · simp
-        intro h
-        rw [Nat.min_def] at h
-        split at h <;> simp_all
-
-theorem minNatAbs?_exists_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z) :
-    ∃ y ∈ xs, y.natAbs = z := by
-  induction xs with
-  | nil => simp_all [minNatAbs?]
-  | cons x xs ih =>
-    simp only [minNatAbs?] at w
-    split at w
-    · specialize ih w
-      obtain ⟨x, m, rfl⟩ := ih
-      exact ⟨x, mem_cons_of_mem _ m, rfl⟩
-    · split at w
-      · simp only [Option.some.injEq] at w
-        refine ⟨x, mem_cons_self x xs, w⟩
-      · simp only [Option.some.injEq] at w
-        rename_i h'
-        rw [Nat.min_def] at w
-        split at w
-        · refine ⟨x, mem_cons_self x xs, w⟩
-        · subst w
-          obtain ⟨x, m, rfl⟩ := ih h'
-          refine ⟨x, mem_cons_of_mem _ m, rfl⟩
-
-theorem minNatAbs?_forall_of_eq_some {xs : List Int} (w : xs.minNatAbs? = some z) :
-    ∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0 := by
-  induction xs generalizing z with
-  | nil => simp_all [minNatAbs?]
-  | cons x xs ih =>
-    simp only [minNatAbs?] at w
-    split at w
-    · specialize ih w
-      intro y m
-      simp only [mem_cons] at m
-      rcases m with rfl | m
-      · right; assumption
-      · exact ih _ m
-    · split at w
-      · simp only [Option.some.injEq] at w
-        intro y m
-        simp only [mem_cons] at m
-        rcases m with rfl | m
-        · left; exact Nat.le_of_eq w.symm
-        · rename_i h'
-          simp only [minNatAbs?_eq_none_iff] at h'
-          right
-          exact h' _ m
-      · simp only [Option.some.injEq] at w
-        rename_i h₁
-        rw [Nat.min_def] at w
-        split at w <;> rename_i h₂
-        · subst w
-          intro y m
-          simp only [mem_cons] at m
-          rcases m with rfl | m
-          · left; exact Nat.le_refl _
-          · specialize ih h₁ _ m
-            rcases ih with ih | rfl
-            · left
-              exact Nat.le_trans h₂ ih
-            · simp
-        · subst w
-          intro y m
-          simp only [mem_cons] at m
-          rcases m with rfl | m
-          · left
-            exact Nat.le_of_not_le h₂
-          · exact ih h₁ _ m
-
-theorem minNatAbs?_eq_some_iff {xs : List Int} :
-    xs.minNatAbs? = some z ↔
-      (z ≠ 0 ∧ (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0)) := by
-  constructor
-  · intro w
-    exact ⟨by rintro rfl; simp_all, minNatAbs?_exists_of_eq_some w, minNatAbs?_forall_of_eq_some w⟩
-  · rintro ⟨w₁, ⟨y, m, rfl⟩, w₃⟩
-    cases h : minNatAbs? xs with
-    | none =>
-      simp only [minNatAbs?_eq_none_iff] at h
-      specialize h _ m
-      simp_all
-    | some z' =>
-      simp only [Option.some.injEq]
-      apply Nat.le_antisymm
-      · replace h := minNatAbs?_forall_of_eq_some h _ m
-        rcases h with h | rfl
-        · assumption
-        · simp_all
-      · obtain ⟨y', m', rfl⟩ := minNatAbs?_exists_of_eq_some h
-        specialize w₃ _ m'
-        rcases w₃ with w₂ | rfl
-        · assumption
-        · simp at h
+  · rintro rfl
+    constructor
+    exact nonzeroMinimum_mem h
+    intro y m
+    by_cases w : y = 0
+    · right; exact w
+    · left; apply nonzeroMinimum_le m w
+  · rintro ⟨m, w⟩
+    apply Nat.le_antisymm
+    · exact nonzeroMinimum_le m h
+    · have nz : xs.nonzeroMinimum ≠ 0 := by
+        apply Nat.pos_iff_ne_zero.mp
+        apply nonzeroMinimum_pos m h
+      specialize w (nonzeroMinimum xs) (nonzeroMinimum_mem nz)
+      cases w with
+      | inl h => exact h
+      | inr h => exfalso; exact nz h
 
 /--
 The minimum absolute value of a nonzero entry, or zero if all entries are zero.
@@ -189,43 +114,12 @@ The minimum absolute value of a nonzero entry, or zero if all entries are zero.
 We completely characterize the function via
 `minNatAbs_eq_zero_iff` and `minNatAbs_eq_nonzero_iff` below.
 -/
-def minNatAbs (xs : List Int) : Nat := xs.minNatAbs?.getD 0
+def minNatAbs (xs : List Int) : Nat := xs.map Int.natAbs |>.nonzeroMinimum
 
 @[simp] theorem minNatAbs_eq_zero_iff {xs : List Int} : xs.minNatAbs = 0 ↔ ∀ y ∈ xs, y = 0 := by
-  simp only [minNatAbs]
-  cases h : xs.minNatAbs?
-  · simp_all only [minNatAbs?_eq_none_iff, true_iff]
-    assumption
-  · simp
-    constructor
-    · rintro rfl
-      simp_all
-    · replace h := minNatAbs?_exists_of_eq_some h
-      obtain ⟨y, m, rfl⟩ := h
-      intro w
-      specialize w _ m
-      simp_all
+  simp [minNatAbs]
 
 theorem minNatAbs_eq_nonzero_iff (xs : List Int) (w : z ≠ 0) :
     xs.minNatAbs = z ↔
       (∃ y ∈ xs, y.natAbs = z) ∧ (∀ y ∈ xs, z ≤ y.natAbs ∨ y = 0) := by
-  simp only [minNatAbs]
-  cases h : xs.minNatAbs? with
-  | none =>
-    simp only [Option.getD_none]
-    constructor
-    · rintro rfl
-      simp_all
-    · intro w'
-      have := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
-      simp_all
-  | some z' =>
-    simp
-    constructor
-    · rintro rfl
-      exact (minNatAbs?_eq_some_iff.mp h).2
-    · intro w'
-      replace w' := minNatAbs?_eq_some_iff.mpr ⟨w, w'⟩
-      simp_all
-
-end List
+  simp [minNatAbs, nonzeroMinimum_eq_nonzero_iff w]

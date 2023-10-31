@@ -16,39 +16,6 @@ set_option relaxedAutoImplicit true
 
 open Classical
 
-
-namespace List
-
-/-- The minimum non-zero entry in a list of natural numbers, or zero if all entries are zero. -/
-def nonzeroMinimum (xs : List Nat) : Nat := xs.filter (· ≠ 0) |>.minimum? |>.getD 0
-
-theorem nonzeroMinimum_eq_zero_iff {xs : List Nat} :
-    xs.nonzeroMinimum = 0 ↔ ∀ {x}, x ∈ xs → x = 0 := by
-  simp [nonzeroMinimum, Option.getD_eq_iff, minimum?_eq_none_iff, minimum?_eq_some_iff, filter_eq_nil, mem_filter]
-
-theorem nonzeroMinimum_mem {xs : List Nat} (w : xs.nonzeroMinimum ≠ 0) :
-    xs.nonzeroMinimum ∈ xs := by
-  dsimp [nonzeroMinimum] at *
-  generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m at *
-  match m, w with
-  | some (m+1), _ => simp_all [minimum?_eq_some_iff, mem_filter]
-
-theorem nonzeroMinimum_pos {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : 0 < xs.nonzeroMinimum :=
-  Nat.pos_iff_ne_zero.mpr fun w => h (nonzeroMinimum_eq_zero_iff.mp w m)
-
-theorem nonzeroMinimum_le {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : xs.nonzeroMinimum ≤ a := by
-  have : (xs.filter (· ≠ 0) |>.minimum?) = some xs.nonzeroMinimum := by
-    have w := nonzeroMinimum_pos m h
-    dsimp [nonzeroMinimum] at *
-    generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m? at *
-    match m?, w with
-    | some m?, _ => rfl
-  rw [minimum?_eq_some_iff] at this
-  apply this.2
-  simp [List.mem_filter]
-  exact ⟨m, h⟩
-
-end List
 namespace UInt64
 
 attribute [ext] UInt64
@@ -814,6 +781,15 @@ theorem eval_eq_of_constant (lc : LinearCombo) (h : lc.constant? = some c) : lc.
   exact IntList.dot_of_left_zero h
 
 end LinearCombo
+
+namespace Equality
+
+theorem constant?_eq_none_iff {e : Equality} : e.linearCombo.constant? = none ↔ e.minCoeff ≠ 0 := by
+  rw [minCoeff_spec, Ne, List.minNatAbs_eq_zero_iff, LinearCombo.constant?]
+  simp only [ite_eq_right_iff]
+  change ¬ _ ↔ _
+  simp
+end Equality
 
 namespace Problem
 
@@ -1685,9 +1661,97 @@ def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equal
 def minEqualityCoeff (p : Problem) : Nat :=
   p.equalities.map (fun eq => eq.minCoeff) |>.nonzeroMinimum
 
+@[simp] theorem impossible_minEqualityCoeff : impossible.minEqualityCoeff = 0 := rfl
+
+/-!
+Unfortunately it's simply not true that `p.normalize.minEqualityCoeff ≤ p.minEqualityCoeff`,
+because the minimal coefficient could disappear if it appears in a constraint
+where the gcd of the coefficients does not divide the constant term.
+
+Fortunately in this case `p.normalize.processConstants = impossible`,
+but we still need to work a bit here.
+-/
+
+-- theorem normalize_minEqualityCoeff_le (p : Problem) :
+--     p.normalize.minEqualityCoeff ≤ p.minEqualityCoeff := by
+--   dsimp [normalize, minEqualityCoeff]
+--   rw [List.map_map]
+--   dsimp only [Function.comp]
+--   sorry
+
+theorem normalize_processConstants_impossible_or₁ (p : Problem) :
+    p.normalize.processConstants = impossible ∨
+      ∀ {eq}, eq ∈ p.equalities → (eq.linearCombo.coeffs.gcd : Int) ∣ eq.linearCombo.const := by
+  apply or_iff_not_imp_right.mpr
+  simp only [not_forall, exists_prop, forall_exists_index, and_imp]
+  intro eq m h
+  dsimp [processConstants]
+  rw [if_neg]
+  rw [not_and_or]
+  left
+  simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index, and_imp,
+    not_forall, exists_prop, exists_and_left]
+  refine ⟨1, eq.normalize, List.mem_map_of_mem _ m, ?_, by decide⟩
+  dsimp [Equality.normalize, LinearCombo.normalizeEquality]
+  rw [if_neg h]
+  rfl
+
+theorem normalize_processConstants_impossible_or₂ (p : Problem) :
+    p.normalize.processConstants = impossible ∨
+      ∀ {eq}, eq ∈ p.equalities → eq.minCoeff ≠ 0 →
+        eq.normalize.minCoeff ≠ 0 ∧ eq.normalize.minCoeff ≤ eq.minCoeff := by
+  cases p.normalize_processConstants_impossible_or₁ with
+  | inl h => left; exact h
+  | inr h =>
+    right
+    intro eq m ne
+    specialize h m
+    dsimp [Equality.normalize, LinearCombo.normalizeEquality]
+    simp only [if_pos h]
+    constructor
+    · dsimp [Equality.minCoeff]
+      sorry
+    · sorry
+
+theorem normalize_processConstants_impossible_or₃ (p : Problem) :
+    p.normalize.processConstants = impossible ∨
+      p.normalize.minEqualityCoeff ≤ p.minEqualityCoeff := by
+  cases p.normalize_processConstants_impossible_or₂ with
+  | inl h => exact Or.inl h
+  | inr h =>
+    sorry
+
+theorem processConstants_minEqualityCoeff_le (p : Problem) :
+    p.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
+  dsimp [processConstants]
+  split
+  · dsimp [minEqualityCoeff]
+    simp only [Equality.constant?_eq_none_iff]
+    simp only [List.nonzeroMinimum]
+    rw [List.map_filter, List.map_filter, List.filter_filter]
+    simp only [ne_eq, decide_not, Function.comp_apply, Bool.not_eq_true', decide_eq_false_iff_not,
+      and_self]
+    apply Nat.le_refl
+  · simp
+
+theorem normalize_processConstants_minEqualityCoeff_le (p : Problem) :
+    p.normalize.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
+  cases p.normalize_processConstants_impossible_or₃ with
+  | inl h => simp_all
+  | inr h => calc
+      _ ≤ _ := processConstants_minEqualityCoeff_le _
+      _ ≤ _ := h
+
+theorem checkContradictions_minEqualityCoeff_le (p : Problem) :
+    p.checkContradictions.minEqualityCoeff ≤ p.minEqualityCoeff := by
+  dsimp [checkContradictions]
+  split <;> simp
+
 theorem tidy_minEqualityCoeff_le (p : Problem) :
     p.tidy.minEqualityCoeff ≤ p.minEqualityCoeff :=
-  sorry
+  calc
+    _ ≤ _ := checkContradictions_minEqualityCoeff_le _
+    _ ≤ _ := normalize_processConstants_minEqualityCoeff_le _
 
 -- TODO fast lookup!
 def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
