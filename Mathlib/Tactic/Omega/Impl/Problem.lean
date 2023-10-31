@@ -9,6 +9,7 @@ import Mathlib.Util.WhatsNew
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
+import Aesop
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -18,26 +19,34 @@ open Classical
 
 namespace List
 
-def nonzeroMinimum? (xs : List Nat) : Nat := xs.filter (· ≠ 0) |>.minimum? |>.getD 0
+/-- The minimum non-zero entry in a list of natural numbers, or zero if all entries are zero. -/
+def nonzeroMinimum (xs : List Nat) : Nat := xs.filter (· ≠ 0) |>.minimum? |>.getD 0
 
-theorem nonzeroMinimum?_eq_zero_iff {xs : List Nat} :
-    xs.nonzeroMinimum? = 0 ↔ ∀ {x}, x ∈ xs → x = 0 := by
-  simp [nonzeroMinimum?, Option.getD_eq_iff, minimum?_eq_none_iff, minimum?_eq_some_iff, filter_eq_nil, mem_filter]
+theorem nonzeroMinimum_eq_zero_iff {xs : List Nat} :
+    xs.nonzeroMinimum = 0 ↔ ∀ {x}, x ∈ xs → x = 0 := by
+  simp [nonzeroMinimum, Option.getD_eq_iff, minimum?_eq_none_iff, minimum?_eq_some_iff, filter_eq_nil, mem_filter]
 
-theorem nonzeroMinimum?_mem {xs : List Nat} (w : xs.nonzeroMinimum? ≠ 0) :
-    xs.nonzeroMinimum? ∈ xs := by
-  dsimp [nonzeroMinimum?] at *
+theorem nonzeroMinimum_mem {xs : List Nat} (w : xs.nonzeroMinimum ≠ 0) :
+    xs.nonzeroMinimum ∈ xs := by
+  dsimp [nonzeroMinimum] at *
   generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m at *
   match m, w with
   | some (m+1), _ => simp_all [minimum?_eq_some_iff, mem_filter]
 
-theorem nonzeroMinimum?_pos {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : 0 < xs.nonzeroMinimum? := by
-  sorry
+theorem nonzeroMinimum_pos {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : 0 < xs.nonzeroMinimum :=
+  Nat.pos_iff_ne_zero.mpr fun w => h (nonzeroMinimum_eq_zero_iff.mp w m)
 
-theorem nonzeroMinimum?_le {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : xs.nonzeroMinimum? ≤ a := by
-  dsimp [nonzeroMinimum?]
-  have : (xs.filter (· ≠ 0) |>.minimum?) = some xs.nonzeroMinimum? := sorry
-  generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m
+theorem nonzeroMinimum_le {xs : List Nat} (m : a ∈ xs) (h : a ≠ 0) : xs.nonzeroMinimum ≤ a := by
+  have : (xs.filter (· ≠ 0) |>.minimum?) = some xs.nonzeroMinimum := by
+    have w := nonzeroMinimum_pos m h
+    dsimp [nonzeroMinimum] at *
+    generalize h : (xs.filter (· ≠ 0) |>.minimum?) = m? at *
+    match m?, w with
+    | some m?, _ => rfl
+  rw [minimum?_eq_some_iff] at this
+  apply this.2
+  simp [List.mem_filter]
+  exact ⟨m, h⟩
 
 end List
 namespace UInt64
@@ -1592,7 +1601,8 @@ theorem minCoeffIdx_lt_numVars {p : Problem} {eq : Equality} (m : eq ∈ p.equal
   · exact this
   · apply equality_length_le_numVars m
 
-theorem inequality_length_le_numVars {p : Problem} {ineq : LinearCombo} (m : ineq ∈ p.inequalities) :
+theorem inequality_length_le_numVars
+    {p : Problem} {ineq : LinearCombo} (m : ineq ∈ p.inequalities) :
     ineq.coeffs.length ≤ p.numVars := by
   dsimp [numVars]
   generalize p.inequalities = inequalities at m
@@ -1638,8 +1648,10 @@ def shrinkEqualitySolution (p : Problem) (eq : Equality) (i : Nat) : p → p :=
       rw [LinearCombo.shrinkingConstraintSolution, inequality_eval_set_numVars m]
       exact h.inequalities m }⟩
 
-theorem shrinkEqualitySolution_spec (p : Problem) (eq : Equality) (m : eq ∈ p.equalities) (i : Nat) :
-    ∀ x : p, (eq.linearCombo.shrinkingConstraint i p.numVars).eval (p.shrinkEqualitySolution eq i x).1 = 0 := by
+theorem shrinkEqualitySolution_spec
+    (p : Problem) (eq : Equality) (m : eq ∈ p.equalities) (i : Nat) :
+    ∀ x : p, (eq.linearCombo.shrinkingConstraint i p.numVars).eval
+      (p.shrinkEqualitySolution eq i x).1 = 0 := by
   rintro ⟨v, h⟩
   dsimp [shrinkEqualitySolution]
   apply LinearCombo.shrinkingConstraint_eval
@@ -1671,7 +1683,11 @@ def shrinkEqualityCoeffs_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equal
 
 /-- The minimal absolute value of a nonzero coefficient appearing in an equality. -/
 def minEqualityCoeff (p : Problem) : Nat :=
-  p.equalities.map (fun eq => eq.minCoeff) |>.filter (· ≠ 0) |>.minimum? |>.getD 0
+  p.equalities.map (fun eq => eq.minCoeff) |>.nonzeroMinimum
+
+theorem tidy_minEqualityCoeff_le (p : Problem) :
+    p.tidy.minEqualityCoeff ≤ p.minEqualityCoeff :=
+  sorry
 
 -- TODO fast lookup!
 def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
@@ -1679,27 +1695,34 @@ def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
   | some eq => eq
   | none => by
     exfalso
-    sorry
+    rw [List.find?_eq_none] at h
+    obtain ⟨eq, m, q⟩ := List.mem_map.mp (List.nonzeroMinimum_mem w)
+    exact h eq m (decide_eq_true_eq.mpr q)
+
+/-- Anything is true about `False.elim _`. -/
+theorem _root_.False.elim_spec {x : False} (P : α → Prop) : P (False.elim x) :=
+  False.elim x
 
 theorem minCoeffEquality_mem (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
-    p.minCoeffEquality w ∈ p.equalities :=
-  sorry
+    p.minCoeffEquality w ∈ p.equalities := by
+  dsimp [minCoeffEquality]
+  split <;> rename_i h
+  · exact List.mem_of_find?_eq_some h
+  · exact False.elim_spec (· ∈ p.equalities)
 
 theorem minCoeffEquality_minCoeff (p : Problem) (w : p.minEqualityCoeff ≠ 0) :
-    (p.minCoeffEquality w).minCoeff = p.minEqualityCoeff :=
-  sorry
+    (p.minCoeffEquality w).minCoeff = p.minEqualityCoeff := by
+  dsimp [minCoeffEquality]
+  split <;> rename_i h
+  · simpa using List.find?_some h
+  · exact False.elim_spec (Equality.minCoeff · = p.minEqualityCoeff)
 
 theorem equalitiesZero_of_minEqualityCoeff_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
     p.equalitiesZero := by
   intro eq m
   have : eq.minCoeff = 0 := by
     by_contra h
-    dsimp [minEqualityCoeff] at w
-    rw [Option.getD_eq_iff] at w
-    rcases w with w | ⟨w, -⟩
-    · sorry
-    · sorry
-
+    exact Nat.ne_of_gt (List.nonzeroMinimum_pos (List.mem_map_of_mem Equality.minCoeff m) h) w
   apply eq.coeff_zero_of_minCoeff_zero this
 
 theorem tidy_equalities_of_minEqualityCoeff_eq_zero {p : Problem} (w : p.minEqualityCoeff = 0) :
@@ -1720,34 +1743,54 @@ def shrinkEqualityCoeffsAndTidy (p : Problem) (eq : Equality) (i : Nat) : Proble
 
 theorem shrinkEqualityCoeffsAndTidy_length_le (p : Problem) (eq : Equality) (i : Nat) :
     (p.shrinkEqualityCoeffsAndTidy eq i).equalities.length ≤ p.equalities.length :=
-  sorry
+  calc
+    _ ≤ _ := tidy_equalities_length _
+    _ ≤ _ := shrinkEqualityCoeffs_length_le _ _ _
 
 theorem shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
     (p.shrinkEqualityCoeffsAndTidy eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
-  sorry
+  calc
+    _ ≤ _ := tidy_minEqualityCoeff_le _
+    _ ≤ _ := shrinkEqualityCoeffs_minEqualityCoeff_le p eq i
 
-def shrinkEqualityCoeffsAndTidy_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equalities) (i : Nat)
-    (h : 1 < (eq.linearCombo.coeff i).natAbs) (w : i < p.numVars) :
+def shrinkEqualityCoeffsAndTidy_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equalities)
+    (i : Nat) (h : 1 < (eq.linearCombo.coeff i).natAbs) (w : i < p.numVars) :
     (p.shrinkEqualityCoeffsAndTidy eq i).equiv p :=
   (tidy_equiv _).trans
     (p.shrinkEqualityCoeffs_equiv eq m i h w)
 
-
-def easyEquality (p : Problem) (h : p.minEqualityCoeff = 1) : Equality :=
+-- TODO make sure this is fast, i.e. don't use `find?`!
+/-- Given that the minimal coefficient in an equality is 1, select such an equality. -/
+def easyEquality (p : Problem) (w : p.minEqualityCoeff = 1) : Equality :=
   match h : p.equalities.find? fun eq => eq.minCoeff = 1 with
   | some eq => eq
-  | none => False.elim sorry
+  | none => by
+    exfalso
+    rw [List.find?_eq_none] at h
+    specialize h (p.minCoeffEquality (by simp_all))
+    simp only [minCoeffEquality_minCoeff, decide_eq_true_eq] at h
+    apply h (minCoeffEquality_mem p _) w
 
-theorem easyEquality_mem (p : Problem) (h : p.minEqualityCoeff = 1) : p.easyEquality h ∈ p.equalities :=
-  sorry
+theorem easyEquality_mem (p : Problem) (h : p.minEqualityCoeff = 1) :
+    p.easyEquality h ∈ p.equalities := by
+  dsimp [easyEquality]
+  split <;> rename_i h
+  · exact List.mem_of_find?_eq_some h
+  · exact False.elim_spec (· ∈ p.equalities)
 
-theorem easyEquality_minCoeff (p : Problem) (h : p.minEqualityCoeff = 1) : (p.easyEquality h).minCoeff = 1 :=
-  sorry
+theorem easyEquality_minCoeff (p : Problem) (h : p.minEqualityCoeff = 1) :
+    (p.easyEquality h).minCoeff = 1 := by
+  dsimp [easyEquality]
+  split <;> rename_i h
+  · simpa using List.find?_some h
+  · exact False.elim_spec (Equality.minCoeff · = 1)
 
+/-- Given that the minimal coefficient in an equality is 1, eliminate such an equality. -/
 def eliminateEasyEquality (p : Problem) (h : p.minEqualityCoeff = 1) : Problem :=
   let eq := p.easyEquality h
   (p.eliminateEquality eq eq.minCoeffIdx).tidy
 
+/-- `eliminateEasyEquality` produces an equivalent problem. -/
 def eliminateEasyEquality_equiv (p : Problem) (h) :
     (p.eliminateEasyEquality h).equiv p :=
   (tidy_equiv _).trans
@@ -1777,7 +1820,7 @@ def maxEqualityCoeff (p : Problem) : Nat :=
 -- theorem shrinkEqualityCoeffs_maxEqualityCoeff_lt (p : Problem) (eq : Equality) (i : Nat)
 --     (w : (p.shrinkEqualityCoeffs eq i).minEqualityCoeff = p.minEqualityCoeff) :
 --     (p.shrinkEqualityCoeffs eq i).maxEqualityCoeff < p.maxEqualityCoeff :=
---   -- Lots of work hiding here!
+--   -- Lots of work hiding here! Required for termination proof without fuel.
 --   sorry
 
 -- theorem shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt (p : Problem) (eq : Equality) (i : Nat)
