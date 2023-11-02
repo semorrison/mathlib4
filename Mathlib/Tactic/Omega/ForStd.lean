@@ -12,13 +12,6 @@ def Lex (α : Type _) := α
 instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
-namespace Option
-
-theorem getD_eq_iff {o : Option α} {a b} : o.getD a = b ↔ (o = some b ∨ o = none ∧ a = b) := by
-  cases o <;> simp
-
-end Option
-
 namespace List
 
 theorem filter_cons :
