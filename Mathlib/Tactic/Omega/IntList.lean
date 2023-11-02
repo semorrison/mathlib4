@@ -285,6 +285,9 @@ def sdiv (xs : IntList) (g : Int) : IntList := xs.map fun x => x / g
   simp only [sdiv, get, List.get?_map]
   cases xs.get? i <;> simp
 
+theorem mem_sdiv {xs : IntList} (h : x ∈ xs) : x / g ∈ xs.sdiv g := by
+  apply List.mem_map_of_mem _ h
+
 def gcd (xs : IntList) : Nat := xs.foldr (fun x g => Nat.gcd x.natAbs g) 0
 
 @[simp] theorem gcd_nil : gcd [] = 0 := rfl

@@ -984,11 +984,34 @@ def normalize (eq : Equality) : Equality :=
 theorem normalize_eval {eq : Equality} :
   eq.normalize.linearCombo.eval v = 0 ↔ eq.linearCombo.eval v = 0 := by simp
 
+theorem normalize_minCoeff_le (eq : Equality) : eq.normalize.minCoeff ≤ eq.minCoeff := by
+  dsimp [normalize, LinearCombo.normalizeEquality]
+  split <;> rename_i dvd
+  · rw [minCoeff_spec, minCoeff_spec]
+    dsimp
+    apply List.nonzeroMininum_map_le_nonzeroMinimum
+    · intro a m
+      simp only [Int.natAbs_eq_zero]
+      constructor
+      · rintro rfl; simp
+      · intro h
+        rw [← Int.ediv_mul_cancel (IntList.gcd_dvd _ m)]
+        simp [h]
+    · intro a _ _
+      apply Int.natAbs_div_le_natAbs
+  · simp [minCoeff_spec]
+
+theorem normalize_minCoeff_zero (eq : Equality) (h : eq.minCoeff = 0) :
+    eq.normalize.minCoeff = 0 := by
+  have := eq.normalize_minCoeff_le
+  simp_all
+
 end Equality
 
 namespace Problem
 
 /-- To normalize a problem we normalize each equality and inequality. -/
+@[simps]
 def normalize (p : Problem) : Problem where
   possible := p.possible
   equalities := p.equalities.map Equality.normalize
@@ -1399,6 +1422,7 @@ theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) : Int.bmod x (x.na
           all_goals decide
     · exact Int.ofNat_nonneg x
     · exact Int.succ_ofNat_pos (x + 1)
+
 namespace LinearCombo
 
 @[simps]
@@ -1696,6 +1720,14 @@ theorem normalize_processConstants_impossible_or₁ (p : Problem) :
   rw [if_neg h]
   rfl
 
+theorem _root_.IntList.sdiv_gcd_minNatAbs {xs : IntList} :
+    (xs.sdiv xs.gcd).minNatAbs = xs.minNatAbs / xs.gcd := by
+  rw [List.minNatAbs_eq_nonzero_iff]
+  · constructor
+    · sorry
+    · sorry
+  · sorry
+
 theorem normalize_processConstants_impossible_or₂ (p : Problem) :
     p.normalize.processConstants = impossible ∨
       ∀ {eq}, eq ∈ p.equalities → eq.minCoeff ≠ 0 →
@@ -1708,10 +1740,21 @@ theorem normalize_processConstants_impossible_or₂ (p : Problem) :
     specialize h m
     dsimp [Equality.normalize, LinearCombo.normalizeEquality]
     simp only [if_pos h]
+    rw [Equality.minCoeff_spec, Ne, List.minNatAbs_eq_zero_iff] at ne
+    rw [Equality.minCoeff_spec, List.minNatAbs_eq_zero_iff]
+    simp only [not_forall, exists_prop] at *
+    obtain ⟨x, xm, xne⟩ := ne
     constructor
-    · dsimp [Equality.minCoeff]
-      sorry
-    · sorry
+    · refine ⟨_, IntList.mem_sdiv xm, ?_⟩
+      intro w
+      apply xne
+      have dvd : (eq.linearCombo.coeffs.gcd : Int) ∣ x := IntList.gcd_dvd _ xm
+      rw [← Int.ediv_mul_cancel dvd]
+      simp_all
+    · rw [IntList.sdiv_gcd_minNatAbs]
+      calc
+        _ ≤ eq.linearCombo.coeffs.minNatAbs := by apply Nat.div_le_self
+        _ ≤ _ := by rw [Equality.minCoeff_spec]; apply Nat.le_refl
 
 theorem normalize_processConstants_impossible_or₃ (p : Problem) :
     p.normalize.processConstants = impossible ∨
@@ -1719,7 +1762,17 @@ theorem normalize_processConstants_impossible_or₃ (p : Problem) :
   cases p.normalize_processConstants_impossible_or₂ with
   | inl h => exact Or.inl h
   | inr h =>
-    sorry
+    right
+    apply List.nonzeroMininum_map_le_nonzeroMinimum
+    · intro eq m
+      specialize h m
+      constructor
+      · exact eq.normalize_minCoeff_zero
+      · intro w
+        by_contra e
+        exact (h e).1 w
+    · intro eq _ _
+      apply Equality.normalize_minCoeff_le
 
 theorem processConstants_minEqualityCoeff_le (p : Problem) :
     p.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
