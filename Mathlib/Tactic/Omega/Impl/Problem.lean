@@ -1720,59 +1720,59 @@ theorem normalize_processConstants_impossible_or₁ (p : Problem) :
   rw [if_neg h]
   rfl
 
-theorem _root_.IntList.sdiv_gcd_minNatAbs {xs : IntList} :
-    (xs.sdiv xs.gcd).minNatAbs = xs.minNatAbs / xs.gcd := by
-  rw [List.minNatAbs_eq_nonzero_iff]
-  · constructor
-    · sorry
-    · sorry
-  · sorry
+-- theorem _root_.IntList.sdiv_gcd_minNatAbs {xs : IntList} :
+--     (xs.sdiv xs.gcd).minNatAbs = xs.minNatAbs / xs.gcd := by
+--   rw [List.minNatAbs_eq_nonzero_iff]
+--   · constructor
+--     · sorry
+--     · sorry
+--   · sorry
 
-theorem normalize_processConstants_impossible_or₂ (p : Problem) :
-    p.normalize.processConstants = impossible ∨
-      ∀ {eq}, eq ∈ p.equalities → eq.minCoeff ≠ 0 →
-        eq.normalize.minCoeff ≠ 0 ∧ eq.normalize.minCoeff ≤ eq.minCoeff := by
-  cases p.normalize_processConstants_impossible_or₁ with
-  | inl h => left; exact h
-  | inr h =>
-    right
-    intro eq m ne
-    specialize h m
-    dsimp [Equality.normalize, LinearCombo.normalizeEquality]
-    simp only [if_pos h]
-    rw [Equality.minCoeff_spec, Ne, List.minNatAbs_eq_zero_iff] at ne
-    rw [Equality.minCoeff_spec, List.minNatAbs_eq_zero_iff]
-    simp only [not_forall, exists_prop] at *
-    obtain ⟨x, xm, xne⟩ := ne
-    constructor
-    · refine ⟨_, IntList.mem_sdiv xm, ?_⟩
-      intro w
-      apply xne
-      have dvd : (eq.linearCombo.coeffs.gcd : Int) ∣ x := IntList.gcd_dvd _ xm
-      rw [← Int.ediv_mul_cancel dvd]
-      simp_all
-    · rw [IntList.sdiv_gcd_minNatAbs]
-      calc
-        _ ≤ eq.linearCombo.coeffs.minNatAbs := by apply Nat.div_le_self
-        _ ≤ _ := by rw [Equality.minCoeff_spec]; apply Nat.le_refl
+-- theorem normalize_processConstants_impossible_or₂ (p : Problem) :
+--     p.normalize.processConstants = impossible ∨
+--       ∀ {eq}, eq ∈ p.equalities → eq.minCoeff ≠ 0 →
+--         eq.normalize.minCoeff ≠ 0 ∧ eq.normalize.minCoeff ≤ eq.minCoeff := by
+--   cases p.normalize_processConstants_impossible_or₁ with
+--   | inl h => left; exact h
+--   | inr h =>
+--     right
+--     intro eq m ne
+--     specialize h m
+--     dsimp [Equality.normalize, LinearCombo.normalizeEquality]
+--     simp only [if_pos h]
+--     rw [Equality.minCoeff_spec, Ne, List.minNatAbs_eq_zero_iff] at ne
+--     rw [Equality.minCoeff_spec, List.minNatAbs_eq_zero_iff]
+--     simp only [not_forall, exists_prop] at *
+--     obtain ⟨x, xm, xne⟩ := ne
+--     constructor
+--     · refine ⟨_, IntList.mem_sdiv xm, ?_⟩
+--       intro w
+--       apply xne
+--       have dvd : (eq.linearCombo.coeffs.gcd : Int) ∣ x := IntList.gcd_dvd _ xm
+--       rw [← Int.ediv_mul_cancel dvd]
+--       simp_all
+--     · rw [IntList.sdiv_gcd_minNatAbs]
+--       calc
+--         _ ≤ eq.linearCombo.coeffs.minNatAbs := by apply Nat.div_le_self
+--         _ ≤ _ := by rw [Equality.minCoeff_spec]; apply Nat.le_refl
 
-theorem normalize_processConstants_impossible_or₃ (p : Problem) :
-    p.normalize.processConstants = impossible ∨
-      p.normalize.minEqualityCoeff ≤ p.minEqualityCoeff := by
-  cases p.normalize_processConstants_impossible_or₂ with
-  | inl h => exact Or.inl h
-  | inr h =>
-    right
-    apply List.nonzeroMininum_map_le_nonzeroMinimum
-    · intro eq m
-      specialize h m
-      constructor
-      · exact eq.normalize_minCoeff_zero
-      · intro w
-        by_contra e
-        exact (h e).1 w
-    · intro eq _ _
-      apply Equality.normalize_minCoeff_le
+-- theorem normalize_processConstants_impossible_or₃ (p : Problem) :
+--     p.normalize.processConstants = impossible ∨
+--       p.normalize.minEqualityCoeff ≤ p.minEqualityCoeff := by
+--   cases p.normalize_processConstants_impossible_or₂ with
+--   | inl h => exact Or.inl h
+--   | inr h =>
+--     right
+--     apply List.nonzeroMininum_map_le_nonzeroMinimum
+--     · intro eq m
+--       specialize h m
+--       constructor
+--       · exact eq.normalize_minCoeff_zero
+--       · intro w
+--         by_contra e
+--         exact (h e).1 w
+--     · intro eq _ _
+--       apply Equality.normalize_minCoeff_le
 
 theorem processConstants_minEqualityCoeff_le (p : Problem) :
     p.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
@@ -1787,24 +1787,24 @@ theorem processConstants_minEqualityCoeff_le (p : Problem) :
     apply Nat.le_refl
   · simp
 
-theorem normalize_processConstants_minEqualityCoeff_le (p : Problem) :
-    p.normalize.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
-  cases p.normalize_processConstants_impossible_or₃ with
-  | inl h => simp_all
-  | inr h => calc
-      _ ≤ _ := processConstants_minEqualityCoeff_le _
-      _ ≤ _ := h
+-- theorem normalize_processConstants_minEqualityCoeff_le (p : Problem) :
+--     p.normalize.processConstants.minEqualityCoeff ≤ p.minEqualityCoeff := by
+--   cases p.normalize_processConstants_impossible_or₃ with
+--   | inl h => simp_all
+--   | inr h => calc
+--       _ ≤ _ := processConstants_minEqualityCoeff_le _
+--       _ ≤ _ := h
 
 theorem checkContradictions_minEqualityCoeff_le (p : Problem) :
     p.checkContradictions.minEqualityCoeff ≤ p.minEqualityCoeff := by
   dsimp [checkContradictions]
   split <;> simp
 
-theorem tidy_minEqualityCoeff_le (p : Problem) :
-    p.tidy.minEqualityCoeff ≤ p.minEqualityCoeff :=
-  calc
-    _ ≤ _ := checkContradictions_minEqualityCoeff_le _
-    _ ≤ _ := normalize_processConstants_minEqualityCoeff_le _
+-- theorem tidy_minEqualityCoeff_le (p : Problem) :
+--     p.tidy.minEqualityCoeff ≤ p.minEqualityCoeff :=
+--   calc
+--     _ ≤ _ := checkContradictions_minEqualityCoeff_le _
+--     _ ≤ _ := normalize_processConstants_minEqualityCoeff_le _
 
 -- TODO fast lookup!
 def minCoeffEquality (p : Problem) (w : p.minEqualityCoeff ≠ 0) : Equality :=
@@ -1851,9 +1851,9 @@ theorem tidy_equalities_of_minEqualityCoeff_eq_zero {p : Problem} (w : p.minEqua
     apply normalize_equalitiesZero_of_equalitiesZero
     exact equalitiesZero_of_minEqualityCoeff_zero w
 
-theorem shrinkEqualityCoeffs_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
-    (p.shrinkEqualityCoeffs eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
-  sorry
+-- theorem shrinkEqualityCoeffs_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
+--     (p.shrinkEqualityCoeffs eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
+--   sorry
 
 def shrinkEqualityCoeffsAndTidy (p : Problem) (eq : Equality) (i : Nat) : Problem :=
   (p.shrinkEqualityCoeffs eq i).tidy
@@ -1864,11 +1864,11 @@ theorem shrinkEqualityCoeffsAndTidy_length_le (p : Problem) (eq : Equality) (i :
     _ ≤ _ := tidy_equalities_length _
     _ ≤ _ := shrinkEqualityCoeffs_length_le _ _ _
 
-theorem shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
-    (p.shrinkEqualityCoeffsAndTidy eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
-  calc
-    _ ≤ _ := tidy_minEqualityCoeff_le _
-    _ ≤ _ := shrinkEqualityCoeffs_minEqualityCoeff_le p eq i
+-- theorem shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le (p : Problem) (eq : Equality) (i : Nat) :
+--     (p.shrinkEqualityCoeffsAndTidy eq i).minEqualityCoeff ≤ p.minEqualityCoeff :=
+--   calc
+--     _ ≤ _ := tidy_minEqualityCoeff_le _
+--     _ ≤ _ := shrinkEqualityCoeffs_minEqualityCoeff_le p eq i
 
 def shrinkEqualityCoeffsAndTidy_equiv (p : Problem) (eq : Equality) (m : eq ∈ p.equalities)
     (i : Nat) (h : 1 < (eq.linearCombo.coeff i).natAbs) (w : i < p.numVars) :
@@ -1981,8 +1981,8 @@ def eliminateEqualities : Nat → Problem → Problem
       if minLt : p'.minEqualityCoeff < p.minEqualityCoeff then
         p'.eliminateEqualities (fuel + 1)
       else
-        have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-          (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+        -- have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+        --   (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
         -- have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
         --   -- p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
         have : fuel < fuel + 1 := Nat.lt.base fuel
@@ -2028,8 +2028,8 @@ theorem eliminateEqualities_equalities_length {fuel : Nat} {p : Problem} :
               (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
             split <;> rename_i minLt
             · apply eliminateEqualities_equalities_length
-            · have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-                (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+            · -- have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+              --  (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
               -- have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
               --   p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
               have : fuel < fuel + 1 := Nat.lt.base fuel
@@ -2084,8 +2084,8 @@ def eliminateEqualities_equiv (fuel : Nat) (p : Problem) : p → p.eliminateEqua
             exact p'.eliminateEqualities_equiv (fuel + 1) ∘ e'.mpr
           · have lengthEq : p'.equalities.length = p.equalities.length :=
               (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
-            have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-              (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+            -- have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+            --   (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
             -- have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
             --   p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
             have : fuel < fuel + 1 := Nat.lt.base fuel
