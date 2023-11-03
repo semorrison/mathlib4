@@ -210,19 +210,15 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
 
 def omega_algorithm₁ (p : Problem) : Problem :=
   let p₀ := Impl.Problem.of p
-  let p₁ := p₀.normalize
-  let p₂ := p₁.processConstants
-  let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEqualities 100
-  p₄.to
+  let p₁ := p₀.tidy
+  let p₂ := p₁.eliminateEqualities 100
+  p₂.to
 
 def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
   let p₀ := Impl.Problem.of p
-  let p₁ := p₀.normalize
-  let p₂ := p₁.processConstants
-  let p₃ := p₂.checkContradictions
-  let p₄ := p₃.eliminateEqualities 100
-  Impl.Problem.map_to p₄ ∘ p₃.eliminateEqualities_equiv 100 ∘ p₂.checkContradictions_equiv.mpr ∘ p₁.processConstants_equiv.mpr ∘ p₀.normalize_equiv.mpr ∘ Impl.Problem.map_of p
+  let p₁ := p₀.tidy
+  let p₂ := p₁.eliminateEqualities 100
+  Impl.Problem.map_to p₂ ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
 
 def blah {p : Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
   (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p

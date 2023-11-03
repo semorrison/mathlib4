@@ -206,9 +206,14 @@ def coeff (lc : LinearCombo) (i : Nat) : Int := lc.coeffs.get i
 theorem coeff_mk {const} {coeffs} {i} : LinearCombo.coeff { const, coeffs } i = coeffs.get i := rfl
 
 @[simps]
-def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo :=
-  { lc with
-    coeffs := lc.coeffs.set i x }
+def setCoeff (lc : LinearCombo) (i : Nat) (x : Int) : LinearCombo where
+  const := lc.const
+  coeffs := lc.coeffs.set i x
+
+@[simp]
+theorem setCoeff_coeff_self (lc : LinearCombo) (i : Nat) (x : Int) :
+    (lc.setCoeff i x).coeff i = x := by
+  simp [setCoeff]
 
 @[simp] theorem setCoeff_eval {lc : LinearCombo} :
     (lc.setCoeff i x).eval v = lc.eval v + (x - lc.coeff i) * v.get i := by
@@ -220,6 +225,11 @@ theorem eval_set {lc : LinearCombo} :
     lc.eval (v.set i x) = lc.eval v + lc.coeff i * (x - v.get i) := by
   simp [eval, Int.add_assoc]
   rfl
+
+theorem setCoeff_coeff_of_ne (lc : LinearCombo) (i j : Nat) (w : i ≠ j) (x : Int) :
+    (lc.setCoeff j x).coeff i = lc.coeff i := by
+  simp_all [set, coeff, w.symm]
+
 
 @[simp] theorem coeff_zero {lc : LinearCombo} (w : ∀ x, x ∈ lc.coeffs → x = 0) :
     lc.coeff i = 0 := by
@@ -724,6 +734,10 @@ example :
 instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
     Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
   decidable_of_iff (∃ (a : α), a ∈ l ∧ p a) (exists_congr (fun _ => exists_prop.symm))
+
+-- FIXME
+-- Dump redundant inequalities (i.e `a < b`)!
+-- Turn tight pairs (i.e. `a = -b`) into equalities, because we have better ways to deal with them
 
 -- TODO make this efficient using the map
 def checkContradictions (p : Problem) : Problem :=
@@ -1439,22 +1453,6 @@ def bmod (lc : LinearCombo) (m : Nat) : LinearCombo where
     (lc.bmod m).coeff k = Int.bmod (lc.coeff k) m := by
   simp [bmod, coeff, IntList.get_map]
 
-def set (lc : LinearCombo) (n : Nat) (x : Int) : LinearCombo where
-  const := lc.const
-  coeffs := lc.coeffs.set n x
-
-@[simp] theorem coeff_set (lc : LinearCombo) (n : Nat) (x : Int) : (lc.set n x).coeff n = x := by
-  simp_all [set, coeff]
-
-theorem coeff_set_of_ne (lc : LinearCombo) (k n : Nat) (w : k ≠ n) (x : Int) :
-    (lc.set n x).coeff k = lc.coeff k := by
-  simp_all [set, coeff, w.symm]
-
-@[simp] theorem set_eval (lc : LinearCombo) (n : Nat) (x : Int) (v : IntList) :
-    (lc.set n x).eval v = lc.eval v + (x - lc.coeff n) * v.get n := by
-  simp [set, eval, Int.add_assoc, Int.sub_mul]
-  rfl
-
 theorem dvd_eval_sub_bmod_eval (lc : LinearCombo) (m : Nat) (v : IntList) :
     (m : Int) ∣ lc.eval v - (lc.bmod m).eval v := by
   dsimp [eval]
@@ -1484,11 +1482,11 @@ Note that the coefficient of `xᵢ` in the new equation is `- sign aₖ`, so we 
 -/
 def shrinkingConstraint (eq : LinearCombo) (k : Nat) (n : Nat) : LinearCombo :=
   let m := (eq.coeff k).natAbs + 1
-  (eq.bmod m).set n m
+  (eq.bmod m).setCoeff n m
 
 theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} (h : 1 < (eq.coeff k).natAbs) (w : k < n) :
     ((eq.shrinkingConstraint k n).coeff k).natAbs = 1 := by
-  rw [shrinkingConstraint, coeff_set_of_ne, coeff_bmod, Int.bmod_natAbs_plus_one _ h]
+  rw [shrinkingConstraint, setCoeff_coeff_of_ne, coeff_bmod, Int.bmod_natAbs_plus_one _ h]
   · rw [Int.natAbs_neg, Int.natAbs_sign, if_neg]
     intro
     simp_all
@@ -1507,7 +1505,7 @@ theorem shrinkingConstraint_eval {eq : LinearCombo} (w : eq.eval v = 0)
     (h₁ : eq.coeffs.length ≤ n) :
     (eq.shrinkingConstraint k n).eval (eq.shrinkingConstraintSolution k n v) = 0 := by
   dsimp [shrinkingConstraint, shrinkingConstraintSolution]
-  simp only [Int.natCast_add, Int.ofNat_one, sub_eval, set_eval, coeff_bmod, eval_set, coeff_set]
+  simp only [Int.natCast_add, Int.ofNat_one, sub_eval, setCoeff_eval, coeff_bmod, eval_set, setCoeff_coeff_self]
   replace h₁ : eq.coeff n = 0 := IntList.get_of_length_le h₁
   rw [Int.mul_sub, Int.mul_add, Int.add_comm (a := _ * _), Int.add_sub_cancel, Int.mul_ediv_cancel']
   · simp [h₁, w, ← Int.sub_eq_add_neg]
@@ -2108,6 +2106,134 @@ def eliminateEqualities_equiv (fuel : Nat) (p : Problem) : p → p.eliminateEqua
 termination_by eliminateEqualities_equiv fuel p => (fuel, p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
   solve_by_elim (config := { maxDepth := 10 }) [Prod.Lex.left, Prod.Lex.right'']
+
+#eval 37
+
+/--
+Separate the inequalities in a problems into the lower bounds for a variable,
+the upper bounds for that variable, and the inequalities not involving that variable.
+-/
+def bounds (p : Problem) (i : Nat) : List LinearCombo × List LinearCombo × List LinearCombo :=
+  let (relevant, irrelevant) := p.inequalities.partition fun ineq => ineq.coeff i ≠ 0
+  let (lower, upper) := relevant.partition fun ineq => ineq.coeff i > 0
+  (lower, upper, irrelevant)
+
+theorem mem_of_mem_bounds_1 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).1) :
+    lc ∈ p.inequalities := by
+  simp [bounds] at h
+  exact List.mem_of_mem_filter' h
+theorem mem_of_mem_bounds_2 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.1) :
+    lc ∈ p.inequalities := by
+  simp [bounds] at h
+  exact List.mem_of_mem_filter' h
+theorem mem_of_mem_bounds_3 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.2) :
+    lc ∈ p.inequalities := by
+  simp [bounds] at h
+  exact List.mem_of_mem_filter' h
+
+theorem coeff_of_mem_bounds_1 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).1) :
+    lc.coeff i > 0 := by simp_all [bounds, List.mem_filter]
+theorem coeff_of_mem_bounds_2 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.1) :
+    lc.coeff i < 0 := by
+  have := Int.lt_trichotomy (lc.coeff i) 0
+  simp_all [bounds, List.mem_filter]
+theorem coeff_of_mem_bounds_3 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.2) :
+    lc.coeff i = 0 := by simp_all [bounds, List.mem_filter]
+
+def combineBounds (lower upper : LinearCombo) (i : Nat) : LinearCombo :=
+  lower.coeff i * upper.setCoeff i 0 - upper.coeff i * lower.setCoeff i 0
+
+theorem combineBounds_eval (lower upper : LinearCombo) (i : Nat)
+    (wl : lower.coeff i > 0) (wu : upper.coeff i < 0) (v : IntList)
+    (hl : lower.eval v ≥ 0) (hu : upper.eval v ≥ 0) : (combineBounds lower upper i).eval v ≥ 0 := by
+  simp only [combineBounds, LinearCombo.sub_eval, LinearCombo.smul_eval, LinearCombo.setCoeff_eval,
+    Int.zero_sub]
+  rw [Int.mul_add, Int.mul_add, Int.add_comm (upper.coeff i * _), ← Int.sub_sub]
+  rw [Int.add_sub_assoc]
+  conv in lower.coeff i * _ - _ =>
+    simp only [Int.neg_mul, Int.mul_neg, ← Int.mul_assoc]
+    rw [Int.mul_comm (lower.coeff i)]
+    rw [Int.sub_self]
+  simp only [Int.add_zero]
+  rw [Int.sub_eq_add_neg]
+  apply Int.add_nonneg
+  · exact Int.mul_nonneg (Int.le_of_lt wl) hu
+  · rw [← Int.neg_mul]
+    exact Int.mul_nonneg (Int.neg_nonneg_of_nonpos (Int.le_of_lt wu)) hl
+
+-- TODO we should be deleting variables as we go!
+
+def realShadow (p : Problem) (i : Nat) : Problem :=
+  let (lower, upper, irrelevant) := p.bounds i
+  if lower.length = 0 ∨ upper.length = 0 then
+    { p with inequalities := irrelevant }
+  else
+    let combined := lower.bind fun l => upper.map fun u => combineBounds l u i
+    { p with inequalities := irrelevant ++ combined }
+
+def realShadow_map (p : Problem) (i : Nat) : p → p.realShadow i :=
+  fun ⟨v, h⟩ => ⟨v, by
+    dsimp [realShadow]
+    split <;> rename_i w
+    · exact { h with
+        inequalities := @fun lc m => h.inequalities (mem_of_mem_bounds_3 m) }
+    · exact { h with
+        inequalities := @fun lc m => by
+          simp at m
+          rcases m with m|m
+          · exact h.inequalities (mem_of_mem_bounds_3 m)
+          · simp only [List.mem_bind, List.mem_map] at m
+            obtain ⟨l, ml, u, mu, rfl⟩ := m
+            apply combineBounds_eval
+            · exact coeff_of_mem_bounds_1 ml
+            · exact coeff_of_mem_bounds_2 mu
+            · exact h.inequalities (mem_of_mem_bounds_1 ml)
+            · exact h.inequalities (mem_of_mem_bounds_2 mu) }⟩
+
+-- TODO these next four functions should probably be cached, or computed all at once, etc.
+
+def minimumInequalityCoeff (p : Problem) (i : Nat) : Option Int :=
+  (p.inequalities.map fun ineq => ineq.coeff i).minimum?
+
+def maximumInequalityCoeff (p : Problem) (i : Nat) : Option Int :=
+  (p.inequalities.map fun ineq => ineq.coeff i).maximum?
+
+def countLowerBounds (p : Problem) (i : Nat) : Nat := (p.bounds i).1.length
+def countUpperBounds (p : Problem) (i : Nat) : Nat := (p.bounds i).2.1.length
+
+def countFourierMotzkinInequalities (p : Problem) (i : Nat) : Nat :=
+  let b := p.bounds i
+  b.1.length * b.2.1.length
+
+def eliminateInequalityIdx (p : Problem) : Option Nat :=
+  let vars := Array.range p.numVars
+  let exactEliminations := vars.filter fun i => p.minimumInequalityCoeff i = some (-1) ∨ p.maximumInequalityCoeff i = some 1
+  let candidates := if exactEliminations.isEmpty then
+    vars.filter fun i => (p.minimumInequalityCoeff i).isSome
+  else
+    exactEliminations
+  let sorted := (candidates.map fun i => (p.countFourierMotzkinInequalities i, i)) |>.qsort (·.1 < ·.1)
+  sorted[0]?.map (·.2)
+
+-- TODO: we need to fix tidy to turn tight pairs of inequalities into equalities, and then this algorithm needs to keep eliminating equalities as they arise.
+def eliminateInequalities (fuel : Nat) (p : Problem) : Problem :=
+  match fuel with
+  | 0 => trivial
+  | fuel + 1 =>
+  match p.eliminateInequalityIdx with
+  | none => p
+  | some i => (p.realShadow i).tidy.eliminateInequalities fuel
+
+def eliminateInequalities_map (fuel : Nat) (p : Problem) : p → p.eliminateInequalities fuel := by
+  match fuel with
+  | 0 =>
+    rw [eliminateInequalities]
+    exact fun _ => trivial_solution
+  | (fuel + 1) =>
+    rw [eliminateInequalities]
+    match p.eliminateInequalityIdx with
+    | none => exact (equiv.refl p).mpr
+    | some i => exact eliminateInequalities_map _ _ ∘ (tidy_equiv _).mpr ∘ p.realShadow_map i
 
 end Problem
 
