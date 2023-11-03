@@ -212,13 +212,15 @@ def omega_algorithm₁ (p : Problem) : Problem :=
   let p₀ := Impl.Problem.of p
   let p₁ := p₀.tidy
   let p₂ := p₁.eliminateEqualities 100
-  p₂.to
+  let p₃ := p₂.eliminateInequalities 100
+  p₃.to
 
 def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
   let p₀ := Impl.Problem.of p
   let p₁ := p₀.tidy
   let p₂ := p₁.eliminateEqualities 100
-  Impl.Problem.map_to p₂ ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
+  let p₃ := p₂.eliminateInequalities 100
+  Impl.Problem.map_to p₃ ∘ p₂.eliminateInequalities_map 100 ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
 
 def blah {p : Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
   (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p

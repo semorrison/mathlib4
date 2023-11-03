@@ -2205,6 +2205,7 @@ def countFourierMotzkinInequalities (p : Problem) (i : Nat) : Nat :=
   let b := p.bounds i
   b.1.length * b.2.1.length
 
+@[irreducible]
 def eliminateInequalityIdx (p : Problem) : Option Nat :=
   let vars := Array.range p.numVars
   let exactEliminations := vars.filter fun i => p.minimumInequalityCoeff i = some (-1) ∨ p.maximumInequalityCoeff i = some 1
@@ -2212,7 +2213,8 @@ def eliminateInequalityIdx (p : Problem) : Option Nat :=
     vars.filter fun i => (p.minimumInequalityCoeff i).isSome
   else
     exactEliminations
-  let sorted := (candidates.map fun i => (p.countFourierMotzkinInequalities i, i)) |>.qsort (·.1 < ·.1)
+  -- FIXME we need a sorting algorithm!
+  let sorted := (candidates.map fun i => (p.countFourierMotzkinInequalities i, i)) -- |>.qsort (·.1 < ·.1)
   sorted[0]?.map (·.2)
 
 -- TODO: we need to fix tidy to turn tight pairs of inequalities into equalities, and then this algorithm needs to keep eliminating equalities as they arise.
