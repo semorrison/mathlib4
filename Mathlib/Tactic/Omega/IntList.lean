@@ -1,5 +1,5 @@
 import Mathlib.Tactic.Omega.ForStd
-import Mathlib.Tactic.Rewrites
+-- import Mathlib.Tactic.Rewrites
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true

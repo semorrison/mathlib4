@@ -1,11 +1,14 @@
 import Mathlib.Tactic.Simps.Basic
-import Mathlib.Tactic.Have
-import Mathlib.Tactic.LeftRight
-import Mathlib.Tactic.Change
-import Mathlib.Logic.Basic -- yuck! hopefully https://github.com/leanprover/std4/pull/298 (merged) and https://github.com/leanprover/std4/pull/324 suffices
-import Mathlib.Tactic.NthRewrite
-import Mathlib.Tactic.SplitIfs
-import Mathlib.Util.WhatsNew
+-- import Mathlib.Tactic.Have
+import Mathlib.Tactic.Basic
+
+import Mathlib.Logic.Basic -- yuck!
+-- waiting on
+-- https://github.com/leanprover/std4/pull/324
+-- https://github.com/leanprover/std4/pull/344
+-- https://github.com/leanprover/std4/pull/345
+-- to remove dependency on Mathlib
+
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
@@ -745,7 +748,7 @@ theorem checkContradictions_inequalities_length (p : Problem) :
 
 theorem checkContradictions_sat_iff (p : Problem) (v) : p.checkContradictions.sat v ↔ p.sat v := by
   dsimp [checkContradictions]
-  split_ifs with h
+  split <;> rename_i h
   · constructor
     · intro s
       simp_all
@@ -771,12 +774,13 @@ def constant? (lc : LinearCombo) : Option Int :=
     none
 
 theorem eval_eq_of_constant (lc : LinearCombo) (h : lc.constant? = some c) : lc.eval v = c := by
-  simp [constant?] at h
+  simp only [constant?, List.all_eq_true, decide_eq_true_eq, ite_some_none_eq_some] at h
   rcases h with ⟨h, rfl⟩
   rcases lc with ⟨c, coeffs⟩
-  simp at h
-  simp [eval]
-  nth_rewrite 2 [← Int.add_zero c]
+  simp only [eval]
+  conv =>
+    rhs
+    rw [← Int.add_zero c]
   congr
   exact IntList.dot_of_left_zero h
 
@@ -826,7 +830,7 @@ theorem processConstants_inequalities_length (p : Problem) :
 
 theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstants.sat v := by
   dsimp [processConstants]
-  split_ifs with w
+  split <;> rename_i w
   · exact Problem.filterEqualities_sat _ _ _ (Problem.filterInequalities_sat _ _ _ s)
   · exfalso
     simp only [Decidable.not_and] at w
@@ -842,8 +846,9 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
 
 theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sat v) : p.sat v := by
   dsimp [processConstants] at s
-  split_ifs at s with w
-  · simp at w
+  split at s <;> rename_i w
+  · simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
+      and_imp] at w
     rcases w with ⟨eqs, ineqs⟩
     constructor
     · exact s.possible
@@ -942,7 +947,7 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
     lc.normalizeInequality.eval v ≥ 0 ↔ lc.eval v ≥ 0 := by
   rcases lc with ⟨const, coeffs⟩
   dsimp [normalizeInequality, eval]
-  split_ifs with h
+  split <;> rename_i h
   · rw [IntList.gcd_eq_zero] at h
     simp [IntList.dot_of_left_zero h]
   · rw [IntList.dot_sdiv_gcd_left, ← Int.add_ediv_of_dvd_right (IntList.gcd_dvd_dot_left coeffs v),
@@ -954,7 +959,7 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
     lc.normalizeEquality.eval v = 0 ↔ lc.eval v = 0 := by
   rcases lc with ⟨const, coeffs⟩
   dsimp [normalizeEquality, eval]
-  split_ifs with h
+  split <;> rename_i h
   · simp only [IntList.dot_sdiv_gcd_left]
     by_cases w : coeffs.gcd = 0
     · simp only [w, Int.ofNat_zero, Int.zero_dvd, Int.ediv_zero, Int.add_zero, true_iff] at h ⊢
@@ -1706,12 +1711,12 @@ but we still need to work a bit here.
 theorem normalize_processConstants_impossible_or₁ (p : Problem) :
     p.normalize.processConstants = impossible ∨
       ∀ {eq}, eq ∈ p.equalities → (eq.linearCombo.coeffs.gcd : Int) ∣ eq.linearCombo.const := by
-  apply or_iff_not_imp_right.mpr
+  apply Decidable.or_iff_not_imp_right.mpr
   simp only [not_forall, exists_prop, forall_exists_index, and_imp]
   intro eq m h
   dsimp [processConstants]
   rw [if_neg]
-  rw [not_and_or]
+  rw [Decidable.not_and]
   left
   simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index, and_imp,
     not_forall, exists_prop, exists_and_left]
@@ -2077,19 +2082,29 @@ def eliminateEqualities_equiv (fuel : Nat) (p : Problem) : p → p.eliminateEqua
             rwa [p.minCoeffEquality_minCoeff minEqZero]
           let e' := p.shrinkEqualityCoeffsAndTidy_equiv eq m i big (p.minCoeffIdx_lt_numVars m h)
           -- Can't use `split` here, it only works in `Prop`. :-(
-          split_ifs with lengthLt minLt
-          · exact p'.eliminateEqualities_equiv (fuel + 1) ∘ e'.mpr
-          · have lengthEq : p'.equalities.length = p.equalities.length :=
-              (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+          -- split_ifs with lengthLt minLt
+          by_cases lengthLt : (p.shrinkEqualityCoeffsAndTidy (p.minCoeffEquality minEqZero)
+            ((p.minCoeffEquality minEqZero).minCoeffIdx)).equalities.length <
+              p.equalities.length
+          · rw [if_pos lengthLt]
             exact p'.eliminateEqualities_equiv (fuel + 1) ∘ e'.mpr
-          · have lengthEq : p'.equalities.length = p.equalities.length :=
-              (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
-            -- have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
-            --   (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
-            -- have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
-            --   p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
-            have : fuel < fuel + 1 := Nat.lt.base fuel
-            exact p'.eliminateEqualities_equiv fuel ∘ e'.mpr
+          · rw [if_neg lengthLt]
+            by_cases minLt : (p.shrinkEqualityCoeffsAndTidy (p.minCoeffEquality minEqZero)
+              ((p.minCoeffEquality minEqZero).minCoeffIdx)).minEqualityCoeff <
+                p.minEqualityCoeff
+            · rw [if_pos minLt]
+              have lengthEq : p'.equalities.length = p.equalities.length :=
+                (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+              exact p'.eliminateEqualities_equiv (fuel + 1) ∘ e'.mpr
+            · rw [if_neg minLt]
+              have lengthEq : p'.equalities.length = p.equalities.length :=
+                (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_length_le eq i))) lengthLt
+              -- have minEq : p'.minEqualityCoeff = p.minEqualityCoeff :=
+              --   (or_iff_not_imp_right.mp (Nat.eq_or_lt_of_le (p.shrinkEqualityCoeffsAndTidy_minEqualityCoeff_le eq i))) minLt
+              -- have maxLt : p'.maxEqualityCoeff < p.maxEqualityCoeff :=
+              --   p.shrinkEqualityCoeffsAndTidy_maxEqualityCoeff_lt eq i minEq
+              have : fuel < fuel + 1 := Nat.lt.base fuel
+              exact p'.eliminateEqualities_equiv fuel ∘ e'.mpr
 termination_by eliminateEqualities_equiv fuel p => (fuel, p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
   solve_by_elim (config := { maxDepth := 10 }) [Prod.Lex.left, Prod.Lex.right'']

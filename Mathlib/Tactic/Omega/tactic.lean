@@ -2,6 +2,7 @@ import Lean
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.Problem
 import Mathlib.Util.AtomM
+import Mathlib.Control.Basic
 import Qq
 /-!
 We define the minimally scoped `omega` tactic here.

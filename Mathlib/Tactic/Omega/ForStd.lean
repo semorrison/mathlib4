@@ -1,5 +1,5 @@
 import Std
-import Mathlib.Tactic.LibrarySearch
+-- import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -50,42 +50,9 @@ theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
     simp [or_iff_right_of_imp List.mem_of_mem_erase]
   · simp_all
 
--- The next two lemmas are in https://github.com/leanprover/std4/pull/325
-
-theorem List.zipWith_get? {f : α → β → γ} :
-    (List.zipWith f as bs).get? i = match as.get? i, bs.get? i with
-      | some a, some b => some (f a b) | _, _ => none := by
-  induction as generalizing bs i with
-  | nil => cases bs with
-    | nil => simp
-    | cons b bs => simp
-  | cons a as aih => cases bs with
-    | nil => simp
-    | cons b bs => cases i <;> simp_all
-
-theorem List.zipWithAll_get? {f : Option α → Option β → γ} :
-    (List.zipWithAll f as bs).get? i = match as.get? i, bs.get? i with
-      | none, none => .none | a?, b? => some (f a? b?) := by
-  induction as generalizing bs i with
-  | nil => induction bs generalizing i with
-    | nil => simp
-    | cons b bs bih => cases i <;> simp_all
-  | cons a as aih => cases bs with
-    | nil =>
-      specialize @aih []
-      cases i <;> simp_all
-    | cons b bs => cases i <;> simp_all
-
 -- These attributes are all added in https://github.com/leanprover/std4/pull/291
 attribute [simp] Int.zero_ediv Int.ediv_zero
 attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zero
-
-theorem Int.div_nonneg_iff_of_pos {a b : Int} (h : 0 < b) : a / b ≥ 0 ↔ a ≥ 0 := by
-  rw [Int.div_def]
-  match b, h with
-  | Int.ofNat (b+1), _ =>
-    rcases a with ⟨a⟩ <;> simp [Int.ediv]
-    exact decide_eq_decide.mp rfl
 
 @[simp] theorem ite_some_none_eq_none [Decidable P] :
     (if P then some x else none) = none ↔ ¬ P := by

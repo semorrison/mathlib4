@@ -1,6 +1,4 @@
-import Mathlib.Tactic.LeftRight
-import Mathlib.Tactic.Change
-import Mathlib.Logic.Basic
+import Std
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -72,7 +70,7 @@ theorem nonzeroMinimum_eq_of_nonzero {xs : List Nat} (h : xs.nonzeroMinimum ≠ 
 theorem nonzeroMinimum_le_iff {xs : List Nat} {y : Nat} :
     xs.nonzeroMinimum ≤ y ↔ xs.nonzeroMinimum = 0 ∨ ∃ x ∈ xs, x ≤ y ∧ x ≠ 0 :=
   ⟨fun h => by
-    rw [or_iff_not_imp_right]
+    rw [Decidable.or_iff_not_imp_right]
     simp only [ne_eq, not_exists, not_and, not_not, nonzeroMinimum_eq_zero_iff]
     intro w
     apply nonzeroMinimum_eq_zero_iff.mp
