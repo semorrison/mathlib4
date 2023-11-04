@@ -6,7 +6,6 @@ import Mathlib.Tactic.Conv
 `n = 0` has no solutions if `n ≠ 0`, and `n ≥ 0` has no solutions if `n < 0`.
 -/
 
-#eval omega_algorithm₁ { possible := true, equalities := [{ const := -7, coeffs := [] }], inequalities := [] }
 example (h : (7 : Int) = 0) : False := by
   omega
 
@@ -103,7 +102,16 @@ def s : Omega.Problem := { inequalities := [{const := -1, coeffs := [1, 0]}, {co
 example {x y : Int} (_ : 2 * x + 3 * y = 0) (_ : 1 ≤ x) (_ : 1 ≤ y) : False := by omega
 
 #time
-example {x y z : Int} (_ : 2 * x + 3 * y + 4 * z = 0) (_ : 1 ≤ x + y) (_ : 1 ≤ y + z)  (_ : 1 ≤ x + z) : False := by omega
+example {x y z : Int} (_ : 2 * x + 3 * y + 4 * z = 0) (_ : 1 ≤ x + y) (_ : 1 ≤ y + z) (_ : 1 ≤ x + z) : False := by omega
+
+-- This one has rational solutions, but tightening inequalities is enough to show there are no integer solutions.
+#time
+example {x y : Int} (_ : 1 ≤ 3 * x) (_ : y ≤ 2) (_ : 6 * x - 2 ≤ y) : False := by omega
+
+theorem omega_nightmare {x y : Int} (_ : 3 ≤ 11 * x + 13 * y) (_ : 11 * x + 13 * y ≤ 21)
+    (_ : -8 ≤ 7 * x - 9 * y) (_ : 7 * x - 9 * y ≤ 6) : False := by
+  -- omega -- need to implement the shadows before we can do this!
+  sorry
 
 /--
 error: omega did not find a contradiction

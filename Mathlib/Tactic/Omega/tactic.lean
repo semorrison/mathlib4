@@ -249,7 +249,7 @@ def omega (hyps : List Expr) : MetaM Expr := do
       r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
       -- r.refl -- should we skip the checks??
     catch _ =>
-      throwError "omega did not find a contradiction" -- TODO later, show a witness?
+      throwError "omega did not find a contradiction!" -- TODO later, show a witness?
     return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
 
 open Qq
