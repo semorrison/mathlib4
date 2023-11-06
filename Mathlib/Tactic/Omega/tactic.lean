@@ -264,7 +264,14 @@ open Qq
 theorem Int.ge_iff_le {x y : Int} : x ≥ y ↔ y ≤ x := Iff.rfl
 theorem Int.gt_iff_lt {x y : Int} : x > y ↔ y < x := Iff.rfl
 
-def omega' : TacticM Unit := do
+/--
+`omega` tactic over the integers, with only minimal pre-processing:
+* calls `exfalso`
+* replaces `x < y` with `x + 1 ≤ y`
+* replaces `x > y` with `y < x` and `x ≥ y` with `y ≤ x`
+* replaces `¬ x < y` with `y ≤ x` and `¬ x ≤ y` with `y < x`
+-/
+def omega_int_core : TacticM Unit := do
   liftMetaTactic' MVarId.exfalso
   evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le] at *))
   withMainContext do
@@ -272,7 +279,7 @@ def omega' : TacticM Unit := do
     let proof_of_false ← omega hyps.toList
     closeMainGoal proof_of_false
 
-syntax "omega" : tactic
+syntax "omega_int_core" : tactic
 
 elab_rules : tactic
-  | `(tactic| omega) => omega'
+  | `(tactic| omega_int_core) => omega_int_core
