@@ -5,9 +5,9 @@ set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 /-- A type synonym to equip a type with its lexicographic order. -/
-def Lex (α : Type _) := α
+def Lex' (α : Type _) := α
 
-@[inherit_doc] notation:35 α " ×ₗ " β:34 => Lex (Prod α β)
+@[inherit_doc] notation:35 α " ×ₗ " β:34 => Lex' (Prod α β)
 
 instance Prod.Lex.instLT (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)

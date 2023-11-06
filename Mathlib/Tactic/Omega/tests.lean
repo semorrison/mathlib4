@@ -39,6 +39,8 @@ example (h : -(-7 : Int) ≤ 0) : False := by
 example (h : 2 * (7 : Int) = 0) : False := by
   omega
 
+example (h : (7 : Int) < 0) : False := by omega
+
 /-!
 If the constant term of an equation is not divisible by the GCD of the coefficients,
 there are no solutions.
@@ -64,6 +66,9 @@ then `-a > b` gives a contradiction.
 example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
   omega
 
+example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 < 4 - x) : False := by
+  omega
+
 -- set_option trace.profiler true
 -- set_option trace.profiler.threshold 1
 -- set_option trace.Kernel true
@@ -74,6 +79,9 @@ example {x : Int} (h₁ : 0 ≤ -7 + x) (h₂ : 0 ≤ 3 - x) : False := by
 /-! Even better, we can use this test after dividing through by the gcd and tightening: -/
 #time
 example {x : Int} (h₁ : 0 ≤ 2 * x + 1) (h₂ : 2 * x + 1 ≤ 0) : False := by
+  omega
+
+example {x : Int} (h₁ : 0 < 2 * x + 2) (h₂ : 2 * x + 1 ≤ 0) : False := by
   omega
 
 #time
@@ -107,6 +115,12 @@ example {x y z : Int} (_ : 2 * x + 3 * y + 4 * z = 0) (_ : 1 ≤ x + y) (_ : 1 �
 -- This one has rational solutions, but tightening inequalities is enough to show there are no integer solutions.
 #time
 example {x y : Int} (_ : 1 ≤ 3 * x) (_ : y ≤ 2) (_ : 6 * x - 2 ≤ y) : False := by omega
+
+-- example {x : Int} (_ : x / 2 = x) (_ : 1 ≤ x) : False := by omega
+example {x y : Int} (_ : y = x) (_ : 0 ≤ x - 2 * y) (_ : x - 2 * y ≤ 1) (_ : 1 ≤ x) : False := by omega
+example {x y : Int} (_ : y = x) (_ : 0 ≤ x - 2 * y) (_ : x - 2 * y ≤ 1) (_ : x ≥ 1) : False := by omega
+example {x y : Int} (_ : y = x) (_ : 0 ≤ x - 2 * y) (_ : x - 2 * y ≤ 1) (_ : 0 < x) : False := by omega
+example {x y : Int} (_ : y = x) (_ : 0 ≤ x - 2 * y) (_ : x - 2 * y ≤ 1) (_ : x > 0) : False := by omega
 
 theorem omega_nightmare {x y : Int} (_ : 3 ≤ 11 * x + 13 * y) (_ : 11 * x + 13 * y ≤ 21)
     (_ : -8 ≤ 7 * x - 9 * y) (_ : 7 * x - 9 * y ≤ 6) : False := by

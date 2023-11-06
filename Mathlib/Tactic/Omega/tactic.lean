@@ -18,6 +18,7 @@ set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 initialize Lean.registerTraceClass `omega
+initialize Lean.registerTraceClass `omega.parsing
 
 open Lean Elab Tactic Mathlib.Tactic Meta
 
@@ -132,11 +133,11 @@ theorem Problem.singleInequalitySub_sat {a b : LinearCombo} (h : a.eval v ≤ b.
   equalities := by simp
   inequalities := by simpa using Int.sub_nonneg_of_le h
 
-theorem le_of_eq_of_le {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : a ≤ c := by
+theorem le_of_eq_of_le'' {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : a ≤ c := by
   subst h₁
   exact h₂
 
-theorem le_of_le_of_eq {a b c : α} [LE α] (h₁ : a ≤ b) (h₂ : b = c) : a ≤ c := by
+theorem le_of_le_of_eq'' {a b c : α} [LE α] (h₁ : a ≤ b) (h₂ : b = c) : a ≤ c := by
   subst h₂
   exact h₁
 
@@ -153,6 +154,7 @@ def ofExpr (e : Expr) : AtomM (Problem × AtomM Expr) := do
   let ty ← inferType e
   match ty.eq? with
   | some (.const ``Int [], lhs, rhs) =>
+    trace[omega.parsing] m!"Integer equality: {e} : {ty}"
     let (lhs_lc, lhs_prf) ← asLinearCombo lhs
     let (rhs_lc, rhs_prf) ← asLinearCombo rhs
     let problem : Problem := { equalities := [rhs_lc.sub lhs_lc] }
@@ -162,22 +164,26 @@ def ofExpr (e : Expr) : AtomM (Problem × AtomM Expr) := do
     pure (problem, prf)
   | some _ =>
     -- Equalities in `Nat` will be handled by separate preprocessing.
+    trace[omega.parsing] m!"Discarding non-integer equality: {e} : {ty}"
     throwError "We only handle equalities in `Int`."
   | none =>
     match ty.le? with
     | some (.const ``Int [], lhs, rhs) =>
+      trace[omega.parsing] m!"Integer inequality: {e} : {ty}"
       let (lhs_lc, lhs_prf) ← asLinearCombo lhs
       let (rhs_lc, rhs_prf) ← asLinearCombo rhs
       let problem : Problem := { inequalities := [rhs_lc.sub lhs_lc] }
       let prf : AtomM Expr := do
-        let ineq ← mkAppM ``le_of_le_of_eq
-          #[← mkAppM ``le_of_eq_of_le #[← mkEqSymm (← lhs_prf), e], (← rhs_prf)]
+        let ineq ← mkAppM ``le_of_le_of_eq''
+          #[← mkAppM ``le_of_eq_of_le'' #[← mkEqSymm (← lhs_prf), e], (← rhs_prf)]
         mkAppM ``Problem.singleInequalitySub_sat #[ineq]
       pure (problem, prf)
     | some _ =>
       -- Inequalities in `Nat` will be handled by separate preprocessing.
+      trace[omega.parsing] m!"Discarding non-integer inequality: {e} : {ty}"
       throwError "We only handle inequalities in `Int`."
     | none =>
+      trace[omega.parsing] m!"Discarding hypothesis: {e} : {ty}"
       throwError "Expression was not an `=` or `≤`."
 
 /-- The proof that the trivial `Problem` is satisfied by `[]`. -/
@@ -202,6 +208,7 @@ def omega_problem (hyps : List Expr) : MetaM (Problem × Expr) := do
     -- at the final list of atoms.
     problems.mapM fun ⟨p, delayedPrf⟩ => return (p, ← delayedPrf)
   -- Combine the problems using `Problem.and`, and the proofs using `Problem.and_sat`:
+  trace[omega] m!"{satProblems.map (·.1)}"
   match satProblems with
   | [] =>
     return (.trivial, trivial_sat)
@@ -254,11 +261,16 @@ def omega (hyps : List Expr) : MetaM Expr := do
 
 open Qq
 
+theorem Int.ge_iff_le {x y : Int} : x ≥ y ↔ y ≤ x := Iff.rfl
+theorem Int.gt_iff_lt {x y : Int} : x > y ↔ y < x := Iff.rfl
+
 def omega' : TacticM Unit := do
   liftMetaTactic' MVarId.exfalso
-  let hyps ← getLocalHyps
-  let proof_of_false ← omega hyps.toList
-  closeMainGoal proof_of_false
+  evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le] at *))
+  withMainContext do
+    let hyps ← getLocalHyps
+    let proof_of_false ← omega hyps.toList
+    closeMainGoal proof_of_false
 
 syntax "omega" : tactic
 
