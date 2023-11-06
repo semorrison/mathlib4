@@ -21,6 +21,9 @@ example {x : Int} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by
 example {x : Nat} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by
   omega_nat_core
 
+example {x : Nat} (h₁ : x / 3 ≥ 2) (h₂ : x < 6) : False := by
+  omega_nat_core
+
 namespace Lean.Expr
 
 open Qq
@@ -109,4 +112,19 @@ example {x y : Int} (_ : x / 2 - y / 3 < 1) (_ : 3 * x ≥ 2 * y + 6) : False :=
   omega_int
 
 example {x y : Nat} (_ : x / 2 - y / 3 < 1) (_ : 3 * x ≥ 2 * y + 6) : False := by
-  zify at *
+  omega_nat
+
+example {x y : Nat} (_ : x / 2 - y / 3 < 1) (_ : 3 * x ≥ 2 * y + 4) : False := by
+  omega_nat
+
+example {x y : Nat} (_ : x / 2 - y / 3 < x % 2) (_ : 3 * x ≥ 2 * y + 4) : False := by
+  omega_nat
+
+syntax "omega" : tactic
+
+macro_rules
+  | `(tactic| omega) => `(tactic| omega_nat)
+
+example {x y : Nat} (_ : x / 2 - y / 3 < x % 2) (_ : 3 * x ≥ 2 * y + 4) : False := by omega
+
+example {x : Int} {y : Nat} (_ : 0 < x) (_ : x + y ≤ 0) : False := by omega
