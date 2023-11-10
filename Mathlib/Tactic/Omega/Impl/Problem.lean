@@ -1390,7 +1390,8 @@ theorem Int.bmod_le {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m ≤ (m - 1) /
 
 -- In fact the only exceptional value we need to rule out if `x = -1`,
 -- but in our application we know `w : 1 < x.natAbs`, so just use that.
-theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) : Int.bmod x (x.natAbs + 1) = - x.sign := by
+theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) :
+    Int.bmod x (x.natAbs + 1) = - x.sign := by
   have t₁ : ∀ (x : Nat), x % (x + 2) = x :=
     fun x => Nat.mod_eq_of_lt (Nat.lt_succ_of_lt (Nat.lt.base x))
   have t₂ : ∀ (x : Int), 0 ≤ x → x % (x + 2) = x := fun x h => by

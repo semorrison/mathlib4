@@ -188,7 +188,7 @@ def ofExpr (e : Expr) : AtomM (Problem × AtomM Expr) := do
 
 /-- The proof that the trivial `Problem` is satisfied by `[]`. -/
 def trivial_sat : Expr :=
-  .app (.const `Problem.trivial_sat []) (.app (.const `List.nil [.zero]) (.const `Int []))
+  .app (.const ``Problem.trivial_sat []) (.app (.const `List.nil [.zero]) (.const `Int []))
 
 open Meta
 
@@ -230,6 +230,7 @@ def omega_algorithm₂ (p : Problem) : p → (omega_algorithm₁ p) :=
   Impl.Problem.map_to p₃ ∘ p₂.eliminateInequalities_map 100 ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
 
 def blah {p : Problem} (h : (omega_algorithm₁ p).possible = false) : p.unsat :=
+  -- sorry
   (omega_algorithm₁ p).unsat_of_impossible h ∘ omega_algorithm₂ p
 
 instance : ToExpr Problem where
@@ -252,11 +253,7 @@ def omega (hyps : List Expr) : MetaM Expr := do
     let p_expr := toExpr p
     let s ← mkAppM ``Problem.possible #[← mkAppM ``omega_algorithm₁ #[p_expr]]
     let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
-    try
-      r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
-      -- r.refl -- should we skip the checks??
-    catch _ =>
-      throwError "omega did not find a contradiction!" -- TODO later, show a witness?
+    r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
     return (← mkAppM ``blah #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
 
 open Qq
@@ -264,15 +261,18 @@ open Qq
 theorem Int.ge_iff_le {x y : Int} : x ≥ y ↔ y ≤ x := Iff.rfl
 theorem Int.gt_iff_lt {x y : Int} : x > y ↔ y < x := Iff.rfl
 
+syntax "false_or_by_contra" : tactic
+macro_rules | `(tactic| false_or_by_contra) => `(tactic| first | guard_target = False | by_contra)
+
 /--
 `omega` tactic over the integers, with only minimal pre-processing:
-* calls `exfalso`
+* calls `by_contra`
 * replaces `x < y` with `x + 1 ≤ y`
 * replaces `x > y` with `y < x` and `x ≥ y` with `y ≤ x`
 * replaces `¬ x < y` with `y ≤ x` and `¬ x ≤ y` with `y < x`
 -/
 def omega_int_core : TacticM Unit := do
-  liftMetaTactic' MVarId.exfalso
+  evalTactic (← `(tactic| false_or_by_contra))
   evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le] at *))
   withMainContext do
     let hyps ← getLocalHyps

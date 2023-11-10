@@ -77,10 +77,9 @@ elab_rules : tactic
 
 syntax "omega_int" : tactic
 
-
 macro_rules
   | `(tactic| omega_int) => `(tacticSeq |
-      exfalso
+      false_or_by_contra
       simp (config := {failIfUnchanged := false}) only [Int.emod_def] at *
       repeat' generalize_int_div
       omega_int_core)
