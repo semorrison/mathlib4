@@ -12,6 +12,17 @@ def Lex' (α : Type _) := α
 instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+
+theorem Int.mul_ediv_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
+  calc k * (x / k)
+    _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
+    _ = x                   := ediv_add_emod _ _
+
+theorem Int.lt_mul_ediv_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
+  calc x
+    _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
+    _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
+
 namespace List
 
 theorem filter_cons :

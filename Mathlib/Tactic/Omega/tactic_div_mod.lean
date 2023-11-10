@@ -1,27 +1,18 @@
 import Mathlib.Tactic.Omega.tactic
 
-theorem Int.mul_ediv_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
-  calc k * (x / k)
-    _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
-    _ = x                   := ediv_add_emod _ _
-
-theorem Int.lt_mul_ediv_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
-  calc x
-    _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
-    _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
 
 namespace Lean.Expr
 
 def isIntDiv? (e : Expr) : Option (Expr × Expr) :=
   match e.getAppFnArgs with
-  | (``HDiv.hDiv, #[.const ``Int [], .const ``Int [], .const ``Int [], _, n, d]) => some (n, d)
+  | (``HDiv.hDiv, #[.const ``Int _, .const ``Int _, .const ``Int _, _, n, d]) => some (n, d)
   | _ => none
 
 /-- Variant of `isIntDiv?` that checks that the denominator is a nonzero numeral. -/
 def isIntDivNumeral? (e : Expr) : Option (Expr × Expr) :=
   match e.isIntDiv? with
   | some (n, d) => match d.nat? with
-    | none => none
+    | none
     | some 0 => none
     | some _ => some (n, d)
   | none => none
@@ -66,7 +57,7 @@ def generalizeIntDivNumeral : TacticM Unit := withMainContext do
   let d ← exprToSyntax d
   evalTactic (← `(tacticSeq|
     have : $d * ($n / $d) ≤ $n := Int.mul_ediv_le (by decide)
-    have : $n < $d * ($n / $d) + $d := Int.lt_mul_ediv_add (by decide)
+    have : $n + 1 ≤ $d * ($n / $d) + $d := Int.lt_mul_ediv_add (by decide)
     generalize $n / $d = y at *))
 
 @[inherit_doc generalizeIntDivNumeral]
@@ -75,11 +66,16 @@ syntax "generalize_int_div" : tactic
 elab_rules : tactic
   | `(tactic| generalize_int_div) => generalizeIntDivNumeral
 
-syntax "omega_int" : tactic
+syntax "omega_int_div" : tactic
 
 macro_rules
-  | `(tactic| omega_int) => `(tacticSeq |
+  | `(tactic| omega_int_div) => `(tacticSeq |
       false_or_by_contra
-      simp (config := {failIfUnchanged := false}) only [Int.emod_def] at *
+
+      simp (config := {decide := true, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le, Int.emod_def] at *
+
+
+      -- We could speed this up by writing an `Expr.findAll`?
       repeat' generalize_int_div
+
       omega_int_core)

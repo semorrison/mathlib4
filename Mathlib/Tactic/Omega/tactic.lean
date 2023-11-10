@@ -265,15 +265,9 @@ syntax "false_or_by_contra" : tactic
 macro_rules | `(tactic| false_or_by_contra) => `(tactic| first | guard_target = False | by_contra)
 
 /--
-`omega` tactic over the integers, with only minimal pre-processing:
-* calls `by_contra`
-* replaces `x < y` with `x + 1 ≤ y`
-* replaces `x > y` with `y < x` and `x ≥ y` with `y ≤ x`
-* replaces `¬ x < y` with `y ≤ x` and `¬ x ≤ y` with `y < x`
+`omega` tactic over the integers, with no pre-processing.
 -/
 def omega_int_core : TacticM Unit := do
-  evalTactic (← `(tactic| false_or_by_contra))
-  evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le] at *))
   withMainContext do
     let hyps ← getLocalHyps
     let proof_of_false ← omega hyps.toList
@@ -283,3 +277,23 @@ syntax "omega_int_core" : tactic
 
 elab_rules : tactic
   | `(tactic| omega_int_core) => omega_int_core
+
+open Parser.Tactic
+
+/--
+`omega` tactic over the integers, with only minimal pre-processing:
+* calls `by_contra`
+* replaces `x < y` with `x + 1 ≤ y`
+* replaces `x > y` with `y < x` and `x ≥ y` with `y ≤ x`
+* replaces `¬ x < y` with `y ≤ x` and `¬ x ≤ y` with `y < x`
+-/
+def omega_int : TacticM Unit := do
+  evalTactic (← `(tacticSeq|
+    false_or_by_contra
+    simp (config := {decide := true, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le, Int.emod_def] at *))
+  omega_int_core
+
+syntax "omega_int" : tactic
+
+elab_rules : tactic
+  | `(tactic| omega_int) => omega_int

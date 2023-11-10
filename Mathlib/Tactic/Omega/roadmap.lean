@@ -26,24 +26,24 @@ Select hypotheses which are `=`, `≥`, or `>` in `Int` or `Nat`.
 
 We then apply the following pre-processors (item marked `[x]` are implemented).
 
-* [ ] Replace `x > y` with `x ≥ y + 1`.
+* [x] Replace `x > y` with `x ≥ y + 1`.
 * [x] Replace `x ≥ y` with `x - y ≥ 0`.
-* [ ] Given `x ≥ 0` for `x : Nat`, replace it with `(x : Int) ≥ 0`.
-* [ ] Push `Nat`-to-`Int` coercions inwards across `+`, `*`, `/`, `%`.
-* [ ] For each `(a - b : Int)` with `a b : Nat`, replace with two problems:
+* [x] Given `x ≥ 0` for `x : Nat`, replace it with `(x : Int) ≥ 0`.
+* [x] Push `Nat`-to-`Int` coercions inwards across `+`, `*`, `/`, `%`.
+* [x] For each `(a - b : Int)` with `a b : Nat`, replace with two problems:
   * replacing `(a - b : Int)` with `(a : Int) - (b : Int)`, adding `(a : Int) ≥ (b : Int)`
   * replacing `(a - b : Int)` with `0`, adding `(b : Int) > (a : Int)`
-* [ ] If `x / m` appears, for some `x : Int` and `m : Nat`,
+* [x] If `x / m` appears, for some `x : Int` and `m : Nat`,
   replace `x / m` with a new variable `α` and add the constraints
   `0 ≤ - m * α + x ≤ m - 1`.
-* [ ] If `x % m` appears, similarly, introduce the same new contraints
+* [x] If `x % m` appears, similarly, introduce the same new contraints
   but replace `x % m` with `- m * α + x`.
 
 Now all hypotheses are of the form `x = 0` or `x ≥ 0`,
 where `x` is an integer linear combination of atoms.
 
 **Status**:
-Barely started, so the current tactic only runs on `x ≥ y` and `x = y` hypotheses in `Int`.
+Complete, but needs optimising for fast noop.
 
 ### Processing
 
@@ -91,11 +91,9 @@ built via `and` and `or` out of `Problem`s.
 So instead of proving `(f p).possible = false` by `rfl`,
 we'll be proving that `f p` is the empty disjunction.
 
-**Status** Implemented but messy, in decision procedure form, without `Formula`.
+**Status** Implemented but messy, and without `Formula`.
 
 **TODO**
-* Refactor so we can run in semi-decision procedure form,
-  so we can delay implementing completeness, and writing termination proofs, until later.
 * Decide the design for formulas, and refactor to use that.
 * The `Expr` munging code could be made more efficient,
   and I need to check in case this is the bottleneck on large-but-easy problems.
@@ -154,14 +152,12 @@ at which point the equation witnessing `M` has all coefficients equal,
 and so will be removed by normalization.
 
 **Status**
+* Implemented with a fuel parameter that so we can skip the termination proofs.
+  This means we only have a semi-decision procedure.
 * The substitution that reduces `M` is implemented.
 * The framework for the well-founded recursion is implemented.
 * The critical inequality (that `M` strictly decreases) is just a `sorry`.
   It's hopefully at most a day's work, but I've been avoiding thinking about. :-)
-
-**TODO**
-* Before completing the termination proof, add an optional fuel parameter
-  so this part is usable as a semi-decision procedure even before writing the termination proof.
 
 #### Eliminating inequalities
 
@@ -282,7 +278,7 @@ or leaves it unchanged and strictly decreases `f`.
 if anyone knows a way to do this without the fuel parameter, please let me know.
 
 **Status:**
-* No code!
+* Implemented just the grey shadow.
 
 ## Optimizations
 

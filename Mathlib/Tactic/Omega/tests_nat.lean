@@ -86,39 +86,27 @@ syntax "assert_nat_casts_nonneg" : tactic
 elab_rules : tactic
   | `(tactic| assert_nat_casts_nonneg) => assertNatCastsNonneg
 
-/--
-`omega_nat_core` is a simple enrichment of `omega_int`, with basic support for natural numbers.
-As a pre-processing step, we run `zify` at all hypotheses,
-and then assert `0 ≤ x` for each `x` a cast of a natural number to the integers
-that appears in a hypothesis.
--/
-syntax (name := omega_nat_core) "omega_nat_core" : tactic
-
 open Lean Parser.Tactic
 
 -- I have no idea why we can't just use `false_or_by_contra` here!!
 syntax "false_or_by_contra'" : tactic
 macro_rules | `(tactic| false_or_by_contra') => `(tactic| first | guard_target = False | by_contra)
 
-@[inherit_doc omega_nat_core]
-macro_rules
-  | `(tactic| omega_nat_core) => `(tacticSeq |
-      false_or_by_contra'
-      try zify at *
-      assert_nat_casts_nonneg
-      omega_int)
+-- /--
+-- `omega_nat_core` is a simple enrichment of `omega_int`, with basic support for natural numbers.
+-- As a pre-processing step, we run `zify` at all hypotheses,
+-- and then assert `0 ≤ x` for each `x` a cast of a natural number to the integers
+-- that appears in a hypothesis.
+-- -/
+-- syntax (name := omega_nat_core) "omega_nat_core" : tactic
 
-example {x : Int} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by
-  omega_nat_core
-
-example {x : Nat} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by
-  omega_nat_core
-
-example {x : Nat} (h₁ : x / 3 ≥ 2) (h₂ : x < 6) : False := by
-  omega_nat_core
-
-example {x : Int} {y : Nat} (_ : 0 < x) (_ : x + y ≤ 0) : False := by
-  omega_nat_core
+-- @[inherit_doc omega_nat_core]
+-- macro_rules
+--   | `(tactic| omega_nat_core) => `(tacticSeq |
+--       false_or_by_contra'
+--       try zify at *
+--       assert_nat_casts_nonneg
+--       omega_int)
 
 
 namespace Lean.Expr
@@ -184,11 +172,6 @@ syntax "split_nat_sub_cast" : tactic
 elab_rules : tactic
   | `(tactic| split_nat_sub_cast) => splitNatSubCast
 
-example {x y : Nat} (h₁ : x - y ≤ 0) (h₂ : y + 1 ≤ x) : False := by
-  zify at *
-  split_nat_sub_cast
-  omega_nat_core
-  omega_nat_core
 
 -- theorem Nat.lt_iff_add_one_le {x y : Nat} : x < y ↔ x + 1 ≤ y := Iff.rfl
 -- theorem Nat.ge_iff_le {x y : Nat} : x ≥ y ↔ y ≤ x := Iff.rfl
@@ -229,11 +212,27 @@ syntax "omega_nat" : tactic
 macro_rules
   | `(tactic| omega_nat) => `(tacticSeq |
       false_or_by_contra'
-      try zify at *
-      -- Does this really belong here?
-      simp (config := {decide := false, failIfUnchanged := false}) only [Int.ofNat_ne_zero_iff_pos] at *
+
+      simp (config := {decide := true, failIfUnchanged := false}) only
+        [zify_simps,
+          -- push_cast lemmas:
+          push_cast,
+          -- Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, Int.ofNat_ediv, Int.ofNat_add, Int.ofNat_mul,
+          -- Int.ofNat_emod,
+          -- top level (shouldn't do these with simp?)
+          Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le,
+          -- unfold `emod`:
+          Int.emod_def] at *
+
+      -- Don't use Int.ofNat_ne_zero_iff_pos?
+
+      assert_nat_casts_nonneg
       first
-        | assert_nat_casts_nonneg; omega_int
+        |
+          repeat' generalize_int_div
+          -- Why do we need this step?!? Costs 0.4ms in a noop
+          simp (config := {decide := true, failIfUnchanged := false}) only [] at *
+          omega_int_core
         | split_nat_sub_cast <;> omega_nat
         | fail "omega could not find a contradiction")
 
@@ -241,7 +240,7 @@ example {x y : Nat} (h₁ : x - y ≤ 0) (h₂ : y < x) : False := by
   omega_nat
 
 example {x y : Int} (_ : x / 2 - y / 3 < 1) (_ : 3 * x ≥ 2 * y + 6) : False := by
-  omega_int
+  omega_int_div
 
 example {x y : Nat} (_ : x / 2 - y / 3 < 1) (_ : 3 * x ≥ 2 * y + 6) : False := by
   omega_nat
@@ -275,6 +274,17 @@ syntax "omega" : tactic
 macro_rules
   | `(tactic| omega) => `(tactic| omega_nat)
 
+example {x : Int} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by omega
+
+example {x : Nat} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by omega
+
+example {x : Nat} (h₁ : x / 3 ≥ 2) (h₂ : x < 6) : False := by omega
+
+example {x : Int} {y : Nat} (_ : 0 < x) (_ : x + y ≤ 0) : False := by omega
+
+example {a b c : Nat} (_ : a - (b - c) ≤ 5) (_ : b ≥ c + 3) (_ : a + c ≥ b + 6) : False := by omega
+
+section
 set_option profiler true
 set_option profiler.threshold 10
 
@@ -287,8 +297,9 @@ example {x : Nat} : 1 < (1 + ((x + 1 : Nat) : Int) + 2) / 2 := by omega
 #time
 example {x : Nat} : (x + 4) / 2 ≤ x + 2 := by omega
 
-#time
-example {x : Nat} (h : ¬0 < ((x : Int) + 1) / 2) : (x : Int) = 0 := by omega
+-- We'd need to restore using `Int.ofNat_ne_zero_iff_pos`
+-- #time
+-- example {x : Nat} (h : ¬0 < ((x : Int) + 1) / 2) : (x : Int) = 0 := by omega
 
 set_option profiler.threshold 1
 #time
@@ -301,9 +312,11 @@ example : True := by
   fail_if_success omega
   trivial
 
+end
+
+
 -- Profiling progress:
 -- 1542ms: begin
-set_option profiler false in
 #time
 example : True := by
   iterate 100 fail_if_success omega
