@@ -166,12 +166,17 @@ example {x y : Nat} (h₁ : x - y ≤ 0) (h₂ : y + 1 ≤ x) : False := by
   omega_nat_core
   omega_nat_core
 
+theorem Nat.lt_iff_add_one_le {x y : Nat} : x < y ↔ x + 1 ≤ y := sorry
+theorem Nat.ge_iff_le {x y : Nat} : x ≥ y ↔ y ≤ x := sorry
+theorem Nat.gt_iff_lt {x y : Nat} : x ≥ y ↔ y ≤ x := sorry
+
 syntax "omega_nat" : tactic
 
 macro_rules
   | `(tactic| omega_nat) => `(tacticSeq |
       exfalso
       try zify at *
+      simp (config := {decide := false, failIfUnchanged := false}) only [Nat.ge_iff_le, Nat.gt_iff_lt, Nat.not_lt, Nat.not_le] at *
       first | omega_nat_core | split_nat_sub_cast <;> omega_nat | fail "omega could not find a contradiction")
 
 example {x y : Nat} (h₁ : x - y ≤ 0) (h₂ : y < x) : False := by
@@ -194,4 +199,11 @@ syntax "omega" : tactic
 macro_rules
   | `(tactic| omega) => `(tactic| omega_nat)
 
-example {x y : Nat} (_ : x / 2 - y / 3 < x % 2) (_ : 3 * x ≥ 2 * y + 4) : False := by omega
+example {x y : Nat} (h1 : x / 2 - y / 3 < x % 2) (h2 : 3 * x ≥ 2 * y + 4) : False := by omega
+
+-- TODO
+example {x : Nat} : 1 < (1 + ((x + 1 : Nat) : Int) + 1 + 1) / 2 := by
+  by_contra
+  -- This isn't being picked up:
+  have : 0 ≤ (x : Int) := by exact Int.ofNat_nonneg x
+  omega_nat_core
