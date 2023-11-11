@@ -2,6 +2,8 @@ import Mathlib.Tactic.Omega.tactic_div_mod
 import Mathlib.Util.Time
 import Mathlib.Tactic.Zify
 import Mathlib.Data.Int.Basic
+import Mathlib.Tactic.PushNeg
+import Mathlib.Tactic.Rewrites
 
 set_option autoImplicit true
 -- set_option trace.omega.parsing true
@@ -297,6 +299,18 @@ example {x : Nat} : 1 < (1 + ((x + 1 : Nat) : Int) + 2) / 2 := by omega
 #time
 example {x : Nat} : (x + 4) / 2 ≤ x + 2 := by omega
 
+-- This is out of scope for `omega`, as it has a variable in a denominator.
+-- example {x : Int} {m : Nat} (_ : 0 < m) (_ : x % ↑m < (↑m + 1) / 2) : -↑m / 2 ≤ x % ↑m := by
+--   omega
+
+-- Happily `omega` can nevertheless cope with this one, treating `x % m` as at atom.
+example {x : Int} {m : Nat} (_ : 0 < m) (_ : ¬x % ↑m < (↑m + 1) / 2) : -↑m / 2 ≤ x % ↑m - ↑m := by
+  omega
+
+
+
+
+
 -- We'd need to restore using `Int.ofNat_ne_zero_iff_pos`
 -- #time
 -- example {x : Nat} (h : ¬0 < ((x : Int) + 1) / 2) : (x : Int) = 0 := by omega
@@ -321,3 +335,33 @@ end
 example : True := by
   iterate 100 fail_if_success omega
   trivial
+
+
+theorem Int.ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := by
+  constructor
+  · intro h
+    simp only [or_iff_not_imp_left]
+    intro
+    by_contra
+    simp_all
+    apply h
+    apply Int.le_antisymm <;> assumption
+  · simp only [or_iff_not_imp_left]
+    rintro h rfl
+    simp_all
+
+example {x : Int} : x % 2 = 0 ∨ x % 2 = 1 := by
+  simp only [or_iff_not_imp_left]
+  intro h
+  rw [← ne_eq] at h
+  rw [Int.ne_iff_lt_or_gt] at h
+  cases h <;>
+  -- omega should be willing to do one case split, if the goal is an equality!
+  apply Int.le_antisymm <;> omega
+
+example {x : Int} : x % 2 = 0 ∨ x % 2 = 1 := by
+  by_contra h
+  push_neg at h
+  aesop_destruct_products
+  simp only [Int.ne_iff_lt_or_gt] at *
+  casesm* (_ ∨ _) <;> omega
