@@ -188,6 +188,38 @@ theorem Int.ofNat_ne_zero_iff_pos {x : Nat} : ¬ (x : Int) = 0 ↔ 0 < (x : Int)
    · simp only [gt, iff_true]
      exact gt.ne.symm
 
+
+open Mathlib.Tactic.Zify
+
+theorem Int.natCast_ofNat : @Nat.cast Int instNatCastInt (no_index (OfNat.ofNat x)) = OfNat.ofNat x := rfl
+
+def omegaSimpLemmas : List Name := [
+    -- zify lemmas:
+    ``nat_cast_eq, ``nat_cast_le, ``nat_cast_lt, ``nat_cast_ne, ``nat_cast_dvd,
+    -- push_cast lemmas:
+    -- ``Nat.cast_zero, ``Nat.cast_one, ``Nat.cast_ofNat,
+    ``Int.natCast_zero, ``Int.natCast_one, ``Int.natCast_ofNat,
+    ``Int.ofNat_ediv, ``Int.ofNat_add,
+    ``Int.ofNat_mul, ``Int.ofNat_emod,
+    -- top level (shouldn't do these with simp?)
+    ``Int.lt_iff_add_one_le, ``Int.ge_iff_le, ``Int.gt_iff_lt, ``Int.not_lt, ``Int.not_le,
+    -- unfold `emod`:
+    ``Int.emod_def]
+
+def omegaSimpContext : MetaM Simp.Context := do
+  pure <|
+  { simpTheorems := #[← omegaSimpLemmas.foldlM (·.addConst ·) {}],
+    congrTheorems := {},
+    config := {decide := true, failIfUnchanged := false} }
+
+syntax "omega_simp" : tactic
+
+elab_rules : tactic
+  | `(tactic| omega_simp) => withMainContext <|
+    liftMetaTactic fun g => do
+      let (r, _) ← simpGoal g (← omegaSimpContext) (fvarIdsToSimp := ← g.getNondepPropHyps)
+      pure <| r.toList.map (·.2)
+
 /--
 `omega_int` with additional support for natural numbers.
 
@@ -215,16 +247,17 @@ macro_rules
   | `(tactic| omega_nat) => `(tacticSeq |
       false_or_by_contra'
 
-      simp (config := {decide := true, failIfUnchanged := false}) only
-        [zify_simps,
-          -- push_cast lemmas:
-          push_cast,
-          -- Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, Int.ofNat_ediv, Int.ofNat_add, Int.ofNat_mul,
-          -- Int.ofNat_emod,
-          -- top level (shouldn't do these with simp?)
-          Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le,
-          -- unfold `emod`:
-          Int.emod_def] at *
+      -- simp (config := {decide := true, failIfUnchanged := false}) only
+      --   [zify_simps,
+      --     -- push_cast lemmas:
+      --     push_cast,
+      --     -- Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, Int.ofNat_ediv, Int.ofNat_add, Int.ofNat_mul,
+      --     -- Int.ofNat_emod,
+      --     -- top level (shouldn't do these with simp?)
+      --     Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le,
+      --     -- unfold `emod`:
+      --     Int.emod_def] at *
+      omega_simp
 
       -- Don't use Int.ofNat_ne_zero_iff_pos?
 
@@ -260,7 +293,7 @@ It is not yet a full decision procedure (no "dark" or "grey" shadows),
 but should be effective on many problems.
 
 We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y` for `x y` in `Nat` or `Int`,
-along with negations of inequalities. (We do not do case splits on `x ≠ y`.)
+along with negations of inequalities. (We do not do case splits on `h : x ≠ y`.)
 
 We decompose the sides of the inequalities as linear combinations of atoms.
 
@@ -287,16 +320,16 @@ example {x : Int} {y : Nat} (_ : 0 < x) (_ : x + y ≤ 0) : False := by omega
 example {a b c : Nat} (_ : a - (b - c) ≤ 5) (_ : b ≥ c + 3) (_ : a + c ≥ b + 6) : False := by omega
 
 section
-set_option profiler true
-set_option profiler.threshold 10
+-- set_option profiler true
+-- set_option profiler.threshold 10
 
-#time
+-- #time
 example {x y : Nat} (h1 : x / 2 - y / 3 < x % 2) (h2 : 3 * x ≥ 2 * y + 4) : False := by omega
 
-#time
+-- #time
 example {x : Nat} : 1 < (1 + ((x + 1 : Nat) : Int) + 2) / 2 := by omega
 
-#time
+-- #time
 example {x : Nat} : (x + 4) / 2 ≤ x + 2 := by omega
 
 -- This is out of scope for `omega`, as it has a variable in a denominator.
@@ -315,23 +348,23 @@ example {x : Int} {m : Nat} (_ : 0 < m) (_ : ¬x % ↑m < (↑m + 1) / 2) : -↑
 -- #time
 -- example {x : Nat} (h : ¬0 < ((x : Int) + 1) / 2) : (x : Int) = 0 := by omega
 
-set_option profiler.threshold 1
-#time
-example : True := by
-  fail_if_success done
-  trivial
+-- set_option profiler.threshold 1
+-- #time
+-- example : True := by
+--   fail_if_success done
+--   trivial
 
-set_option profiler.threshold 1
-example : True := by
-  fail_if_success omega
-  trivial
+-- set_option profiler.threshold 1
+-- example : True := by
+--   fail_if_success omega
+--   trivial
 
 end
 
 
 -- Profiling progress:
 -- 1542ms: begin
-#time
+-- #time
 example : True := by
   iterate 100 fail_if_success omega
   trivial
