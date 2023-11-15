@@ -219,6 +219,12 @@ elab_rules : tactic
   | `(tactic| omega_simp) => withMainContext <|
     liftMetaTactic omegaSimp
 
+def simpOnly (g : MVarId) : MetaM (List MVarId) :=  do
+  let (r, _) ← simpGoal g
+    { config := {decide := false, failIfUnchanged := false} }
+    (fvarIdsToSimp := ← g.getNondepPropHyps)
+  pure <| r.toList.map (·.2)
+
 /--
 `omega_int` with additional support for natural numbers.
 
@@ -248,7 +254,7 @@ partial def omegaNat : TacticM Unit := do
     assertNatCastsNonneg
     (do
       iterateUntilFailure generalizeIntDivNumeral
-      evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [] at *))
+      liftMetaTactic simpOnly -- We do we need this!?
       omegaIntCore) <|>
     (do
       splitNatSubCast
