@@ -158,6 +158,7 @@ If no such expression is found, fail.
 -/
 def splitNatSubCast : TacticM Unit := withMainContext do
   let (a, b) ← findNatSubCast
+  -- TODO we can speed this up, no need for syntax:
   let a ← exprToSyntax a
   let b ← exprToSyntax b
   evalTactic (← `(tacticSeq|
@@ -210,11 +211,13 @@ def omegaSimpContext : MetaM Simp.Context := do
 
 syntax "omega_simp" : tactic
 
+def omegaSimp (g : MVarId) : MetaM (List MVarId) :=  do
+  let (r, _) ← simpGoal g (← omegaSimpContext) (fvarIdsToSimp := ← g.getNondepPropHyps)
+  pure <| r.toList.map (·.2)
+
 elab_rules : tactic
   | `(tactic| omega_simp) => withMainContext <|
-    liftMetaTactic fun g => do
-      let (r, _) ← simpGoal g (← omegaSimpContext) (fvarIdsToSimp := ← g.getNondepPropHyps)
-      pure <| r.toList.map (·.2)
+    liftMetaTactic omegaSimp
 
 /--
 `omega_int` with additional support for natural numbers.
@@ -239,33 +242,51 @@ during these case splits; if this is problematic we can make this more efficient
 -/
 syntax "omega_nat" : tactic
 
-macro_rules
-  | `(tactic| omega_nat) => `(tacticSeq |
-      false_or_by_contra
+partial def omegaNat : TacticM Unit := do
+    liftMetaTactic falseOrByContra
+    liftMetaTactic omegaSimp
+    assertNatCastsNonneg
+    (do
+      iterateUntilFailure generalizeIntDivNumeral
+      evalTactic (← `(tactic| simp (config := {decide := false, failIfUnchanged := false}) only [] at *))
+      omegaIntCore) <|>
+    (do
+      splitNatSubCast
+      allGoals omegaNat) <|>
+    throwError "omega could not find a contradiction"
 
-      -- simp (config := {decide := true, failIfUnchanged := false}) only
-      --   [zify_simps,
-      --     -- push_cast lemmas:
-      --     push_cast,
-      --     -- Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, Int.ofNat_ediv, Int.ofNat_add, Int.ofNat_mul,
-      --     -- Int.ofNat_emod,
-      --     -- top level (shouldn't do these with simp?)
-      --     Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le,
-      --     -- unfold `emod`:
-      --     Int.emod_def] at *
-      omega_simp
+elab_rules : tactic
+  | `(tactic| omega_nat) => omegaNat
 
-      -- Don't use Int.ofNat_ne_zero_iff_pos?
 
-      assert_nat_casts_nonneg
-      first
-        |
-          repeat' generalize_int_div
-          -- Why do we need this step?!? Costs 0.4ms in a noop
-          simp (config := {decide := false, failIfUnchanged := false}) only [] at *
-          omega_int_core
-        | split_nat_sub_cast <;> omega_nat
-        | fail "omega could not find a contradiction")
+
+-- macro_rules
+--   | `(tactic| omega_nat) => `(tacticSeq |
+--       false_or_by_contra
+
+--       -- simp (config := {decide := true, failIfUnchanged := false}) only
+--       --   [zify_simps,
+--       --     -- push_cast lemmas:
+--       --     push_cast,
+--       --     -- Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, Int.ofNat_ediv, Int.ofNat_add, Int.ofNat_mul,
+--       --     -- Int.ofNat_emod,
+--       --     -- top level (shouldn't do these with simp?)
+--       --     Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le,
+--       --     -- unfold `emod`:
+--       --     Int.emod_def] at *
+--       omega_simp
+
+--       -- Don't use Int.ofNat_ne_zero_iff_pos?
+
+--       assert_nat_casts_nonneg
+--       first
+--         |
+--           repeat' generalize_int_div
+--           -- Why do we need this step?!? Costs 0.4ms in a noop
+--           simp (config := {decide := false, failIfUnchanged := false}) only [] at *
+--           omega_int_core
+--         | split_nat_sub_cast <;> omega_nat
+--         | fail "omega could not find a contradiction")
 
 example {x y : Nat} (h₁ : x - y ≤ 0) (h₂ : y < x) : False := by
   omega_nat

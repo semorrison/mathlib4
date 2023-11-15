@@ -57,4 +57,11 @@ Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
   Time (mean ± σ):      1.039 s ±  0.002 s    [User: 0.777 s, System: 0.254 s]
   Range (min … max):    1.036 s …  1.041 s    10 runs
 
+Wed Nov 15 18:59:24 AEDT 2023
+68c754db3ea96b6f52d5452b20fc489eeeae8c17
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
+  Time (mean ± σ):     857.7 ms ±   3.7 ms    [User: 636.7 ms, System: 212.1 ms]
+  Range (min … max):   852.0 ms … 864.8 ms    10 runs
+
+
  -/

@@ -53,6 +53,7 @@ Fails it is does not find such an expression.
 -/
 def generalizeIntDivNumeral : TacticM Unit := withMainContext do
   let (n, d) ← findIntDivNumeral
+  -- TODO we can speed this up, no need for syntax:
   let n ← exprToSyntax n
   let d ← exprToSyntax d
   evalTactic (← `(tacticSeq|

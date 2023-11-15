@@ -277,7 +277,7 @@ elab_rules : tactic
 /--
 `omega` tactic over the integers, with no pre-processing.
 -/
-def omega_int_core : TacticM Unit := do
+def omegaIntCore : TacticM Unit := do
   withMainContext do
     let hyps ← getLocalHyps
     let proof_of_false ← omega hyps.toList
@@ -286,7 +286,7 @@ def omega_int_core : TacticM Unit := do
 syntax "omega_int_core" : tactic
 
 elab_rules : tactic
-  | `(tactic| omega_int_core) => omega_int_core
+  | `(tactic| omega_int_core) => omegaIntCore
 
 open Parser.Tactic
 
@@ -301,7 +301,7 @@ def omega_int : TacticM Unit := do
   evalTactic (← `(tacticSeq|
     false_or_by_contra
     simp (config := {decide := true, failIfUnchanged := false}) only [Int.lt_iff_add_one_le, Int.ge_iff_le, Int.gt_iff_lt, Int.not_lt, Int.not_le, Int.emod_def] at *))
-  omega_int_core
+  omegaIntCore
 
 syntax "omega_int" : tactic
 
