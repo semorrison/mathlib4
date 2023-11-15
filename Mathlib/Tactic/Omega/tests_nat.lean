@@ -266,7 +266,7 @@ macro_rules
         |
           repeat' generalize_int_div
           -- Why do we need this step?!? Costs 0.4ms in a noop
-          simp (config := {decide := true, failIfUnchanged := false}) only [] at *
+          simp (config := {decide := false, failIfUnchanged := false}) only [] at *
           omega_int_core
         | split_nat_sub_cast <;> omega_nat
         | fail "omega could not find a contradiction")

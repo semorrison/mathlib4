@@ -45,6 +45,7 @@ Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
 
 Don't use syntactical `simp`; build our own Simp.Context
 Wed Nov 15 17:32:58 AEDT 2023
+cb28e95da74b0d19717fb48bcc80b2c8631c3565
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
   Time (mean ± σ):      1.042 s ±  0.002 s    [User: 0.783 s, System: 0.251 s]
   Range (min … max):    1.039 s …  1.046 s    10 runs
