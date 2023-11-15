@@ -165,11 +165,11 @@ def splitNatSubCast : TacticM Unit := withMainContext do
     simp only [Nat.cast_sub' $a $b] at *
     by_cases h : $b ≤ $a <;> [simp only [if_pos h] at *; simp only [if_neg h] at *]))
 
-@[inherit_doc splitNatSubCast]
-syntax "split_nat_sub_cast" : tactic
+-- @[inherit_doc splitNatSubCast]
+-- syntax "split_nat_sub_cast" : tactic
 
-elab_rules : tactic
-  | `(tactic| split_nat_sub_cast) => splitNatSubCast
+-- elab_rules : tactic
+--   | `(tactic| split_nat_sub_cast) => splitNatSubCast
 
 
 -- theorem Nat.lt_iff_add_one_le {x y : Nat} : x < y ↔ x + 1 ≤ y := Iff.rfl
@@ -194,10 +194,9 @@ def omegaSimpLemmas : List Name := [
     -- zify lemmas:
     ``nat_cast_eq, ``nat_cast_le, ``nat_cast_lt, ``nat_cast_ne, ``nat_cast_dvd,
     -- push_cast lemmas:
-    -- ``Nat.cast_zero, ``Nat.cast_one, ``Nat.cast_ofNat,
+    -- ``Nat.cast_zero, ``Nat.cast_one, ``Nat.cast_ofNat, -- These are from Mathlib
     ``Int.natCast_zero, ``Int.natCast_one, ``Int.natCast_ofNat,
-    ``Int.ofNat_ediv, ``Int.ofNat_add,
-    ``Int.ofNat_mul, ``Int.ofNat_emod,
+    ``Int.ofNat_add, ``Int.ofNat_mul, ``Int.ofNat_emod, ``Int.ofNat_ediv,
     -- top level (shouldn't do these with simp?)
     ``Int.lt_iff_add_one_le, ``Int.ge_iff_le, ``Int.gt_iff_lt, ``Int.not_lt, ``Int.not_le,
     -- unfold `emod`:
@@ -329,8 +328,8 @@ a natural subtraction appearing in a hypothesis, and try again.
 -/
 syntax "omega" : tactic
 
-macro_rules
-  | `(tactic| omega) => `(tactic| omega_nat)
+elab_rules : tactic
+  | `(tactic| omega) => omegaNat
 
 example {x : Int} (h₁ : 5 ≤ x) (h₂ : x ≤ 4) : False := by omega
 
