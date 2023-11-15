@@ -90,10 +90,6 @@ elab_rules : tactic
 
 open Lean Parser.Tactic
 
--- I have no idea why we can't just use `false_or_by_contra` here!!
-syntax "false_or_by_contra'" : tactic
-macro_rules | `(tactic| false_or_by_contra') => `(tactic| first | guard_target = False | by_contra)
-
 -- /--
 -- `omega_nat_core` is a simple enrichment of `omega_int`, with basic support for natural numbers.
 -- As a pre-processing step, we run `zify` at all hypotheses,
@@ -245,7 +241,7 @@ syntax "omega_nat" : tactic
 
 macro_rules
   | `(tactic| omega_nat) => `(tacticSeq |
-      false_or_by_contra'
+      false_or_by_contra
 
       -- simp (config := {decide := true, failIfUnchanged := false}) only
       --   [zify_simps,

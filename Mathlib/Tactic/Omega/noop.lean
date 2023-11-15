@@ -6,7 +6,7 @@ example : True := by
 
 
 /-
-* `lake build Mathlib.Tactic.Omega.noop > /dev/null && date && hyperfine "lake env lean Mathlib/Tactic/Omega/noop.lean"`
+* `lake build Mathlib.Tactic.Omega.noop > /dev/null && date && git rev-parse HEAD && hyperfine "lake env lean Mathlib/Tactic/Omega/noop.lean"`
 
 Fri Nov 10 17:08:19 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
@@ -49,5 +49,12 @@ cb28e95da74b0d19717fb48bcc80b2c8631c3565
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
   Time (mean ± σ):      1.042 s ±  0.002 s    [User: 0.783 s, System: 0.251 s]
   Range (min … max):    1.039 s …  1.046 s    10 runs
+
+decide := false in the mystery simp
+Wed Nov 15 18:39:27 AEDT 2023
+90be93b2c59cb02dcc6e99db6273bd6b4d670822
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
+  Time (mean ± σ):      1.039 s ±  0.002 s    [User: 0.777 s, System: 0.254 s]
+  Range (min … max):    1.036 s …  1.041 s    10 runs
 
  -/

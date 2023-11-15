@@ -262,7 +262,17 @@ theorem Int.ge_iff_le {x y : Int} : x ≥ y ↔ y ≤ x := Iff.rfl
 theorem Int.gt_iff_lt {x y : Int} : x > y ↔ y < x := Iff.rfl
 
 syntax "false_or_by_contra" : tactic
-macro_rules | `(tactic| false_or_by_contra) => `(tactic| first | guard_target = False | by_contra)
+
+def falseOrByContra (g : MVarId) : MetaM (List MVarId) := do
+  match ← g.getType with
+  | .const ``False _ => pure [g]
+  | .app (.const ``Not _) _ => pure [(← g.intro1).2]
+  | _ => (← g.applyConst ``Classical.byContradiction).mapM fun s => (·.2) <$> s.intro1
+
+
+elab_rules : tactic
+  | `(tactic| false_or_by_contra) => liftMetaTactic falseOrByContra
+  -- `(tactic| first | guard_target = False | by_contra)
 
 /--
 `omega` tactic over the integers, with no pre-processing.
