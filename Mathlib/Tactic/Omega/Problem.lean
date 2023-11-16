@@ -5,6 +5,8 @@ import Mathlib.Tactic.LibrarySearch
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+initialize Lean.registerTraceClass `omega
+
 /-!
 # Abstract description of integer linear programming problems.
 
@@ -163,6 +165,32 @@ def trivial : Problem where
 theorem trivial_sat (values : List Int) : trivial.sat values where
   equalities := by simp
   inequalities := by simp
+
+@[simps]
+def addEquality (p : Problem) (lc : LinearCombo) : Problem :=
+  { p with equalities := lc :: p.equalities }
+
+@[simps]
+def addInequality (p : Problem) (lc : LinearCombo) : Problem :=
+  { p with inequalities := lc :: p.inequalities }
+
+theorem addEquality_sat {p : Problem} {lc : LinearCombo} (hp : p.sat v) (h : lc.eval v = 0) :
+    (p.addEquality lc).sat v :=
+  { hp with
+    equalities := by
+      intros lc m
+      simp only [addEquality_equalities, List.mem_cons] at m
+      rcases m with rfl | pm <;>
+      simp_all [hp.equalities] }
+
+theorem addInequality_sat {p : Problem} {lc : LinearCombo} (hp : p.sat v) (h : lc.eval v ≥ 0) :
+    (p.addInequality lc).sat v :=
+  { hp with
+    inequalities := by
+      intros lc m
+      simp only [addInequality_inequalities, List.mem_cons] at m
+      rcases m with rfl | pm <;>
+      simp_all [hp.inequalities] }
 
 @[simps]
 def and (p q : Problem) : Problem where
