@@ -17,9 +17,6 @@ It does no preprocessing, and just looks for integer linear constraints amongst 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
-initialize Lean.registerTraceClass `omega
-initialize Lean.registerTraceClass `omega.parsing
-
 open Lean Elab Tactic Mathlib.Tactic Meta
 
 theorem Int.add_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a + c = b + d := by

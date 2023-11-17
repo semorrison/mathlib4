@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Omega.tests_nat
+import Mathlib.Tactic.Omega.v2
 
 example : True := by
   iterate 100 fail_if_success omega
@@ -75,4 +75,11 @@ Wed Nov 15 20:10:22 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
   Time (mean ± σ):     737.2 ms ±   3.4 ms    [User: 553.4 ms, System: 175.1 ms]
   Range (min … max):   732.3 ms … 742.3 ms    10 runs
+
+v2; complete rewrite of front end:
+Fri Nov 17 22:56:58 AEDT 2023
+4ba03a339d641b729d6a8a4ccb9a55c56e3cc9ca
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/noop.lean
+  Time (mean ± σ):     519.4 ms ±   1.8 ms    [User: 357.7 ms, System: 152.0 ms]
+  Range (min … max):   517.4 ms … 522.9 ms    10 runs
  -/

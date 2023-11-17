@@ -57,8 +57,8 @@ def generalizeIntDivNumeral : TacticM Unit := withMainContext do
   let n ← exprToSyntax n
   let d ← exprToSyntax d
   evalTactic (← `(tacticSeq|
-    have : $d * ($n / $d) ≤ $n := Int.mul_ediv_le (by decide)
-    have : $n + 1 ≤ $d * ($n / $d) + $d := Int.lt_mul_ediv_add (by decide)
+    have : $d * ($n / $d) ≤ $n := Int.mul_ediv_self_le (by decide)
+    have : $n + 1 ≤ $d * ($n / $d) + $d := Int.lt_mul_ediv_self_add (by decide)
     generalize $n / $d = y at *))
 
 @[inherit_doc generalizeIntDivNumeral]

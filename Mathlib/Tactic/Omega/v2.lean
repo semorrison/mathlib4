@@ -1,7 +1,10 @@
 import Lean
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.Problem
+import Mathlib.Tactic.Omega.PtrMap
+
 import Mathlib.Tactic.LibrarySearch
+import Mathlib.Util.Time
 
 set_option autoImplicit true
 
@@ -32,6 +35,9 @@ theorem Nat.le_of_ge {x y : Nat} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
 theorem Int.ofNat_congr {a b : Nat} (h : a = b) : (a : Int) = (b : Int) := congrArg _ h
 theorem Int.ofNat_lt_of_lt {a b : Nat} (h : a < b) : (a : Int) < (b : Int) := Int.ofNat_lt.mpr h
 theorem Int.ofNat_le_of_le {a b : Nat} (h : a ≤ b) : (a : Int) ≤ (b : Int) := Int.ofNat_le.mpr h
+
+theorem Int.ofNat_sub_sub {a b c : Nat} : ((a - b - c : Nat) : Int) = ((a - (b + c) : Nat) : Int) :=
+  congrArg _ (Nat.sub_sub _ _ _)
 
 namespace Int
 
@@ -65,23 +71,60 @@ instance : ToExpr Int where
 
 namespace Omega
 
-structure AtomM.State where
+structure State where
   /-- The atoms up-to-defeq encountered so far. -/
   atoms : Array Expr := #[]
   /--
-  The indices of any atoms of the form `((a - b : Nat) : Int)`,
-  along with the values of `a` and `b`,
-  which have been encountered but not yet case split. -/
-  subs : List (Nat × Expr × Expr) := []
+  For each atom `((a - b : Nat) : Int)`, which has been encountered but not yet case split,
+  the values of `a` and `b`.
+  -/
+  subs : List (Expr × Expr) := []
 
-abbrev AtomM := StateRefT AtomM.State MetaM
+abbrev OmegaM' := StateRefT State MetaM
 
-/-- Run a computation in the `AtomM` monad. -/
-def AtomM.run (m : AtomM α) : MetaM α := m.run' {}
+/--
+Cache of expressions that have been visited
+-/
+def Cache : Type := HashMap Expr (LinearCombo × OmegaM' Expr)
+
+abbrev OmegaM := StateRefT Cache OmegaM'
+
+/-- Run a computation in the `OmegaM` monad. -/
+def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 
 /-- Return the `Expr` representing the list of atoms. -/
-def atomsList : AtomM Expr := do
-  mkListLit (.const ``Int []) (← get).atoms.toList
+def atomsList : OmegaM Expr := do
+  mkListLit (.const ``Int []) (← getThe State).atoms.toList
+
+/--
+If a natural number subtraction `((a - b : Nat) : Int)` has been encountered,
+return the pair `a` and `b`, and mark this subtraction as done.
+-/
+def popSub : OmegaM (Option (Expr × Expr)) := do
+  modifyGetThe State fun s => match s.subs with
+  | [] => (none, s)
+  | p :: t => (some p, { s with subs := t })
+
+/--
+Run an `OmegaM` computation, restoring the state afterwards.
+-/
+def savingState (t : OmegaM α) : OmegaM α := do
+  let state ← getThe State
+  let cache ← getThe Cache
+  let r ← t
+  modifyThe State fun _ => state
+  modifyThe Cache fun _ => cache
+  pure r
+
+def nat? (n : Expr) : Option Nat :=
+  match n.getAppFnArgs with
+  | (``Nat.cast, #[.const ``Int [], _, n]) => n.nat?
+  | _ => n.nat?
+
+def int? (n : Expr) : Option Int :=
+  match n.getAppFnArgs with
+  | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
+  | _ => n.int?
 
 /--
 Analyzes a newly recorded atom,
@@ -94,7 +137,7 @@ def analyzeAtom (e : Expr) : MetaM (HashSet Expr × Option (Expr × Expr)) := do
     match e'.getAppFnArgs with
     | (``HSub.hSub, #[_, _, _, _, a, b]) => some (a, b)
     | _ => none)
-  | (`HDiv.hDiv, #[_, _, _, _, x, k]) => match k.nat? with
+  | (`HDiv.hDiv, #[_, _, _, _, x, k]) => match nat? k with
     | none
     | some 0 => pure (∅, none)
     | some _ =>
@@ -117,21 +160,25 @@ Return its index, and, if it is new, a collection of interesting facts about the
 If the atom is of the form `((a - b : Nat) : Int)`, also record its index and operands in `subs`,
 for later case splitting.
 -/
-def lookup (e : Expr) : AtomM (Nat × Option (HashSet Expr)) := do
-  let c ← get
+def lookup (e : Expr) : OmegaM (Nat × Option (HashSet Expr)) := do
+  let c ← getThe State
   for h : i in [:c.atoms.size] do
     have : i < c.atoms.size := h.2
     if ← isDefEq e c.atoms[i] then
       return (i, none)
+  trace[omega] "New atom: {e}"
   let (facts, sub) ← analyzeAtom e
-  let i ← modifyGet fun c ↦ (c.atoms.size,
+  if ← isTracingEnabledFor `omega then
+    unless facts.isEmpty do
+      trace[omega] "New facts: {← facts.toList.mapM fun e => inferType e}"
+  let i ← modifyGetThe State fun c ↦ (c.atoms.size,
     { c with
       atoms := c.atoms.push e,
-      subs := if let some (a, b) := sub then (c.atoms.size, a, b) :: c.subs else c.subs })
+      subs := if let some (a, b) := sub then (a, b) :: c.subs else c.subs })
   return (i, some facts)
 
 /-- The proof that the trivial `Problem` is satisfied at the atoms. -/
-def trivialSat : AtomM Expr :=
+def trivialSat : OmegaM Expr :=
   return .app (.const ``Problem.trivial_sat []) (← atomsList)
 
 /--
@@ -140,7 +187,7 @@ A partially processed `omega` context.
 We have:
 * the unprocessed `facts : List Expr` taken from the local context,
 * a `Problem` representing the integer linear constraints extracted so far, and
-* a proof, wrapped in the `AtomM` monad, that this problem is satisfiable in the local context.
+* a proof, wrapped in the `OmegaM` monad, that this problem is satisfiable in the local context.
 
 We begin with `facts := ← getLocalHyps` and `problem := .trivial`,
 and progressively process the facts.
@@ -162,8 +209,8 @@ structure MetaProblem where
   processedFacts : HashSet Expr := ∅
   /-- An integer linear arithmetic problem. -/
   problem : Problem := .trivial
-  /-- A proof, in the `AtomM` monad, that `problem` is satisfiable at the atoms. -/
-  sat : AtomM Expr := trivialSat
+  /-- A proof, in the `OmegaM` monad, that `problem` is satisfiable at the atoms. -/
+  sat : OmegaM Expr := trivialSat
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
@@ -180,12 +227,12 @@ instance : ToExpr Problem where
   toTypeExpr := .const ``Problem []
 
 /-- Construct the `rfl` proof that `lc.eval atoms = e`. -/
-def mkEvalRflProof (e : Expr) (lc : LinearCombo) : AtomM Expr := do
+def mkEvalRflProof (e : Expr) (lc : LinearCombo) : OmegaM Expr := do
   mkEqReflWithExpectedType e (mkApp2 (.const ``LinearCombo.eval []) (toExpr lc) (← atomsList))
 
 /-- If `e : Expr` is the `n`-th atom, construct the proof that
 `e = (coordinate n).eval atoms`. -/
-def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : AtomM Expr := do
+def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : OmegaM Expr := do
   -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
   let atoms ← atomsList
   let n := toExpr n
@@ -195,14 +242,26 @@ def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : AtomM Expr := do
   mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
-def mkAtomLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashSet Expr) := do
+def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
-def int? (n : Expr) : Option Int :=
-  match n.getAppFnArgs with
-  | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
-  | _ => n.int?
+@[inherit_doc mkAppN]
+macro_rules
+  | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
+
+mutual
+
+partial def asLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
+  let cache ← get
+  match cache.find? e with
+  | some (lc, prf) =>
+    trace[omega] "Found in cache: {e}"
+    return (lc, prf, ∅)
+  | none =>
+    let r ← asLinearComboImpl e
+    modifyThe Cache fun cache => (cache.insert e (r.1, r.2.1.run' cache))
+    pure r
 
 /--
 Translates an expression into a `LinearCombo`.
@@ -217,11 +276,11 @@ We also transform the expression as we descend into it:
 * pushing coercions: `↑(x + y)`, `↑(x * y)`, `↑(x / k)`, `↑(x % k)`, `↑k`
 * unfolding `emod`: `x % k` → `x - x / k`
 
-Finally, the `AtomM` monad records appearances of `↑(x - y)` atoms, for later case splitting.
+Finally, the `OmegaM` monad records appearances of `↑(x - y)` atoms, for later case splitting.
 
 TODO: Use an unsafe cache, like `Expr.find?`, to take advantage of sharing.
 -/
-partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashSet Expr) := do
+partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   trace[omega] "processing {e}"
   match e.int? with
   | some i =>
@@ -231,7 +290,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
   | (``HAdd.hAdd, #[_, _, _, _, e₁, e₂]) => do
     let (l₁, prf₁, facts₁) ← asLinearCombo e₁
     let (l₂, prf₂, facts₂) ← asLinearCombo e₂
-    let prf : AtomM Expr := do
+    let prf : OmegaM Expr := do
       let add_eval := mkApp3 (.const ``LinearCombo.add_eval []) (toExpr l₁) (toExpr l₂) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.add_congr #[← prf₁, ← prf₂])
@@ -240,7 +299,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
   | (``HSub.hSub, #[_, _, _, _, e₁, e₂]) => do
     let (l₁, prf₁, facts₁) ← asLinearCombo e₁
     let (l₂, prf₂, facts₂) ← asLinearCombo e₂
-    let prf : AtomM Expr := do
+    let prf : OmegaM Expr := do
       let sub_eval := mkApp3 (.const ``LinearCombo.sub_eval []) (toExpr l₁) (toExpr l₂) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.sub_congr #[← prf₁, ← prf₂])
@@ -248,7 +307,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
     pure (l₁ - l₂, prf, facts₁.merge facts₂)
   | (``Neg.neg, #[_, _, e']) => do
     let (l, prf, facts) ← asLinearCombo e'
-    let prf' : AtomM Expr := do
+    let prf' : OmegaM Expr := do
       let neg_eval := mkApp2 (.const ``LinearCombo.neg_eval []) (toExpr l) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.neg_congr #[← prf])
@@ -258,7 +317,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
     match int? n with
     | some n' =>
       let (l, prf, facts) ← asLinearCombo e'
-      let prf' : AtomM Expr := do
+      let prf' : OmegaM Expr := do
         let smul_eval := mkApp3 (.const ``LinearCombo.smul_eval []) (toExpr l) n (← atomsList)
         mkEqTrans
           (← mkAppM ``Int.mul_congr_right #[n, ← prf])
@@ -271,18 +330,22 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
     | (``HMul.hMul, #[_, _, _, _, a, b]) => rewrite e (mkApp2 (.const ``Int.ofNat_mul []) a b)
     | (``HDiv.hDiv, #[_, _, _, _, a, b]) => rewrite e (mkApp2 (.const ``Int.ofNat_ediv []) a b)
     | (``OfNat.ofNat, #[_, n, _]) => rewrite e (.app (.const ``Int.natCast_ofNat []) n)
-    | (``Nat.mod, #[a, b]) => rewrite e (mkApp2 (.const ``Int.ofNat_emod []) a b)
+    | (``HMod.hMod, #[_, _, _, _, a, b]) => rewrite e (mkApp2 (.const ``Int.ofNat_emod []) a b)
+    | (``HSub.hSub, #[_, _, _, _, mkAppN (.const ``HSub.hSub _) #[_, _, _, _, a, b], c]) =>
+      rewrite e (mkApp3 (.const ``Int.ofNat_sub_sub []) a b c)
     | _ => mkAtomLinearCombo e
   | _ => mkAtomLinearCombo e
 where
-  rewrite (lhs rw : Expr) : AtomM (LinearCombo × AtomM Expr × HashSet Expr) := do
-    trace[omega] "rewriting {lhs} via ({rw} : {← inferType rw})"
+  rewrite (lhs rw : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
+    trace[omega] "rewriting {lhs} via {rw} : {← inferType rw}"
     match (← inferType rw).eq? with
     | some (_, _lhs', rhs) =>
       let (lc, prf, facts) ← asLinearCombo rhs
-      let prf' : AtomM Expr := do mkEqTrans rw (← prf)
+      let prf' : OmegaM Expr := do mkEqTrans rw (← prf)
       pure (lc, prf', facts)
     | none => panic! "Invalid rewrite rule in 'asLinearCombo'"
+
+end
 
 namespace MetaProblem
 
@@ -294,7 +357,7 @@ def trivial : MetaProblem where
 instance : Inhabited MetaProblem := ⟨trivial⟩
 
 /-- The statement that a problem is satisfied at `atomsList`. -/
-def satType (p : Problem) : AtomM Expr :=
+def satType (p : Problem) : OmegaM Expr :=
   return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
 
 theorem LinearCombo.sub_eval_zero {a b : LinearCombo} {v : List Int} (h : a.eval v = b.eval v) :
@@ -305,18 +368,18 @@ theorem LinearCombo.sub_eval_nonneg {a b : LinearCombo} {v : List Int} (h : a.ev
     0 ≤ (b - a).eval v := by
   simpa using Int.sub_nonneg_of_le h
 
-
 /--
 Add an integer equality to the `Problem`.
 -/
 -- TODO ambitiously, we could be solving easy equalities as we add them ...
-def addIntEquality (p : MetaProblem) (h x y : Expr) : AtomM MetaProblem := do
+def addIntEquality (p : MetaProblem) (h x y : Expr) : OmegaM MetaProblem := do
   let (lc₁, prf₁, facts₁) ← asLinearCombo x
   let (lc₂, prf₂, facts₂) ← asLinearCombo y
   let newFacts : HashSet Expr := (facts₁.merge facts₂).fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
   pure <|
-  { facts := newFacts.toList ++ p.facts
+  { p with
+    facts := newFacts.toList ++ p.facts
     problem := p.problem.addEquality (lc₂ - lc₁)
     sat := do
       let eq ← mkEqTrans (← mkEqSymm (← prf₁)) (← mkEqTrans h (← prf₂))
@@ -327,13 +390,14 @@ def addIntEquality (p : MetaProblem) (h x y : Expr) : AtomM MetaProblem := do
 Add an integer inequality to the `Problem`.
 -/
 -- TODO once we've got this working, we should run `tidy` at every step
-def addIntInequality (p : MetaProblem) (h x y : Expr) : AtomM MetaProblem := do
+def addIntInequality (p : MetaProblem) (h x y : Expr) : OmegaM MetaProblem := do
   let (lc₁, prf₁, facts₁) ← asLinearCombo x
   let (lc₂, prf₂, facts₂) ← asLinearCombo y
   let newFacts : HashSet Expr := (facts₁.merge facts₂).fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
   pure <|
-  { facts := newFacts.toList ++ p.facts
+  { p with
+    facts := newFacts.toList ++ p.facts
     problem := p.problem.addInequality (lc₂ - lc₁)
     sat := do
       let ineq ← mkAppM ``le_of_le_of_eq''
@@ -342,32 +406,24 @@ def addIntInequality (p : MetaProblem) (h x y : Expr) : AtomM MetaProblem := do
         #[← p.sat, ← mkAppM ``LinearCombo.sub_eval_nonneg #[ineq]] }
 
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
-def pushNot (h P : Expr) : MetaM (Option Expr) := do
+def pushNot (h P : Expr) : Option Expr := do
   match P.getAppFnArgs with
-  | (``LT.lt, #[.const ``Int [], _, x, y]) =>
-    return some (mkApp3 (.const ``Int.le_of_not_lt []) x y h)
-  | (``LE.le, #[.const ``Int [], _, x, y]) =>
-    return some (mkApp3 (.const ``Int.lt_of_not_le []) x y h)
-  | (``LT.lt, #[.const ``Nat [], _, x, y]) =>
-    return some (mkApp3 (.const ``Nat.le_of_not_lt []) x y h)
-  | (``LE.le, #[.const ``Nat [], _, x, y]) =>
-    return some (mkApp3 (.const ``Nat.lt_of_not_le []) x y h)
-  | (``GT.gt, #[.const ``Int [], _, x, y]) =>
-    return some (mkApp3 (.const ``Int.le_of_not_lt []) y x h)
-  | (``GE.ge, #[.const ``Int [], _, x, y]) =>
-    return some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
-  | (``GT.gt, #[.const ``Nat [], _, x, y]) =>
-    return some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
-  | (``GE.ge, #[.const ``Nat [], _, x, y]) =>
-    return some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
+  | (``LT.lt, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.le_of_not_lt []) x y h)
+  | (``LE.le, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.lt_of_not_le []) x y h)
+  | (``LT.lt, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.le_of_not_lt []) x y h)
+  | (``LE.le, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) x y h)
+  | (``GT.gt, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.le_of_not_lt []) y x h)
+  | (``GE.ge, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
+  | (``GT.gt, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
+  | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
   -- TODO add support for `¬ a ∣ b`?
-  | _ => return none
+  | _ => none
 
-partial def addFact (p : MetaProblem) (h : Expr) : AtomM MetaProblem := do
+partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
     return p
   else
-    let t ← inferType h
+    let t ← instantiateMVars (← inferType h)
     match t.getAppFnArgs with
     | (``Eq, #[.const ``Int [], x, y]) =>
       p.addIntEquality h x y
@@ -379,7 +435,7 @@ partial def addFact (p : MetaProblem) (h : Expr) : AtomM MetaProblem := do
     | (``GE.ge, #[.const ``Int [], _, x, y]) => p.addFact (mkApp3 (.const ``Int.le_of_ge []) x y h)
     | (``GT.gt, #[.const ``Nat [], _, x, y]) => p.addFact (mkApp3 (.const ``Nat.lt_of_gt []) x y h)
     | (``GE.ge, #[.const ``Nat [], _, x, y]) => p.addFact (mkApp3 (.const ``Nat.le_of_ge []) x y h)
-    | (``Not, #[P]) => match ← pushNot h P with
+    | (``Not, #[P]) => match pushNot h P with
       | none => return p
       | some h' => p.addFact h'
     | (``Eq, #[.const ``Nat [], x, y]) => p.addFact (mkApp3 (.const ``Int.ofNat_congr []) x y h)
@@ -399,12 +455,12 @@ Process all the facts in a `MetaProblem`.
 
 This is partial because new facts may be generated along the way.
 -/
-partial def processFacts (p : MetaProblem) : AtomM MetaProblem := do
+partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
   match p.facts with
   | [] => pure p
   | h :: t =>
     if p.processedFacts.contains h then
-      p.processFacts
+      processFacts { p with facts := t }
     else
       (← MetaProblem.addFact { p with
         facts := t
@@ -431,22 +487,43 @@ def unsat_of_impossible {p : Problem} (h : (runOmega p).possible = false) : p.un
 
 def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
 
-/-- Given a collection of facts, try to prove `False` using the omega algorithm. -/
-def omega (facts : List Expr) : MetaM Expr := do
-  let m : MetaProblem := { facts }
-  let (p, sat) ← AtomM.run do
-    let m' ← m.processFacts
-    guard m'.facts.isEmpty
-    pure (m'.problem, ← m'.sat)
-  trace[omega] "{p}"
+theorem Int.ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
+  Int.ofNat_eq_zero.mpr (Nat.sub_eq_zero_of_le (Nat.le_of_lt (Nat.not_le.mp h)))
+
+partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withContext do
+  let m' ← m.processFacts
+  guard m'.facts.isEmpty
+  let p := m'.problem
+  let sat := m'.sat
+  trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
   if (runOmega p).possible then
-    throwError "omega did not find a contradiction" -- TODO later, show a witness?
-  else
-    let p_expr := toExpr p
-    let s ← mkAppM ``Problem.possible #[← mkAppM ``runOmega #[p_expr]]
+    match ← popSub with
+    | none => throwError "omega did not find a contradiction" -- TODO later, show a witness?
+    | some (a, b) =>
+      trace[omega] "Case splitting on {b} ≤ {a}"
+      let (⟨gpos, hpos⟩, ⟨gneg, hneg⟩) ← g.byCases (← mkLE b a)
+      let wpos := mkApp3 (.const ``Int.ofNat_sub []) b a (.fvar hpos)
+      trace[omega] "Adding facts:\n{← gpos.withContext <| inferType (.fvar hpos)}\n{← inferType wpos}"
+      let mpos := { m' with facts := [.fvar hpos, wpos] }
+      savingState do omegaImpl mpos gpos
+      let wneg := mkApp3 (.const ``Int.ofNat_sub_eq_zero []) b a (.fvar hneg)
+      trace[omega] "Adding facts:\n{← gneg.withContext <| inferType (.fvar hneg)}\n{← inferType wneg}"
+      let mneg := { m' with facts := [.fvar hneg, wneg] }
+      omegaImpl mneg gneg
+  else do
+    let s ← mkAppM ``Problem.possible #[← mkAppM ``runOmega #[toExpr p]]
     let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
     r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
-    return (← mkAppM ``unsat_of_impossible #[.mvar r]).app (← mkAppM ``Problem.of #[sat])
+    g.assign <| (← mkAppM ``unsat_of_impossible #[.mvar r]).app (← mkAppM ``Problem.of #[← sat])
+
+/--
+Given a collection of facts, try prove `False` using the omega algorithm,
+and close the goal using that.
+
+(We need the goal present in case we need to do case splits.)
+-/
+def omega (facts : List Expr) (g : MVarId) : MetaM Unit := OmegaM.run do
+  omegaImpl { facts } g
 
 syntax "false_or_by_contra" : tactic
 
@@ -462,54 +539,33 @@ elab_rules : tactic
   | `(tactic| false_or_by_contra) => liftMetaTactic falseOrByContra
 
 /--
-`omega` tactic, without splitting natural subtraction.
--/
-def omegaTacticCore : TacticM Unit := do
-  withMainContext do
-    liftMetaTactic falseOrByContra
-    let hyps ← getLocalHyps
-    let proof_of_false ← omega hyps.toList
-    closeMainGoal proof_of_false
+The `omega` tactic, for resolving integer and natural linear arithmetic problems.
 
-syntax "omega_core" : tactic
+It is not yet a full decision procedure (no "dark" or "grey" shadows),
+but should be effective on many problems.
+
+We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y` for `x y` in `Nat` or `Int`,
+along with negations of inequalities. (We do not do case splits on `h : x ≠ y`.)
+
+We decompose the sides of the inequalities as linear combinations of atoms.
+
+If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxilliary variables
+and the relevant inequalities.
+
+On the first pass, we do not perform case splits on natural subtraction.
+If `omega` fails, we recursively perform a case split on
+a natural subtraction appearing in a hypothesis, and try again.
+-/
+def omegaTactic : TacticM Unit := do
+    liftMetaFinishingTactic fun g => do
+      let gs ← falseOrByContra g
+      _ ← gs.mapM fun g => g.withContext do
+        let hyps := (← getLocalHyps).toList
+        trace[omega] "analyzing {hyps.length} hypotheses:\n{← hyps.mapM inferType}"
+        omega hyps g
+
+@[inherit_doc omegaTactic]
+syntax "omega" : tactic
 
 elab_rules : tactic
-  | `(tactic| omega_core) => omegaTacticCore
-
-set_option trace.omega true
-
-example : True := by
-  fail_if_success omega_core
-  trivial
-
-example (_ : (1 : Int) < (0 : Int)) : False := by omega_core
-
-example (_ : (0 : Int) < (0 : Int)) : False := by omega_core
-example (_ : (0 : Int) < (1 : Int)) : True := by (fail_if_success omega_core); trivial
-
--- set_option trace.aesop true in
-example {x : Int} (_ : x % 2 < x - 2 * (x / 2)) : False := by omega_core
-example {x : Int} (_ : x % 2 > 5) : False := by omega_core
-
-example {x : Int} (_ : 2 * (x / 2) > x) : False := by omega_core
-example {x : Int} (_ : 2 * (x / 2) ≤ x - 2) : False := by omega_core
-
-example (_ : 7 < 3) : False := by omega_core
-example (_ : 0 < 0) : False := by omega_core
-
-example {x : Nat} (_ : x > 7) (_ : x < 3) : False := by omega_core
-example {x : Nat} (_ : x ≥ 7) (_ : x ≤ 3) : False := by omega_core
-example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega_core
-
-example {x y : Int} (_ : x + y > 10) (_ : 2 * x < 5) (_ : y < 5) : False := by omega_core
-example {x y : Nat} (_ : x + y > 10) (_ : 2 * x < 5) (_ : y < 5) : False := by omega_core
-
-example {x y : Int} (_ : 2 * x + 4 * y = 5) : False := by omega_core
-example {x y : Nat} (_ : 2 * x + 4 * y = 5) : False := by omega_core
-
-example {x y : Int} (_ : 6 * x + 7 * y = 5) : True := by (fail_if_success omega_core); trivial
-example {x y : Nat} (_ : 6 * x + 7 * y = 5) : False := by omega_core
-
-example {x : Nat} (_ : x < 0) : False := by omega_core
-
-example {x y z : Int} (_ : x + y > z) (_ : x < 0) (_ : y < 0) (_ : z > 0) : False := by omega_core
+  | `(tactic| omega) => omegaTactic
