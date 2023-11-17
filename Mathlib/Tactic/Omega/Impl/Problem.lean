@@ -1,21 +1,16 @@
 import Mathlib.Tactic.Simps.Basic
 -- import Mathlib.Tactic.Have
-import Mathlib.Tactic.Basic
-
-import Mathlib.Logic.Basic -- yuck!
--- waiting on
--- https://github.com/leanprover/std4/pull/324
--- https://github.com/leanprover/std4/pull/344
--- https://github.com/leanprover/std4/pull/345
--- to remove dependency on Mathlib
+import Mathlib.Tactic.SolveByElim
+import Mathlib.Tactic.Change -- https://github.com/leanprover/std4/pull/345
 
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
-import Aesop
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
+
+
 
 open Classical
 
@@ -2107,8 +2102,6 @@ def eliminateEqualities_equiv (fuel : Nat) (p : Problem) : p → p.eliminateEqua
 termination_by eliminateEqualities_equiv fuel p => (fuel, p.equalities.length, p.minEqualityCoeff, p.maxEqualityCoeff)
 decreasing_by
   solve_by_elim (config := { maxDepth := 10 }) [Prod.Lex.left, Prod.Lex.right'']
-
-#eval 37
 
 /--
 Separate the inequalities in a problems into the lower bounds for a variable,

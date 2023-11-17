@@ -1,5 +1,4 @@
 import Std
--- import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -12,16 +11,34 @@ def Lex' (α : Type _) := α
 instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+/-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
+@[simp] theorem dite_eq_ite [Decidable P] : (dite P (fun _ ↦ a) fun _ ↦ b) = ite P a b :=
+  rfl
 
-theorem Int.mul_ediv_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
+@[simp] theorem ite_some_none_eq_none [Decidable P] :
+    (if P then some x else none) = none ↔ ¬ P := by
+  split <;> simp_all
+
+@[simp] theorem ite_some_none_eq_some [Decidable P] :
+    (if P then some x else none) = some y ↔ P ∧ x = y := by
+  split <;> simp_all
+
+
+theorem Int.mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
   calc k * (x / k)
     _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
     _ = x                   := ediv_add_emod _ _
 
-theorem Int.lt_mul_ediv_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
+theorem Int.lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
   calc x
     _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
     _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
+
+
+-- These attributes are all added in https://github.com/leanprover/std4/pull/291
+attribute [simp] Int.zero_ediv Int.ediv_zero
+attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zero
+
 
 namespace List
 
@@ -46,34 +63,18 @@ theorem idx_of_mem_spec [DecidableEq α] {xs : List α} (w : y ∈ xs) :
     xs.get (xs.idx_of_mem w) = y :=
   decide_eq_true_eq.mp (List.findIdx_get (p := (· = y)) (xs := xs))
 
-end List
-
 @[simp]
-theorem List.map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
+theorem map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
 
-theorem List.mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
+theorem mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
   (mem_filter.mp h).1
 
-theorem List.mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
+theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
     a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
   by_cases h : a = b
   · subst h
     simp [or_iff_right_of_imp List.mem_of_mem_erase]
   · simp_all
-
--- These attributes are all added in https://github.com/leanprover/std4/pull/291
-attribute [simp] Int.zero_ediv Int.ediv_zero
-attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zero
-
-@[simp] theorem ite_some_none_eq_none [Decidable P] :
-    (if P then some x else none) = none ↔ ¬ P := by
-  split <;> simp_all
-
-@[simp] theorem ite_some_none_eq_some [Decidable P] :
-    (if P then some x else none) = some y ↔ P ∧ x = y := by
-  split <;> simp_all
-
-namespace List
 
 theorem dropWhile_cons :
     (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by

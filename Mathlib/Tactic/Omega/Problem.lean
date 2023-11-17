@@ -1,6 +1,5 @@
 import Mathlib.Tactic.Simps.Basic
 import Mathlib.Tactic.Omega.IntList
-import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true

@@ -1,8 +1,7 @@
 import Lean
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.Problem
-import Mathlib.Tactic.Zify
-import Qq
+import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 
@@ -13,10 +12,9 @@ instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.inse
 
 theorem Int.natCast_ofNat : @Nat.cast Int instNatCastInt (no_index (OfNat.ofNat x)) = OfNat.ofNat x := rfl
 
-theorem Int.ge_iff_le {x y : Int} : x ≥ y ↔ y ≤ x := Iff.rfl
-theorem Int.gt_iff_lt {x y : Int} : x > y ↔ y < x := Iff.rfl
-theorem Nat.ge_iff_le {x y : Nat} : x ≥ y ↔ y ≤ x := Iff.rfl
-theorem Nat.gt_iff_lt {x y : Nat} : x > y ↔ y < x := Iff.rfl
+-- https://github.com/leanprover/std4/pull/372
+theorem ge_iff_le [LE α] {x y : α} : x ≥ y ↔ y ≤ x := Iff.rfl
+theorem gt_iff_lt [LT α] {x y : α} : x > y ↔ y < x := Iff.rfl
 
 theorem le_of_eq_of_le'' {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : a ≤ c := by
   subst h₁
@@ -25,6 +23,27 @@ theorem le_of_eq_of_le'' {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : 
 theorem le_of_le_of_eq'' {a b c : α} [LE α] (h₁ : a ≤ b) (h₂ : b = c) : a ≤ c := by
   subst h₂
   exact h₁
+
+theorem Int.lt_of_gt {x y : Int} (h : x > y) : y < x := gt_iff_lt.mp h
+theorem Int.le_of_ge {x y : Int} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
+theorem Nat.lt_of_gt {x y : Nat} (h : x > y) : y < x := gt_iff_lt.mp h
+theorem Nat.le_of_ge {x y : Nat} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
+
+theorem Int.ofNat_congr {a b : Nat} (h : a = b) : (a : Int) = (b : Int) := congrArg _ h
+theorem Int.ofNat_lt_of_lt {a b : Nat} (h : a < b) : (a : Int) < (b : Int) := Int.ofNat_lt.mpr h
+theorem Int.ofNat_le_of_le {a b : Nat} (h : a ≤ b) : (a : Int) ≤ (b : Int) := Int.ofNat_le.mpr h
+
+namespace Int
+
+protected alias ⟨lt_of_not_ge, _⟩ := Int.not_le
+protected alias ⟨lt_of_not_le, not_le_of_lt⟩ := Int.not_le
+protected alias ⟨_, lt_le_asymm⟩ := Int.not_le
+
+protected alias ⟨le_of_not_gt, not_lt_of_ge⟩ := Int.not_lt
+protected alias ⟨le_of_not_lt, not_lt_of_le⟩ := Int.not_lt
+protected alias ⟨_, le_lt_asymm⟩ := Int.not_lt
+
+end Int
 
 theorem Int.add_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a + c = b + d := by
   subst h₁; subst h₂; rfl
@@ -37,6 +56,12 @@ theorem Int.sub_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a - c = b 
 
 theorem Int.neg_congr {a b : Int} (h₁ : a = b) : -a = -b := by
   subst h₁; rfl
+
+instance : ToExpr Int where
+  toTypeExpr := .const ``Int []
+  toExpr i := match i with
+    | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
+    | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
 
 namespace Omega
 
@@ -77,8 +102,8 @@ def analyzeAtom (e : Expr) : MetaM (HashSet Expr × Option (Expr × Expr)) := do
       let pos := mkApp4 (.const ``LT.lt [.zero]) (.const ``Int []) (.const ``Int.instLTInt [])
         (toExpr (0 : Int)) k
       pure <|
-      ({mkApp3 (.const ``Int.mul_ediv_le []) x k (← mkDecideProof ne_zero),
-        mkApp3 (.const ``Int.lt_mul_ediv_add []) x k (← mkDecideProof pos)}, none)
+      ({mkApp3 (.const ``Int.mul_ediv_self_le []) x k (← mkDecideProof ne_zero),
+        mkApp3 (.const ``Int.lt_mul_ediv_self_add []) x k (← mkDecideProof pos)}, none)
   | _ => pure (∅, none)
 
 /--
@@ -140,11 +165,9 @@ structure MetaProblem where
   /-- A proof, in the `AtomM` monad, that `problem` is satisfiable at the atoms. -/
   sat : AtomM Expr := trivialSat
 
-instance : ToExpr Int where
-  toTypeExpr := .const ``Int []
-  toExpr i := match i with
-    | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
-    | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
+/-- Construct the term with type hint `(Eq.refl a : a = b)`-/
+def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
+  mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
 instance : ToExpr LinearCombo where
   toExpr lc :=
@@ -156,21 +179,20 @@ instance : ToExpr Problem where
     |>.app (toExpr p.equalities) |>.app (toExpr p.inequalities)
   toTypeExpr := .const ``Problem []
 
-/-- Construct the term with type hint `(Eq.refl a : a = b)`-/
-def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
-  mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
-
 /-- Construct the `rfl` proof that `lc.eval atoms = e`. -/
-def mkEvalRfl (e : Expr) (lc : LinearCombo) : AtomM Expr := do
-  mkEqReflWithExpectedType e (← mkAppM ``LinearCombo.eval #[toExpr lc, ← atomsList])
+def mkEvalRflProof (e : Expr) (lc : LinearCombo) : AtomM Expr := do
+  mkEqReflWithExpectedType e (mkApp2 (.const ``LinearCombo.eval []) (toExpr lc) (← atomsList))
 
 /-- If `e : Expr` is the `n`-th atom, construct the proof that
 `e = (coordinate n).eval atoms`. -/
 def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : AtomM Expr := do
   -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
-  let eq ← mkEqReflWithExpectedType
-    e (← mkAppM ``Option.getD #[← mkAppM ``List.get? #[← atomsList, toExpr n], toExpr (0 : Int)])
-  mkEqTrans eq (← mkEqSymm (← mkAppM ``LinearCombo.coordinate_eval #[toExpr n, ← atomsList]))
+  let atoms ← atomsList
+  let n := toExpr n
+  let eq ← mkEqReflWithExpectedType e
+    (mkApp3 (.const ``Option.getD [.zero]) (.const ``Int [])
+      (mkApp3 (.const ``List.get? [.zero]) (.const ``Int []) atoms n) (toExpr (0 : Int)))
+  mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
 def mkAtomLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashSet Expr) := do
@@ -204,13 +226,13 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
   match e.int? with
   | some i =>
     let lc := {const := i}
-    return ⟨lc, mkEvalRfl e lc, ∅⟩
+    return ⟨lc, mkEvalRflProof e lc, ∅⟩
   | none => match e.getAppFnArgs with
   | (``HAdd.hAdd, #[_, _, _, _, e₁, e₂]) => do
     let (l₁, prf₁, facts₁) ← asLinearCombo e₁
     let (l₂, prf₂, facts₂) ← asLinearCombo e₂
     let prf : AtomM Expr := do
-      let add_eval ← mkAppM ``LinearCombo.add_eval #[toExpr l₁, toExpr l₂, ← atomsList]
+      let add_eval := mkApp3 (.const ``LinearCombo.add_eval []) (toExpr l₁) (toExpr l₂) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.add_congr #[← prf₁, ← prf₂])
         (← mkEqSymm add_eval)
@@ -219,7 +241,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
     let (l₁, prf₁, facts₁) ← asLinearCombo e₁
     let (l₂, prf₂, facts₂) ← asLinearCombo e₂
     let prf : AtomM Expr := do
-      let sub_eval ← mkAppM ``LinearCombo.sub_eval #[toExpr l₁, toExpr l₂, ← atomsList]
+      let sub_eval := mkApp3 (.const ``LinearCombo.sub_eval []) (toExpr l₁) (toExpr l₂) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.sub_congr #[← prf₁, ← prf₂])
         (← mkEqSymm sub_eval)
@@ -227,7 +249,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
   | (``Neg.neg, #[_, _, e']) => do
     let (l, prf, facts) ← asLinearCombo e'
     let prf' : AtomM Expr := do
-      let neg_eval ← mkAppM ``LinearCombo.neg_eval #[toExpr l, ← atomsList]
+      let neg_eval := mkApp2 (.const ``LinearCombo.neg_eval []) (toExpr l) (← atomsList)
       mkEqTrans
         (← mkAppM ``Int.neg_congr #[← prf])
         (← mkEqSymm neg_eval)
@@ -237,7 +259,7 @@ partial def asLinearCombo (e : Expr) : AtomM (LinearCombo × AtomM Expr × HashS
     | some n' =>
       let (l, prf, facts) ← asLinearCombo e'
       let prf' : AtomM Expr := do
-        let smul_eval ← mkAppM ``LinearCombo.smul_eval #[toExpr l, n, ← atomsList]
+        let smul_eval := mkApp3 (.const ``LinearCombo.smul_eval []) (toExpr l) n (← atomsList)
         mkEqTrans
           (← mkAppM ``Int.mul_congr_right #[n, ← prf])
           (← mkEqSymm smul_eval)
@@ -323,25 +345,23 @@ def addIntInequality (p : MetaProblem) (h x y : Expr) : AtomM MetaProblem := do
 def pushNot (h P : Expr) : MetaM (Option Expr) := do
   match P.getAppFnArgs with
   | (``LT.lt, #[.const ``Int [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.not_lt []) x y, h])
+    return some (mkApp3 (.const ``Int.le_of_not_lt []) x y h)
   | (``LE.le, #[.const ``Int [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.not_le []) x y, h])
+    return some (mkApp3 (.const ``Int.lt_of_not_le []) x y h)
   | (``LT.lt, #[.const ``Nat [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.not_lt []) x y, h])
+    return some (mkApp3 (.const ``Nat.le_of_not_lt []) x y h)
   | (``LE.le, #[.const ``Nat [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.not_le []) x y, h])
+    return some (mkApp3 (.const ``Nat.lt_of_not_le []) x y h)
   | (``GT.gt, #[.const ``Int [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.not_lt []) y x, h])
+    return some (mkApp3 (.const ``Int.le_of_not_lt []) y x h)
   | (``GE.ge, #[.const ``Int [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.not_le []) y x, h])
+    return some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
   | (``GT.gt, #[.const ``Nat [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.not_lt []) y x, h])
+    return some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
   | (``GE.ge, #[.const ``Nat [], _, x, y]) =>
-    return some (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.not_le []) y x, h])
+    return some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
   -- TODO add support for `¬ a ∣ b`?
   | _ => return none
-
-open Mathlib.Tactic.Zify
 
 partial def addFact (p : MetaProblem) (h : Expr) : AtomM MetaProblem := do
   if ¬ p.problem.possible then
@@ -349,34 +369,29 @@ partial def addFact (p : MetaProblem) (h : Expr) : AtomM MetaProblem := do
   else
     let t ← inferType h
     match t.getAppFnArgs with
+    | (``Eq, #[.const ``Int [], x, y]) =>
+      p.addIntEquality h x y
+    | (``LE.le, #[.const ``Int [], _, x, y]) =>
+      p.addIntInequality h x y
+    | (``LT.lt, #[.const ``Int [], _, x, y]) =>
+      p.addFact (mkApp3 (.const ``Int.add_one_le_of_lt []) x y h)
+    | (``GT.gt, #[.const ``Int [], _, x, y]) => p.addFact (mkApp3 (.const ``Int.lt_of_gt []) x y h)
+    | (``GE.ge, #[.const ``Int [], _, x, y]) => p.addFact (mkApp3 (.const ``Int.le_of_ge []) x y h)
+    | (``GT.gt, #[.const ``Nat [], _, x, y]) => p.addFact (mkApp3 (.const ``Nat.lt_of_gt []) x y h)
+    | (``GE.ge, #[.const ``Nat [], _, x, y]) => p.addFact (mkApp3 (.const ``Nat.le_of_ge []) x y h)
+    | (``Not, #[P]) => match ← pushNot h P with
+      | none => return p
+      | some h' => p.addFact h'
+    | (``Eq, #[.const ``Nat [], x, y]) => p.addFact (mkApp3 (.const ``Int.ofNat_congr []) x y h)
+    | (``LT.lt, #[.const ``Nat [], _, x, y]) =>
+      p.addFact (mkApp3 (.const ``Int.ofNat_lt_of_lt []) x y h)
+    | (``LE.le, #[.const ``Nat [], _, x, y]) =>
+      p.addFact (mkApp3 (.const ``Int.ofNat_le_of_le []) x y h)
+    -- TODO Add support for `k ∣ b`?
     | (``False, #[]) => pure <|
       { facts := []
         problem := .impossible,
         sat := pure (.app (.app (.const ``False.elim []) (← satType p.problem)) h) }
-    | (``Not, #[P]) => match ← pushNot h P with
-      | none => return p
-      | some h' => p.addFact h'
-    | (``GT.gt, #[.const ``Int [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.gt_iff_lt []) x y, h])
-    | (``GE.ge, #[.const ``Int [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.ge_iff_le []) x y, h])
-    | (``GT.gt, #[.const ``Nat [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.gt_iff_lt []) x y, h])
-    | (``GE.ge, #[.const ``Nat [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``Nat.ge_iff_le []) x y, h])
-    | (``Eq, #[.const ``Nat [], x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``nat_cast_eq []) x y, h])
-    | (``LT.lt, #[.const ``Nat [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``nat_cast_lt []) x y, h])
-    | (``LE.le, #[.const ``Nat [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``nat_cast_le []) x y, h])
-    | (``Eq, #[.const ``Int [], x, y]) =>
-      p.addIntEquality h x y
-    | (``LT.lt, #[.const ``Int [], _, x, y]) =>
-      p.addFact (← mkAppM ``Iff.mp #[mkApp2 (.const ``Int.lt_iff_add_one_le []) x y, h])
-    | (``LE.le, #[.const ``Int [], _, x, y]) =>
-      p.addIntInequality h x y
-    -- TODO Add support for `k ∣ b`?
     | _ => pure p
 
 /--
@@ -483,6 +498,7 @@ example (_ : 7 < 3) : False := by omega_core
 example (_ : 0 < 0) : False := by omega_core
 
 example {x : Nat} (_ : x > 7) (_ : x < 3) : False := by omega_core
+example {x : Nat} (_ : x ≥ 7) (_ : x ≤ 3) : False := by omega_core
 example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega_core
 
 example {x y : Int} (_ : x + y > 10) (_ : 2 * x < 5) (_ : y < 5) : False := by omega_core
