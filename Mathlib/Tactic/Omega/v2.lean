@@ -257,10 +257,8 @@ where
     trace[omega] "rewriting {lhs} via ({rw} : {← inferType rw})"
     match (← inferType rw).eq? with
     | some (_, _lhs', rhs) =>
-      -- guard (← isDefEq lhs _lhs')
       let (lc, prf, facts) ← asLinearCombo rhs
-      let prf' : AtomM Expr := do
-        mkEqTrans (← mkEqSymm rw) (← prf)
+      let prf' : AtomM Expr := do mkEqTrans rw (← prf)
       pure (lc, prf', facts)
     | none => panic! "Invalid rewrite rule in 'asLinearCombo'"
 
