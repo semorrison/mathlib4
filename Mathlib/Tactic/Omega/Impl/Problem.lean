@@ -422,16 +422,16 @@ theorem trivial_sat (values : List Int) : trivial.sat values where
 theorem of_sat (p : Omega.Problem) : (of p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all
+    constructor <;> simp_all (config := {decide := true})
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all
+    constructor <;> simp_all (config := {decide := true})
 
 theorem to_sat (p : Problem) : (to p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all
+    constructor <;> simp_all (config := {decide := true})
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all
+    constructor <;> simp_all (config := {decide := true})
 
 def equalitiesZero (p : Problem) : Prop :=
   ∀ {eq : Equality} (_ : eq ∈ p.equalities) (i), eq.linearCombo.coeff i = 0
@@ -724,7 +724,7 @@ example :
     let p : Problem := { inequalities := [{const:=-1, coeffs:=[1]}, {const:=0, coeffs:=[-1]}] };
     p.unsat := by
   apply contradiction_of_neg_lt (a := {const:=-1, coeffs:=[1]}) (b := {const:=0, coeffs:=[-1]}) <;>
-  simp
+  simp (config := {decide := true})
 
 instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
     Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
@@ -979,7 +979,7 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
       rw [← Int.mul_eq_mul_right_iff w]
       have : (coeffs.gcd : Int) ∣ IntList.dot coeffs v := IntList.gcd_dvd_dot_left _ _
       simp_all [Int.add_mul, Int.ediv_mul_cancel]
-  · simp only [IntList.dot_nil_left, Int.add_zero, false_iff]
+  · simp (config := {decide := true}) only [IntList.dot_nil_left, Int.add_zero, false_iff]
     intro w
     apply h
     replace w := congrArg (fun x : Int => x % coeffs.gcd) w
@@ -1370,7 +1370,7 @@ theorem Int.bmod_le {x : Int} {m : Nat} (h : 0 < m) : Int.bmod x m ≤ (m - 1) /
     _ = ((m + 1 - 2) + 2)/2 := by simp
     _ = (m - 1) / 2 + 1     := by
       rw [Int.add_ediv_of_dvd_right]
-      · simp only [Int.ediv_self]
+      · simp (config := {decide := true}) only [Int.ediv_self]
         congr 2
         rw [Int.add_sub_assoc, ← Int.sub_neg]
         congr
@@ -1397,7 +1397,7 @@ theorem Int.bmod_natAbs_plus_one (x : Int) (w : 1 < x.natAbs) :
     simp only [bmod, Int.ofNat_eq_coe, Int.natAbs_ofNat, Int.natCast_add, Int.ofNat_one,
       emod_self_add_one (Int.ofNat_nonneg x)]
     match x with
-    | 0 => rw [if_pos] <;> simp
+    | 0 => rw [if_pos] <;> simp (config := {decide := true})
     | (x+1) =>
       rw [if_neg]
       · simp [← Int.sub_sub]
@@ -1485,7 +1485,7 @@ theorem shrinkingConstraint_coeff_natAbs {eq : LinearCombo} (h : 1 < (eq.coeff k
   rw [shrinkingConstraint, setCoeff_coeff_of_ne, coeff_bmod, Int.bmod_natAbs_plus_one _ h]
   · rw [Int.natAbs_neg, Int.natAbs_sign, if_neg]
     intro
-    simp_all
+    simp_all (config := {decide := true})
   · exact Nat.ne_of_lt w
 
 def shrinkingConstraintSolution (eq : LinearCombo) (k : Nat) (n : Nat) (v : IntList) : IntList :=

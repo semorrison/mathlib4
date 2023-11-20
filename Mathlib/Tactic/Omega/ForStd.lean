@@ -76,6 +76,8 @@ theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
     simp [or_iff_right_of_imp List.mem_of_mem_erase]
   · simp_all
 
+@[simp] theorem dropWhile_nil : ([] : List α).dropWhile p = [] := rfl
+
 theorem dropWhile_cons :
     (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
   split <;> simp_all [dropWhile]

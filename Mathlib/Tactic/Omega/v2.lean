@@ -1,7 +1,6 @@
 import Lean
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.Problem
-import Mathlib.Tactic.Omega.PtrMap
 
 import Mathlib.Tactic.LibrarySearch
 import Mathlib.Util.Time
@@ -14,18 +13,6 @@ instance [BEq α] [Hashable α] : Singleton α (HashSet α) := ⟨fun x => HashS
 instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.insert a⟩
 
 theorem Int.natCast_ofNat : @Nat.cast Int instNatCastInt (no_index (OfNat.ofNat x)) = OfNat.ofNat x := rfl
-
--- https://github.com/leanprover/std4/pull/372
-theorem ge_iff_le [LE α] {x y : α} : x ≥ y ↔ y ≤ x := Iff.rfl
-theorem gt_iff_lt [LT α] {x y : α} : x > y ↔ y < x := Iff.rfl
-
-theorem le_of_eq_of_le'' {a b c : α} [LE α] (h₁ : a = b) (h₂ : b ≤ c) : a ≤ c := by
-  subst h₁
-  exact h₂
-
-theorem le_of_le_of_eq'' {a b c : α} [LE α] (h₁ : a ≤ b) (h₂ : b = c) : a ≤ c := by
-  subst h₂
-  exact h₁
 
 theorem Int.lt_of_gt {x y : Int} (h : x > y) : y < x := gt_iff_lt.mp h
 theorem Int.le_of_ge {x y : Int} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
@@ -400,8 +387,8 @@ def addIntInequality (p : MetaProblem) (h x y : Expr) : OmegaM MetaProblem := do
     facts := newFacts.toList ++ p.facts
     problem := p.problem.addInequality (lc₂ - lc₁)
     sat := do
-      let ineq ← mkAppM ``le_of_le_of_eq''
-        #[← mkAppM ``le_of_eq_of_le'' #[← mkEqSymm (← prf₁), h], (← prf₂)]
+      let ineq ← mkAppM ``le_of_le_of_eq
+        #[← mkAppM ``le_of_eq_of_le #[← mkEqSymm (← prf₁), h], (← prf₂)]
       mkAppM ``Problem.addInequality_sat
         #[← p.sat, ← mkAppM ``LinearCombo.sub_eval_nonneg #[ineq]] }
 
