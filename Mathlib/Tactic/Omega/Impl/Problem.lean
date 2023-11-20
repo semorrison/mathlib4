@@ -1,11 +1,11 @@
 import Mathlib.Tactic.Simps.Basic
--- import Mathlib.Tactic.Have
 import Mathlib.Tactic.SolveByElim
-import Mathlib.Tactic.Change -- https://github.com/leanprover/std4/pull/345
 
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
+
+import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -393,6 +393,9 @@ instance : ToString Problem where
 --   { p with
 --     equalities := a :: p.equalities }
 
+-- FIXME turn off `simp` here!
+@[simp 100]
+def hasEquality (p : Problem) (e : Equality) : Prop := e ∈ p.equalities
 
 @[simps]
 def of (p : Omega.Problem) : Problem where
@@ -408,12 +411,14 @@ def to (p : Problem) : Omega.Problem where
 
 structure sat (p : Problem) (values : List Int) : Prop where
   possible : p.possible = true := by trivial
-  equalities : eq ∈ p.equalities → eq.linearCombo.eval values = 0
+  equalities : p.hasEquality eq → eq.linearCombo.eval values = 0
   inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
 
 /-- The trivial problem, with no constraints. -/
 @[simps]
 def trivial : Problem where
+
+@[simp] theorem trivial_hasEquality : trivial.hasEquality e = False := by simp [hasEquality]
 
 theorem trivial_sat (values : List Int) : trivial.sat values where
   equalities := by simp
@@ -422,16 +427,16 @@ theorem trivial_sat (values : List Int) : trivial.sat values where
 theorem of_sat (p : Omega.Problem) : (of p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true})
+    constructor <;> simp_all (config := {decide := true}) [hasEquality]
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true})
+    constructor <;> simp_all (config := {decide := true}) [hasEquality]
 
 theorem to_sat (p : Problem) : (to p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true})
+    constructor <;> simp_all (config := {decide := true}) [hasEquality]
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true})
+    constructor <;> simp_all (config := {decide := true}) [hasEquality]
 
 def equalitiesZero (p : Problem) : Prop :=
   ∀ {eq : Equality} (_ : eq ∈ p.equalities) (i), eq.linearCombo.coeff i = 0
@@ -442,11 +447,15 @@ def and (p q : Problem) : Problem where
   equalities := p.equalities ++ q.equalities
   inequalities := p.inequalities ++ q.inequalities
 
+@[simp] theorem and_hasEquality {p q : Problem} :
+    (p.and q).hasEquality e = (p.hasEquality e ∨ q.hasEquality e) := by
+  simp [hasEquality]
+
 theorem and_sat {p q : Problem} (hp : p.sat values) (hq : q.sat values) : (p.and q).sat values where
   possible := by simp [hp.possible, hq.possible]
   equalities := by
     intros lc m
-    simp only [and_equalities, List.mem_append] at m
+    simp only [and_hasEquality] at m
     rcases m with pm | qm <;>
     simp_all [hp.equalities, hq.equalities]
   inequalities := by
@@ -550,8 +559,12 @@ Erasing an inequality results in a larger solution space.
 -/
 namespace Problem
 
+@[simps]
+def eraseEquality (p : Problem) (eq : Equality) : Problem :=
+  { p with equalities := p.equalities.erase eq }
+
 theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
-    { p with equalities := p.equalities.erase eq }.sat v :=
+    (p.eraseEquality eq).sat v :=
   { s with
     equalities := fun m => s.equalities (by simp at m; apply List.mem_of_mem_erase m) }
 
@@ -1181,6 +1194,18 @@ def eliminateEquality (p : Problem) (a : Equality) (i : Nat) : Problem :=
     equalities := (p.equalities.erase a).map fun eq => eq.substitute i r
     inequalities := p.inequalities.map fun ineq => ineq.substitute i r }
 
+theorem eliminateEquality_hasEquality (w : (∃ e', (e' ≠ a ∧ p.hasEquality e') ∧ e'.substitute i (a.solveFor i) = e)) :
+    (eliminateEquality p a i).hasEquality e := by
+  obtain ⟨e', ⟨ne, m⟩, rfl⟩ := w
+  simp only [hasEquality, eliminateEquality_equalities, List.mem_map, ne_eq]
+  refine ⟨e', (List.mem_erase_of_ne ne).mpr m, rfl⟩
+
+theorem of_eliminateEquality_hasEquality (w : (eliminateEquality p a i).hasEquality e) :
+    (∃ e', p.hasEquality e' ∧ e'.substitute i (a.solveFor i) = e) := by
+  simp only [hasEquality, eliminateEquality_equalities, List.mem_map, ne_eq] at w
+  obtain ⟨e, m, rfl⟩ := w
+  refine ⟨e, List.mem_of_mem_erase m, rfl⟩
+
 theorem eliminateEquality_equalities_length (p : Problem) {a : Equality} (i : Nat)
     (ma : a ∈ p.equalities) :
     (p.eliminateEquality a i).equalities.length + 1 = p.equalities.length := by
@@ -1193,9 +1218,7 @@ theorem eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat} (ma : a ∈
     (w : (a.linearCombo.coeff i).natAbs = 1) (v) (s : p.sat v) : (p.eliminateEquality a i).sat v where
   possible := s.possible
   equalities mb := by
-    simp only [eliminateEquality_equalities, List.mem_map, ne_eq] at mb
-    obtain ⟨b, mb, rfl⟩ := mb
-    have mb' : b ∈ p.equalities := List.mem_of_mem_erase mb
+    obtain ⟨b, mb', rfl⟩ := of_eliminateEquality_hasEquality mb
     rw [Equality.substitute_linearCombo, LinearCombo.substitute_solveFor_eval w (s.equalities ma),
       s.equalities mb']
   inequalities mb := by
@@ -1215,9 +1238,8 @@ theorem sat_of_eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat}
       rw [Equality.eval_backSubstitution_self _ w]
     · rw [Equality.eval_backSubstitution, ← Equality.substitute_linearCombo]
       apply s.equalities
-      simp only [eliminateEquality_equalities, List.mem_map, ne_eq]
-      refine ⟨eq, ?_, rfl⟩
-      exact (List.mem_erase_of_ne h).mpr mb
+      apply eliminateEquality_hasEquality
+      refine ⟨eq, ⟨h, mb⟩, rfl⟩
   inequalities mb := by
     rw [Equality.eval_backSubstitution]
     apply s.inequalities
