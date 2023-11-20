@@ -35,11 +35,6 @@ theorem Int.lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :
     _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
 
 
--- These attributes are all added in https://github.com/leanprover/std4/pull/291
-attribute [simp] Int.zero_ediv Int.ediv_zero
-attribute [simp] Int.add_zero Int.zero_add Int.sub_zero Int.zero_sub Int.neg_zero
-
-
 namespace List
 
 theorem filter_cons :

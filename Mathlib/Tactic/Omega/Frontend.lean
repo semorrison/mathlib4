@@ -1,9 +1,5 @@
-import Lean
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.Problem
-
-import Mathlib.Tactic.LibrarySearch
-import Mathlib.Util.Time
 
 set_option autoImplicit true
 
@@ -103,11 +99,13 @@ def savingState (t : OmegaM α) : OmegaM α := do
   modifyThe Cache fun _ => cache
   pure r
 
+/-- Wrapper around `Expr.nat?` that also allows `Nat.cast`. -/
 def nat? (n : Expr) : Option Nat :=
   match n.getAppFnArgs with
   | (``Nat.cast, #[.const ``Int [], _, n]) => n.nat?
   | _ => n.nat?
 
+/-- Wrapper around `Expr.int?` that also allows `Nat.cast`. -/
 def int? (n : Expr) : Option Int :=
   match n.getAppFnArgs with
   | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
@@ -233,12 +231,21 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
+-- TODO this can be removed at `v4.4.0-rc1`, Kyle has PR'd it to Lean.
 @[inherit_doc mkAppN]
 macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
 
 mutual
 
+/--
+Wrapper for `asLinearComboImpl`,
+using a cache for previously visited expressions.
+
+Gives a small (10%) speedup in testing.
+I tried using a pointer based cache,
+but there was never enough subexpression sharing to make it effective.
+-/
 partial def asLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   let cache ← get
   match cache.find? e with
@@ -264,8 +271,6 @@ We also transform the expression as we descend into it:
 * unfolding `emod`: `x % k` → `x - x / k`
 
 Finally, the `OmegaM` monad records appearances of `↑(x - y)` atoms, for later case splitting.
-
-TODO: Use an unsafe cache, like `Expr.find?`, to take advantage of sharing.
 -/
 partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   trace[omega] "processing {e}"
