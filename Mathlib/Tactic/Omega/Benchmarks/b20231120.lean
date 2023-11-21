@@ -19,6 +19,13 @@ Mon Nov 20 21:25:54 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
   Time (mean ± σ):      3.936 s ±  0.010 s    [User: 3.731 s, System: 0.197 s]
   Range (min … max):    3.923 s …  3.957 s    10 runs
+
+introduce hasEquality / hasInequality redirections
+Tue Nov 21 14:24:34 AEDT 2023
+c46401c45bb838c36d1aa36b3a3a4e0b3f466cf5
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.826 s ±  0.013 s    [User: 3.609 s, System: 0.209 s]
+  Range (min … max):    3.815 s …  3.849 s    10 runs
 -/
 
 example : True := by

@@ -71,7 +71,11 @@ namespace List
 @[simp] theorem reverse_eq_nil_iff {xs : List α} : xs.reverse = [] ↔ xs = [] := by
   induction xs <;> simp
 
-instance {xs : List α} : Decidable (xs = []) := sorry
+@[simp] theorem isEmpty_nil : ([] : List α).isEmpty = true := rfl
+@[simp] theorem isEmpty_cons : (x :: xs : List α).isEmpty = false := rfl
+
+instance {xs : List α} : Decidable (xs = []) :=
+  decidable_of_decidable_of_iff (by induction xs <;> simp : xs.isEmpty ↔ xs = [])
 
 @[simp] theorem dropWhile_nil : ([] : List α).dropWhile p = [] := rfl
 
