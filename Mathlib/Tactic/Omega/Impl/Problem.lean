@@ -240,7 +240,14 @@ end LinearCombo
 
 structure Equality where
   linearCombo : LinearCombo
+  /--
+  Cached value of `minCoeff`, the smallest absolute value of a nonzero coefficient
+  (or zero if all coefficients are zero).
+  -/
   minCoeff? : Option Nat := none
+  /--
+  Cached value of `minCoeffIdx`, the index of some coefficient whose absolute value is `minCoeff`.
+  -/
   minCoeffIdx? : Option Nat := none
   minCoeff?_spec : SatisfiesM (fun min => min = linearCombo.coeffs.minNatAbs) minCoeff? := by simp
   minCoeffIdx?_spec :
@@ -250,7 +257,7 @@ deriving DecidableEq
 
 namespace Equality
 
-/-- The smallest absolute value of a non-zero coefficient (or zero if all coefficients are zero). -/
+/-- The smallest absolute value of a nonzero coefficient (or zero if all coefficients are zero). -/
 def minCoeff (e : Equality) : Nat :=
   match e.minCoeff? with
   | none => e.linearCombo.coeffs.minNatAbs
@@ -324,6 +331,7 @@ theorem minCoeffIdx_spec (e : Equality) :
     match m?, i with
     | some m, _ => simpa using h
 
+/-- Calculate the `minCoeff?` field, if is is not already available. -/
 def calculateMinCoeff (e : Equality) : Equality :=
   match e.minCoeff? with
   | some _ => e
@@ -335,6 +343,7 @@ def calculateMinCoeff (e : Equality) : Equality :=
         rintro a ⟨⟩
         exact e.minCoeff_spec }
 
+/-- Calculate the `minCoeffIdx?` field, if is is not already available. -/
 def calculateMinCoeffIdx (e : Equality) : Equality :=
   match e.minCoeffIdx? with
   | some _ => e
@@ -397,6 +406,10 @@ instance : ToString Problem where
 @[simp 100]
 def hasEquality (p : Problem) (e : Equality) : Prop := e ∈ p.equalities
 
+-- FIXME turn off `simp` here!
+@[simp 100]
+def hasInequality (p : Problem) (e : LinearCombo) : Prop := e ∈ p.inequalities
+
 @[simps]
 def of (p : Omega.Problem) : Problem where
   possible := p.possible
@@ -412,13 +425,14 @@ def to (p : Problem) : Omega.Problem where
 structure sat (p : Problem) (values : List Int) : Prop where
   possible : p.possible = true := by trivial
   equalities : p.hasEquality eq → eq.linearCombo.eval values = 0
-  inequalities : lc ∈ p.inequalities → lc.eval values ≥ 0
+  inequalities : p.hasInequality lc → lc.eval values ≥ 0
 
 /-- The trivial problem, with no constraints. -/
 @[simps]
 def trivial : Problem where
 
 @[simp] theorem trivial_hasEquality : trivial.hasEquality e = False := by simp [hasEquality]
+@[simp] theorem trivial_hasInequality : trivial.hasInequality e = False := by simp [hasInequality]
 
 theorem trivial_sat (values : List Int) : trivial.sat values where
   equalities := by simp
@@ -451,6 +465,10 @@ def and (p q : Problem) : Problem where
     (p.and q).hasEquality e = (p.hasEquality e ∨ q.hasEquality e) := by
   simp [hasEquality]
 
+@[simp] theorem and_hasInequality {p q : Problem} :
+    (p.and q).hasInequality e = (p.hasInequality e ∨ q.hasInequality e) := by
+  simp [hasInequality]
+
 theorem and_sat {p q : Problem} (hp : p.sat values) (hq : q.sat values) : (p.and q).sat values where
   possible := by simp [hp.possible, hq.possible]
   equalities := by
@@ -460,7 +478,7 @@ theorem and_sat {p q : Problem} (hp : p.sat values) (hq : q.sat values) : (p.and
     simp_all [hp.equalities, hq.equalities]
   inequalities := by
     intros lc m
-    simp only [and_inequalities, List.mem_append] at m
+    simp only [and_hasInequality] at m
     rcases m with pm | qm <;>
     simp_all [hp.inequalities, hq.inequalities]
 
@@ -686,16 +704,20 @@ end LinearCombo
 
 namespace Problem
 
+@[simps]
+def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
+  { p with inequalities := p.inequalities.erase lc }
+
 /--
 If `a < b` is a strict comparison between inequality constraints,
 in any problems containing `a`, we can discard `b`.
 -/
 theorem sat_of_eraseRedundantInequality_sat
     (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) (v)
-    (s : { p with inequalities := p.inequalities.erase b }.sat v) : p.sat v :=
+    (s : (p.eraseInequality b).sat v) : p.sat v :=
   { s with
     inequalities := fun m' => by
-      rw [List.mem_iff_mem_erase_or_eq _ _ b] at m'
+      rw [hasInequality, List.mem_iff_mem_erase_or_eq _ _ b] at m'
       rcases m' with m' | ⟨rfl, m'⟩
       · apply s.inequalities
         exact m'
@@ -1206,6 +1228,11 @@ theorem of_eliminateEquality_hasEquality (w : (eliminateEquality p a i).hasEqual
   obtain ⟨e, m, rfl⟩ := w
   refine ⟨e, List.mem_of_mem_erase m, rfl⟩
 
+@[simp] theorem eliminateEquality_hasInequality :
+    (eliminateEquality p a i).hasInequality lc ↔
+      ∃ lc', p.hasInequality lc' ∧ lc'.substitute i (a.solveFor i) = lc :=
+  by simp
+
 theorem eliminateEquality_equalities_length (p : Problem) {a : Equality} (i : Nat)
     (ma : a ∈ p.equalities) :
     (p.eliminateEquality a i).equalities.length + 1 = p.equalities.length := by
@@ -1222,7 +1249,7 @@ theorem eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat} (ma : a ∈
     rw [Equality.substitute_linearCombo, LinearCombo.substitute_solveFor_eval w (s.equalities ma),
       s.equalities mb']
   inequalities mb := by
-    simp only [eliminateEquality_inequalities, List.mem_map, ne_eq] at mb
+    simp only [eliminateEquality_hasInequality] at mb
     obtain ⟨b, mb, rfl⟩ := mb
     rw [LinearCombo.substitute_solveFor_eval w (s.equalities ma)]
     exact s.inequalities mb
@@ -1243,7 +1270,7 @@ theorem sat_of_eliminateEquality_sat (p : Problem) {a : Equality} {i : Nat}
   inequalities mb := by
     rw [Equality.eval_backSubstitution]
     apply s.inequalities
-    simp only [eliminateEquality_inequalities, List.mem_map]
+    simp only [eliminateEquality_hasInequality]
     exact ⟨_, mb, rfl⟩
 
 /-- The normalization of a problem is equivalent to the problem. -/
