@@ -1,3 +1,3 @@
 import Mathlib
 
-instance {xs : List α} : Decidable (xs = []) := sorry
+set_option autoImplicit true

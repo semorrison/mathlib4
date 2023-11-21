@@ -8,10 +8,10 @@ hyperfine --warmup 3 "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.le
 ```
 
 Mon Nov 20 21:22:44 AEDT 2023
-8987d291c41b59875de4000366a75605ca60c489
+6cae784b3cd9028bd6e507a7b5bf4e2cd06c5d28
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
-  Time (mean ± σ):      3.790 s ±  0.011 s    [User: 3.589 s, System: 0.193 s]
-  Range (min … max):    3.778 s …  3.813 s    10 runs
+  Time (mean ± σ):      3.805 s ±  0.012 s    [User: 3.590 s, System: 0.207 s]
+  Range (min … max):    3.788 s …  3.825 s    10 runs
 
 Disable the expression cache:
 Mon Nov 20 21:25:54 AEDT 2023
