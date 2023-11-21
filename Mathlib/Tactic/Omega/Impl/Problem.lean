@@ -398,16 +398,18 @@ instance : ToString Problem where
     else
       "impossible"
 
--- def addEquality (p : Problem) (a : LinearCombo) : Problem :=
---   { p with
---     equalities := a :: p.equalities }
-
--- FIXME turn off `simp` here!
-@[simp 100]
+/--
+A propositional representation of whether a `Problem` contains a particular equality.
+We use this to decouple all the proofs (e.g. regarding equivalence or termination)
+from that data representation of the equalities.
+-/
 def hasEquality (p : Problem) (e : Equality) : Prop := e ∈ p.equalities
 
--- FIXME turn off `simp` here!
-@[simp 100]
+/--
+A propositional representation of whether a `Problem` contains a particular inequality.
+We use this to decouple all the proofs (e.g. regarding equivalence or termination)
+from that data representation of the inequalities.
+-/
 def hasInequality (p : Problem) (e : LinearCombo) : Prop := e ∈ p.inequalities
 
 @[simps]
@@ -441,16 +443,16 @@ theorem trivial_sat (values : List Int) : trivial.sat values where
 theorem of_sat (p : Omega.Problem) : (of p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true}) [hasEquality]
+    constructor <;> simp_all (config := {decide := true}) [hasEquality, hasInequality]
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true}) [hasEquality]
+    constructor <;> simp_all (config := {decide := true}) [hasEquality, hasInequality]
 
 theorem to_sat (p : Problem) : (to p).sat v ↔ p.sat v := by
   constructor
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true}) [hasEquality]
+    constructor <;> simp_all (config := {decide := true}) [hasEquality, hasInequality]
   · intro ⟨_, _, _⟩
-    constructor <;> simp_all (config := {decide := true}) [hasEquality]
+    constructor <;> simp_all (config := {decide := true}) [hasEquality, hasInequality]
 
 def equalitiesZero (p : Problem) : Prop :=
   ∀ {eq : Equality} (_ : eq ∈ p.equalities) (i), eq.linearCombo.coeff i = 0
@@ -581,15 +583,27 @@ namespace Problem
 def eraseEquality (p : Problem) (eq : Equality) : Problem :=
   { p with equalities := p.equalities.erase eq }
 
+@[simps]
+def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
+  { p with inequalities := p.inequalities.erase lc }
+
+theorem of_eraseInequality_hasInequality {p : Problem} (w : (p.eraseInequality lc).hasInequality lc') :
+    p.hasInequality lc' := by
+  simpa [hasInequality] using List.mem_of_mem_erase w
+
+theorem of_eraseEquality_hasEquality {p : Problem} (w : (p.eraseEquality e).hasEquality e') :
+    p.hasEquality e' := by
+  simpa [hasEquality] using List.mem_of_mem_erase w
+
 theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
     (p.eraseEquality eq).sat v :=
   { s with
-    equalities := fun m => s.equalities (by simp at m; apply List.mem_of_mem_erase m) }
+    equalities := fun m => s.equalities (of_eraseEquality_hasEquality m) }
 
 theorem eraseInequality_sat (p : Problem) (lc : LinearCombo) (v : List Int) (s : p.sat v) :
-    { p with inequalities := p.inequalities.erase lc }.sat v :=
+    (p.eraseInequality lc).sat v :=
   { s with
-    inequalities := fun m => s.inequalities (by simp at m; apply List.mem_of_mem_erase m) }
+    inequalities := fun m => s.inequalities (of_eraseInequality_hasInequality m) }
 
 /-- Any solution gives a solution after erasing an equality. -/
 def eraseEquality_map (p : Problem) (eq : Equality) :
@@ -601,22 +615,48 @@ def eraseInequality_map (p : Problem) (lc : LinearCombo) :
     p → { p with inequalities := p.inequalities.erase lc } :=
   map_of_sat (p.eraseInequality_sat lc)
 
+@[simps]
+def filterEqualities (p : Problem) (f : Equality → Bool) : Problem :=
+  { p with equalities := p.equalities.filter f }
+
+@[simps]
+def filterInequalities (p : Problem) (f : LinearCombo → Bool) : Problem :=
+  { p with inequalities := p.inequalities.filter f }
+
+@[simp] theorem filterEqualities_hasEquality {p : Problem} {f} :
+    (p.filterEqualities f).hasEquality e ↔ p.hasEquality e ∧ f e := by
+  simp [List.mem_filter, hasEquality]
+
+@[simp] theorem filterEqualities_hasInequality {p : Problem} {f} :
+    (p.filterEqualities f).hasInequality e ↔ p.hasInequality e := by
+  simp only [hasInequality, filterEqualities_inequalities]
+
+@[simp] theorem filterInequalities_hasEquality {p : Problem} {f} :
+    (p.filterInequalities f).hasEquality e ↔ p.hasEquality e := by
+  simp only [hasEquality, filterInequalities_equalities]
+
+@[simp] theorem filterInequalities_hasInequality {p : Problem} {f} :
+    (p.filterInequalities f).hasInequality e ↔ p.hasInequality e ∧ f e := by
+  simp [List.mem_filter, hasInequality]
+
 theorem filterEqualities_sat (p : Problem) (f) (v : List Int) (s : p.sat v) :
-    { p with equalities := p.equalities.filter f }.sat v :=
+    (p.filterEqualities f).sat v :=
   { s with
-    equalities := fun m => s.equalities (by simp at m; exact List.mem_of_mem_filter' m) }
+    equalities := fun m =>
+      s.equalities (by simpa [hasEquality] using List.mem_of_mem_filter' m) }
 
 theorem filterInequalities_sat (p : Problem) (f) (v : List Int) (s : p.sat v) :
-    { p with inequalities := p.inequalities.filter f }.sat v :=
+    (p.filterInequalities f).sat v :=
   { s with
-    inequalities := fun m => s.inequalities (by simp at m; exact List.mem_of_mem_filter' m) }
+    inequalities := fun m =>
+      s.inequalities (by simpa [hasInequality] using List.mem_of_mem_filter' m) }
 
 def filterEqualities_map (p : Problem) (f) :
-    p → { p with equalities := p.equalities.filter f } :=
+    p → (p.filterEqualities f) :=
   map_of_sat (p.filterEqualities_sat f)
 
 def filterInequalities_map (p : Problem) (f) :
-    p → { p with inequalities := p.inequalities.filter f } :=
+    p → (p.filterInequalities f) :=
   map_of_sat (p.filterInequalities_sat f)
 
 end Problem
@@ -703,10 +743,6 @@ theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v 
 end LinearCombo
 
 namespace Problem
-
-@[simps]
-def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
-  { p with inequalities := p.inequalities.erase lc }
 
 /--
 If `a < b` is a strict comparison between inequality constraints,
@@ -852,9 +888,8 @@ def processConstants (p : Problem) : Problem :=
   let equalityConstants := p.equalities.filterMap fun eq => eq.linearCombo.constant?
   let inequalityConstants := p.inequalities.filterMap LinearCombo.constant?
   if equalityConstants.all (· = 0) ∧ inequalityConstants.all (· ≥ 0) then
-    { p with
-      equalities := p.equalities.filter fun eq => eq.linearCombo.constant? = none
-      inequalities := p.inequalities.filter fun lc => lc.constant? = none }
+    p.filterEqualities (fun eq => eq.linearCombo.constant? = none)
+      |>.filterInequalities (fun lc => lc.constant? = none)
   else
     impossible
 
@@ -903,8 +938,7 @@ theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sa
         exact eqs _ eq mem h
       | none =>
         apply s.equalities
-        simp
-        rw [List.mem_filter]
+        simp only [filterInequalities_hasEquality, filterEqualities_hasEquality]
         exact ⟨mem, decide_eq_true h⟩
     · intro lc mem
       match h : lc.constant? with
@@ -913,8 +947,7 @@ theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sa
         exact ineqs _ lc mem h
       | none =>
         apply s.inequalities
-        simp
-        rw [List.mem_filter]
+        simp only [filterInequalities_hasInequality, filterInequalities_hasEquality]
         exact ⟨mem, decide_eq_true h⟩
   · replace s := s.possible
     simp at s
@@ -1066,14 +1099,22 @@ def normalize (p : Problem) : Problem where
   equalities := p.equalities.map Equality.normalize
   inequalities := p.inequalities.map LinearCombo.normalizeInequality
 
+@[simp] theorem normalize_hasEquality {p : Problem} :
+    p.normalize.hasEquality e ↔ ∃ e', p.hasEquality e' ∧ e'.normalize = e := by
+  simp [hasEquality]
+
+@[simp] theorem normalize_hasInequality {p : Problem} :
+    p.normalize.hasInequality e ↔ ∃ e', p.hasInequality e' ∧ e'.normalizeInequality = e := by
+  simp [hasInequality]
+
 theorem normalize_sat (p : Problem) (h : p.sat v) : p.normalize.sat v where
   possible := h.possible
   equalities m := by
-    simp [normalize] at m
+    simp only [normalize_hasEquality] at m
     obtain ⟨a, m, rfl⟩ := m
     simpa using h.equalities m
   inequalities m := by
-    simp [normalize] at m
+    simp only [normalize_hasInequality] at m
     obtain ⟨a, m, rfl⟩ := m
     simpa using h.inequalities m
 
@@ -1082,12 +1123,12 @@ theorem sat_of_normalize_sat (p : Problem) (h : p.normalize.sat v) : p.sat v whe
   equalities m := by
     rw [← Equality.normalize_eval]
     apply h.equalities
-    simp [normalize]
+    simp only [normalize_hasEquality]
     refine ⟨_, m, rfl⟩
   inequalities m := by
     rw [← LinearCombo.normalizeInequality_eval]
     apply h.inequalities
-    simp [normalize]
+    simp only [normalize_hasInequality]
     refine ⟨_, m, rfl⟩
 
 /-- The normalization of a problem is equivalent to the problem. -/
@@ -1208,7 +1249,7 @@ end Equality
 namespace Problem
 
 -- This only makes sense when `a ∈ p.equalities` and `(a.linearCombo.coeff i).natAbs = 1`.
--- FIXME we should delete the variable, too!
+-- TODO should we delete the variable, too?
 @[simps]
 def eliminateEquality (p : Problem) (a : Equality) (i : Nat) : Problem :=
   let r := a.solveFor i
@@ -1230,8 +1271,9 @@ theorem of_eliminateEquality_hasEquality (w : (eliminateEquality p a i).hasEqual
 
 @[simp] theorem eliminateEquality_hasInequality :
     (eliminateEquality p a i).hasInequality lc ↔
-      ∃ lc', p.hasInequality lc' ∧ lc'.substitute i (a.solveFor i) = lc :=
-  by simp
+      ∃ lc', p.hasInequality lc' ∧ lc'.substitute i (a.solveFor i) = lc := by
+  simp only [hasInequality]
+  simp only [eliminateEquality_inequalities, List.mem_map]
 
 theorem eliminateEquality_equalities_length (p : Problem) {a : Equality} (i : Nat)
     (ma : a ∈ p.equalities) :
@@ -1575,6 +1617,10 @@ def addEquality (p : Problem) (eq : Equality) : Problem where
   possible := p.possible
   equalities := eq :: p.equalities
   inequalities := p.inequalities
+
+@[simp] theorem addEquality_hasEquality {p : Problem} :
+    (p.addEquality eq).hasEquality e ↔ e = eq ∨ p.hasEquality e := by
+  simp [hasEquality]
 
 def addEquality_equiv (p : Problem) {eq : Equality} (f : p → p)
     (w : ∀ x : p, eq.linearCombo.eval (f x).1 = 0) :
@@ -2222,7 +2268,7 @@ def realShadow_map (p : Problem) (i : Nat) : p → p.realShadow i :=
         inequalities := @fun lc m => h.inequalities (mem_of_mem_bounds_3 m) }
     · exact { h with
         inequalities := @fun lc m => by
-          simp at m
+          simp [hasInequality] at m
           rcases m with m|m
           · exact h.inequalities (mem_of_mem_bounds_3 m)
           · simp only [List.mem_bind, List.mem_map] at m
