@@ -1,5 +1,7 @@
 import Std
 
+import Mathlib.Tactic.LibrarySearch
+
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
@@ -23,19 +25,68 @@ instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) wh
     (if P then some x else none) = some y ↔ P ∧ x = y := by
   split <;> simp_all
 
+namespace Int
 
-theorem Int.mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
+theorem mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
   calc k * (x / k)
     _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
     _ = x                   := ediv_add_emod _ _
 
-theorem Int.lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
+theorem lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
   calc x
     _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
     _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
 
+theorem pow_two {x : Int} : x^2 = x * x := by
+  change Int.pow _ _ = _
+  simp [Int.pow]
+
+theorem mul_self_nonneg {x : Int} : 0 ≤ x * x := by
+  match x with
+  | .ofNat n =>
+    simpa only [ofNat_eq_coe, ← Int.ofNat_mul] using Int.ofNat_nonneg _
+  | .negSucc n =>
+    simpa only [negSucc_mul_negSucc, ge_iff_le, ← Int.ofNat_mul] using Int.ofNat_nonneg _
+
+attribute [simp] sign_eq_zero_iff_zero
+
+@[simp] theorem sign_sign : sign (sign x) = sign x := by
+  match x with
+  | 0 => rfl
+  | .ofNat (_ + 1) => rfl
+  | .negSucc _ => rfl
+
+@[simp] theorem sign_nonneg : 0 ≤ sign x ↔ 0 ≤ x := by
+  match x with
+  | 0 => rfl
+  | .ofNat (_ + 1) =>
+    simp (config := { decide := true }) only [sign, true_iff]
+    exact Int.le_add_one (ofNat_nonneg _)
+  | .negSucc _ => simp (config := {decide := true}) [sign]
+
+end Int
 
 namespace List
+
+@[simp] theorem reverse_eq_nil_iff {xs : List α} : xs.reverse = [] ↔ xs = [] := by
+  induction xs <;> simp
+
+instance {xs : List α} : Decidable (xs = []) := sorry
+
+@[simp] theorem dropWhile_nil : ([] : List α).dropWhile p = [] := rfl
+
+theorem dropWhile_cons :
+    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
+  split <;> simp_all [dropWhile]
+
+theorem dropWhile_append {xs ys : List α} :
+    (xs ++ ys).dropWhile p =
+      if xs.dropWhile p = [] then ys.dropWhile p else xs.dropWhile p ++ ys := by
+  induction xs with
+  | nil => simp
+  | cons h t ih =>
+    simp only [cons_append, dropWhile_cons]
+    split <;> simp_all
 
 theorem filter_cons :
     (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
@@ -70,12 +121,6 @@ theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
   · subst h
     simp [or_iff_right_of_imp List.mem_of_mem_erase]
   · simp_all
-
-@[simp] theorem dropWhile_nil : ([] : List α).dropWhile p = [] := rfl
-
-theorem dropWhile_cons :
-    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
-  split <;> simp_all [dropWhile]
 
 -- These `findIdx?` lemmas are in https://github.com/leanprover/std4/pull/293
 

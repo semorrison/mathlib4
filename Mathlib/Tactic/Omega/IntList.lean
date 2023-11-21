@@ -411,11 +411,23 @@ theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign :=
 def trim (xs : IntList) : IntList :=
   (xs.reverse.dropWhile (· == 0)).reverse
 
+@[simp] theorem trim_nil : trim [] = [] := rfl
+
 @[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
   simp [trim, List.dropWhile]
 
+theorem trim_cons :
+    trim (x :: xs) = if x = 0 then if trim xs = [] then [] else 0 :: trim xs else x :: trim xs := by
+  simp only [trim, List.reverse_cons]
+  generalize xs.reverse = xs'
+  simp only [List.dropWhile_append, List.reverse_eq_nil_iff]
+  split <;> rename_i h
+  · simp only [List.dropWhile_cons, beq_iff_eq, List.dropWhile_nil, h, List.reverse_nil]
+    split <;> simp
+  · split <;> simp_all
+
 @[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
-  simp [trim, neg_def, List.reverse_map]
+  simp only [trim, neg_def, List.reverse_map]
   generalize xs.reverse = xs'
   induction xs' with
   | nil => simp

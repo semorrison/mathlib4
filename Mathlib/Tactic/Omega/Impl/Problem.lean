@@ -1,11 +1,13 @@
 import Mathlib.Tactic.Simps.Basic
 import Mathlib.Tactic.SolveByElim
+import Mathlib.Tactic.Classical
 
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
 
 import Mathlib.Tactic.LibrarySearch
+import Mathlib.Tactic.Rewrites
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -43,6 +45,41 @@ protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
 end UInt64
 
 namespace IntList
+
+def sign : IntList → Int
+  | [] => 0
+  | 0 :: xs => sign xs
+  | x :: _ => Int.sign x
+
+@[simp] theorem sign_nil : sign [] = 0 := rfl
+theorem sign_cons : sign (x :: xs) = if x = 0 then sign xs else Int.sign x := by
+  split <;> rename_i h
+  · subst h; simp [sign]
+  · rwa [sign]
+
+theorem sign_neg : sign (-xs) = - sign xs := by
+  induction xs with
+  | nil => simp
+  | cons h t ih =>
+    simp only [neg_cons, sign_cons]
+    split <;> simp_all
+
+theorem sign_eq_zero_iff : sign xs = 0 ↔ xs.trim = [] := by
+  induction xs with
+  | nil => simp
+  | cons h t ih =>
+    simp only [sign_cons, trim_cons]
+    split <;> simp_all [not_not, imp_false]
+
+theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
+  induction xs with
+  | nil => simp
+  | cons h t ih =>
+    simp only [sign_cons, smul_cons, Int.sign_mul]
+    split
+    · simp_all only [Int.mul_zero, Int.sign_zero, ite_true]
+    · simp_all only [Int.mul_eq_zero, Int.sign_eq_zero_iff_zero, or_self, Int.sign_sign, ite_false]
+      exact Int.mul_self_nonneg
 
 /--
 We need two properties of this hash:
@@ -238,6 +275,12 @@ theorem setCoeff_coeff_of_ne (lc : LinearCombo) (i j : Nat) (w : i ≠ j) (x : I
 
 end LinearCombo
 
+/--
+An equality is a linear combo (which we interpret as being constrained to be zero)
+along with some optional cached data about the smallest absolute value of a nonzero coefficient.
+
+We cache this data as it is used repeatedly when eliminating equalities.
+-/
 structure Equality where
   linearCombo : LinearCombo
   /--
@@ -253,7 +296,6 @@ structure Equality where
   minCoeffIdx?_spec :
     SatisfiesM (fun idx => minCoeff?.isSome ∧ (linearCombo.coeff idx).natAbs = minCoeff?) minCoeffIdx? := by simp
 deriving DecidableEq
-
 
 namespace Equality
 
@@ -376,6 +418,27 @@ theorem smallCoeff_natAbs {a : Equality} (w : a.smallCoeff = some i) :
   rw [a.minCoeffIdx_spec, w]
 
 end Equality
+
+structure CoeffsKey where
+  coeffs : IntList
+  sign_nonneg : 0 ≤ coeffs.sign
+  coeffsHash : UInt64 := coeffs.hash
+  coeffsHash_spec : coeffsHash = coeffs.hash := by rfl
+
+instance : Hashable CoeffsKey := ⟨CoeffsKey.coeffsHash⟩
+
+structure Inequality where
+  linearCombo : LinearCombo
+  key : CoeffsKey :=
+  { coeffs := linearCombo.coeffs.sign * linearCombo.coeffs
+    sign_nonneg := IntList.sign_mul_self_nonneg }
+  key_spec : key.coeffs = linearCombo.coeffs.sign * linearCombo.coeffs := by rfl
+
+structure Inequalities where
+  map : Std.HashMap CoeffsKey (Option Inequality × Option Inequality)
+  -- map_spec k : SatisfiesM (x := map.find? k) fun ⟨i₁?, i₂?⟩ =>
+  --   SatisfiesM (fun i₁ => i₁.key = k ∧ i₁.linearCombo.coeffs.sign = -1) i₁? ∧
+  --     SatisfiesM (fun i₂ => i₂.key = k ∧ i₂.linearCombo.coeffs.sign = 1) i₂?
 
 structure Problem where
   possible : Bool := true
