@@ -62,6 +62,7 @@ structure State where
   the values of `a` and `b`.
   -/
   subs : List (Expr × Expr) := []
+  atomsList? : Option Expr := none
 
 abbrev OmegaM' := StateRefT State MetaM
 
@@ -77,7 +78,12 @@ def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 
 /-- Return the `Expr` representing the list of atoms. -/
 def atomsList : OmegaM Expr := do
-  mkListLit (.const ``Int []) (← getThe State).atoms.toList
+  match (← getThe State).atomsList? with
+  | some e => pure e
+  | none =>
+    let e ← mkListLit (.const ``Int []) (← getThe State).atoms.toList
+    modifyThe State fun s => { s with atomsList? := e }
+    pure e
 
 /--
 If a natural number subtraction `((a - b : Nat) : Int)` has been encountered,
@@ -364,38 +370,31 @@ theorem LinearCombo.sub_eval_nonneg {a b : LinearCombo} {v : List Int} (h : a.ev
 Add an integer equality to the `Problem`.
 -/
 -- TODO ambitiously, we could be solving easy equalities as we add them ...
-def addIntEquality (p : MetaProblem) (h x y : Expr) : OmegaM MetaProblem := do
-  let (lc₁, prf₁, facts₁) ← asLinearCombo x
-  let (lc₂, prf₂, facts₂) ← asLinearCombo y
-  let newFacts : HashSet Expr := (facts₁.merge facts₂).fold (init := ∅) fun s e =>
+def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
+  let (lc, prf, facts) ← asLinearCombo x
+  let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addEquality (lc₂ - lc₁)
+    problem := p.problem.addEquality lc
     sat := do
-      let eq ← mkEqTrans (← mkEqSymm (← prf₁)) (← mkEqTrans h (← prf₂))
-      mkAppM ``Problem.addEquality_sat
-        #[← p.sat, ← mkAppM ``LinearCombo.sub_eval_zero #[eq]] }
+      mkAppM ``Problem.addEquality_sat #[← p.sat, ← mkEqTrans (← mkEqSymm (← prf)) h] }
 
 /--
 Add an integer inequality to the `Problem`.
 -/
 -- TODO once we've got this working, we should run `tidy` at every step
-def addIntInequality (p : MetaProblem) (h x y : Expr) : OmegaM MetaProblem := do
-  let (lc₁, prf₁, facts₁) ← asLinearCombo x
-  let (lc₂, prf₂, facts₂) ← asLinearCombo y
-  let newFacts : HashSet Expr := (facts₁.merge facts₂).fold (init := ∅) fun s e =>
+def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
+  let (lc, prf, facts) ← asLinearCombo y
+  let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addInequality (lc₂ - lc₁)
+    problem := p.problem.addInequality lc
     sat := do
-      let ineq ← mkAppM ``le_of_le_of_eq
-        #[← mkAppM ``le_of_eq_of_le #[← mkEqSymm (← prf₁), h], (← prf₂)]
-      mkAppM ``Problem.addInequality_sat
-        #[← p.sat, ← mkAppM ``LinearCombo.sub_eval_nonneg #[ineq]] }
+      mkAppM ``Problem.addInequality_sat #[← p.sat, ← mkAppM ``le_of_le_of_eq #[h, (← prf)]] }
 
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
 def pushNot (h P : Expr) : Option Expr := do
@@ -411,6 +410,8 @@ def pushNot (h P : Expr) : Option Expr := do
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
 
+example {x y : Int} (h : x ≤ y) : 0 ≤ y - x := by exact Int.sub_nonneg_of_le h
+
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
     return p
@@ -418,9 +419,13 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
     let t ← instantiateMVars (← inferType h)
     match t.getAppFnArgs with
     | (``Eq, #[.const ``Int [], x, y]) =>
-      p.addIntEquality h x y
+      match y.int? with
+      | some 0 => p.addIntEquality h x
+      | _ => p.addFact (mkApp3 (.const ``Int.sub_eq_zero_of_eq []) x y h)
     | (``LE.le, #[.const ``Int [], _, x, y]) =>
-      p.addIntInequality h x y
+      match x.int? with
+      | some 0 => p.addIntInequality h y
+      | _ => p.addFact (mkApp3 (.const ``Int.sub_nonneg_of_le []) y x h)
     | (``LT.lt, #[.const ``Int [], _, x, y]) =>
       p.addFact (mkApp3 (.const ``Int.add_one_le_of_lt []) x y h)
     | (``GT.gt, #[.const ``Int [], _, x, y]) => p.addFact (mkApp3 (.const ``Int.lt_of_gt []) x y h)

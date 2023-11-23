@@ -142,3 +142,10 @@ example {x y : Int} (_ : y = x) (_ : 0 ≤ x - 2 * y) (_ : x - 2 * y ≤ 1) (_ :
 --     (_ : -8 ≤ 7 * x - 9 * y) (_ : 7 * x - 9 * y ≤ 6) : False := by
 --   -- omega -- need to implement the shadows before we can do this!
 --   sorry
+
+-- TODO: if the goal is an equality, allow the case split.
+example {n : Nat} (_ : n > 0) : (2*n - 1) % 2 = 1 := by
+  by_contra h
+  rw [← ne_eq, Nat.ne_iff_lt_or_gt] at h
+  cases h <;>
+  omega
