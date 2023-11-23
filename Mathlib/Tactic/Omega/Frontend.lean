@@ -224,13 +224,19 @@ def mkEvalRflProof (e : Expr) (lc : LinearCombo) : OmegaM Expr := do
 /-- If `e : Expr` is the `n`-th atom, construct the proof that
 `e = (coordinate n).eval atoms`. -/
 def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : OmegaM Expr := do
-  -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
-  let atoms ← atomsList
-  let n := toExpr n
-  let eq ← mkEqReflWithExpectedType e
-    (mkApp3 (.const ``Option.getD [.zero]) (.const ``Int [])
-      (mkApp3 (.const ``List.get? [.zero]) (.const ``Int []) atoms n) (toExpr (0 : Int)))
-  mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
+  if n < 10 then
+    let atoms := (← getThe State).atoms
+    let tail ← mkListLit (.const ``Int []) atoms[n+1:].toArray.toList
+    let lem := .str ``LinearCombo s!"coordinate_eval_{n}"
+    mkEqSymm (mkAppN (.const lem []) (atoms[:n+1].toArray.push tail))
+  else
+    -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
+    let atoms ← atomsList
+    let n := toExpr n
+    let eq ← mkEqReflWithExpectedType e
+      (mkApp3 (.const ``Option.getD [.zero]) (.const ``Int [])
+        (mkApp3 (.const ``List.get? [.zero]) (.const ``Int []) atoms n) (toExpr (0 : Int)))
+    mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
 def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
@@ -354,18 +360,6 @@ def trivial : MetaProblem where
 
 instance : Inhabited MetaProblem := ⟨trivial⟩
 
-/-- The statement that a problem is satisfied at `atomsList`. -/
-def satType (p : Problem) : OmegaM Expr :=
-  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
-
-theorem LinearCombo.sub_eval_zero {a b : LinearCombo} {v : List Int} (h : a.eval v = b.eval v) :
-    (b - a).eval v = 0 := by
-  simp_all
-
-theorem LinearCombo.sub_eval_nonneg {a b : LinearCombo} {v : List Int} (h : a.eval v ≤ b.eval v) :
-    0 ≤ (b - a).eval v := by
-  simpa using Int.sub_nonneg_of_le h
-
 /--
 Add an integer equality to the `Problem`.
 -/
@@ -410,7 +404,9 @@ def pushNot (h P : Expr) : Option Expr := do
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
 
-example {x y : Int} (h : x ≤ y) : 0 ≤ y - x := by exact Int.sub_nonneg_of_le h
+/-- The statement that a problem is satisfied at `atomsList`. -/
+def satType (p : Problem) : OmegaM Expr :=
+  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
 
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then

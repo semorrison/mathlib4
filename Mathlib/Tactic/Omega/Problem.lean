@@ -65,6 +65,30 @@ def coordinate (i : Nat) : LinearCombo where
     | zero => simp
     | succ i => simp_all
 
+theorem coordinate_eval_0 : (coordinate 0).eval (a0 :: t) = a0 := by
+  simp
+theorem coordinate_eval_1 : (coordinate 1).eval (a0 :: a1 :: t) = a1 := by
+  simp
+theorem coordinate_eval_2 : (coordinate 2).eval (a0 :: a1 :: a2 :: t) = a2 := by
+  simp
+theorem coordinate_eval_3 : (coordinate 3).eval (a0 :: a1 :: a2 :: a3 :: t) = a3 := by
+  simp
+theorem coordinate_eval_4 : (coordinate 4).eval (a0 :: a1 :: a2 :: a3 :: a4 :: t) = a4 := by
+  simp
+theorem coordinate_eval_5 : (coordinate 5).eval (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: t) = a5 := by
+  simp
+theorem coordinate_eval_6 :
+    (coordinate 6).eval (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: t) = a6 := by
+  simp
+theorem coordinate_eval_7 :
+    (coordinate 7).eval (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: a7 :: t) = a7 := by
+  simp
+theorem coordinate_eval_8 :
+    (coordinate 8).eval (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: a7 :: a8 :: t) = a8 := by
+  simp
+theorem coordinate_eval_9 :
+    (coordinate 9).eval (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: a7 :: a8 :: a9 :: t) = a9 := by
+  simp
 
 def add (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const + l₂.const

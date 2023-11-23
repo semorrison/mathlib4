@@ -4,7 +4,7 @@ import Mathlib.Tactic.Omega.Frontend
 ```
 lake build Mathlib.Tactic.Omega.Benchmarks.b20231120 > /dev/null && \
 date && git rev-parse HEAD && \
-hyperfine --warmup 3 "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean"
+hyperfine "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean"
 ```
 
 Mon Nov 20 21:22:44 AEDT 2023
@@ -26,6 +26,13 @@ Tue Nov 21 14:24:34 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
   Time (mean ± σ):      3.826 s ±  0.013 s    [User: 3.609 s, System: 0.209 s]
   Range (min … max):    3.815 s …  3.849 s    10 runs
+
+Putting everything on one side
+Thu Nov 23 18:23:22 AEDT 2023
+8c0f95607201c1550b8c06acb5e2423a7da6d82c
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.782 s ±  0.005 s    [User: 3.591 s, System: 0.182 s]
+  Range (min … max):    3.773 s …  3.788 s    10 runs
 -/
 
 example : True := by
