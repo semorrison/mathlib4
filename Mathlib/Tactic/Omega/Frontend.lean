@@ -62,7 +62,6 @@ structure State where
   the values of `a` and `b`.
   -/
   subs : List (Expr × Expr) := []
-  atomsList? : Option Expr := none
 
 abbrev OmegaM' := StateRefT State MetaM
 
@@ -78,12 +77,7 @@ def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 
 /-- Return the `Expr` representing the list of atoms. -/
 def atomsList : OmegaM Expr := do
-  match (← getThe State).atomsList? with
-  | some e => pure e
-  | none =>
-    let e ← mkListLit (.const ``Int []) (← getThe State).atoms.toList
-    modifyThe State fun s => { s with atomsList? := e }
-    pure e
+  mkListLit (.const ``Int []) (← getThe State).atoms.toList
 
 /--
 If a natural number subtraction `((a - b : Nat) : Int)` has been encountered,
@@ -351,6 +345,10 @@ where
 
 end
 
+/-- The statement that a problem is satisfied at `atomsList`. -/
+def satType (p : Problem) : OmegaM Expr :=
+  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
+
 namespace MetaProblem
 
 /-- The trivial `MetaProblem`, with no facts to processs and a trivial `Problem`. -/
@@ -403,10 +401,6 @@ def pushNot (h P : Expr) : Option Expr := do
   | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
-
-/-- The statement that a problem is satisfied at `atomsList`. -/
-def satType (p : Problem) : OmegaM Expr :=
-  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
 
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
@@ -505,8 +499,10 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
       omegaImpl mneg gneg
   else do
     let s ← mkAppM ``Problem.possible #[← mkAppM ``runOmega #[toExpr p]]
-    let r := (← mkFreshExprMVar (← mkAppM ``Eq #[s, .const ``Bool.false []])).mvarId!
+    let ty ← mkAppM ``Eq #[s, .const ``Bool.false []]
+    let r := (← mkFreshExprMVar ty).mvarId!
     r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
+    -- r.assign (← mkSorry ty false)
     g.assign <| (← mkAppM ``unsat_of_impossible #[.mvar r]).app (← mkAppM ``Problem.of #[← sat])
 
 /--
