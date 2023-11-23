@@ -14,7 +14,53 @@ set_option relaxedAutoImplicit true
 
 
 
-open Classical
+namespace Array
+
+theorem size_filter_le (p : α → Bool) (l : Array α) :
+    (l.filter p).size ≤ l.size := sorry
+
+@[simp] theorem mem_data {a : α} {l : Array α} : a ∈ l.data ↔ a ∈ l :=
+  sorry
+
+@[simp] theorem mem_toList {a : α} {l : Array α} : a ∈ l.toList ↔ a ∈ l :=
+  sorry
+
+@[simp] theorem mem_map {f : α → β} {l : Array α} : b ∈ l.map f ↔ ∃ a, a ∈ l ∧ f a = b :=
+  -- Presumably this should be proved by using `List.mem_map` on `l.toData`.
+  -- How to do so ergonomically?
+  sorry
+
+theorem mem_filter : x ∈ filter p as ↔ x ∈ as ∧ p x := sorry
+
+theorem mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
+  (mem_filter.mp h).1
+
+@[simp] theorem mem_filterMap (f : α → Option β) (l : Array α) {b : β} :
+    b ∈ filterMap f l ↔ ∃ a, a ∈ l ∧ f a = some b := sorry
+
+theorem mem_of_mem_erase [DecidableEq α] {a b : α} {l : Array α} (h : a ∈ l.erase b) : a ∈ l := sorry
+
+@[simp] theorem mem_erase_of_ne [DecidableEq α] {a b : α} {l : Array α} (ab : a ≠ b) :
+    a ∈ l.erase b ↔ a ∈ l := sorry
+
+theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : Array α) (a b : α) :
+    a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := sorry
+
+@[simp] theorem not_mem_nil (a : α) : ¬ a ∈ #[] := fun.
+
+theorem getElem?_mem {l : Array α} {i : Fin l.size} : l[i] ∈ l := sorry
+
+theorem all_eq_true {l : Array α} : l.all p ↔ ∀ i : Fin l.size, p l[i] := sorry
+theorem all_eq_true' {l : Array α} : l.all p ↔ ∀ x, x ∈ l → p x := sorry
+
+end Array
+
+namespace List
+
+@[simp] theorem mem_toArray {a : α} {l : List α} : a ∈ l.toArray ↔ a ∈ l :=
+  sorry
+
+end List
 
 namespace UInt64
 
@@ -43,6 +89,8 @@ protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
   rw [UInt64.min_comm]; exact UInt64.min_eq_left h
 
 end UInt64
+
+open Classical
 
 namespace IntList
 
@@ -463,109 +511,109 @@ instance : LawfulBEq Inequality where
   rfl := by simp
 
 
-structure Inequalities where
-  /--
-  For each list of coefficients (with first nonzero entry positive), we store
-  at most one inequality with those coefficients, and
-  at most one inequality with those coefficients negated.
+-- structure Inequalities where
+--   /--
+--   For each list of coefficients (with first nonzero entry positive), we store
+--   at most one inequality with those coefficients, and
+--   at most one inequality with those coefficients negated.
 
-  If we have two inequalities with the same coefficients, one must be redundant.
-  Given a pair of inequalities with opposite coefficients
-  `a + ∑ cᵢ * xᵢ ≥ 0` and `b - ∑ cᵢ * xᵢ ≥ 0`, we must have `-a ≤ b`.
-  -/
-  map : Std.HashMap CoeffsKey (Option Inequality × Option Inequality) := ∅
-  -- map_spec k : SatisfiesM (x := map.find? k) fun ⟨i₁?, i₂?⟩ =>
-  --   SatisfiesM (fun i₁ => i₁.key = k ∧ i₁.linearCombo.coeffs.sign = -1) i₁? ∧
-  --     SatisfiesM (fun i₂ => i₂.key = k ∧ i₂.linearCombo.coeffs.sign = 1) i₂?
-
-
-namespace Inequalities
-
--- def contains (m : Inequalities) (i : Inequality) : Bool :=
---   match m.map.find? i.key with
---   | none => false
---   | some (none, none) => false
---   | some (some i₁, none) => i₁ == i
---   | some (none, some i₂) => i₂ == i
---   | some (some i₁, some i₂) => i₁ == i || i₂ == i
-
-def mem (m : Inequalities) : Inequality → Prop :=
-  fun i => ∃ k, i ∈ m.map.find? k >>= (·.1) ∨ i ∈ m.map.find? k >>= (·.2)
-
-inductive Inequality
-| lowerBound (x : Int)
-| upperBound (x : Int)
-
-namespace Inequality
-
-def sat : Inequality → Int → Prop
-| .lowerBound x, y => x ≤ y
-| .upperBound x, y => y ≤ x
-
-end Inequality
-
-inductive Constraint
-| impossible
-| lowerBound (x : Int)
-| upperBound (x : Int)
-| between (x y : Int)
-
-namespace Constraint
-
-def sat : Constraint → Int → Prop
-| .impossible, _ => False
-| .lowerBound x, y => x ≤ y
-| .upperBound x, y => y ≤ x
-| .between x y, z => x ≤ z ∧ z ≤ y
-
-def combine : Constraint → Inequality → Constraint
-| .impossible, .lowerBound _ => .impossible
-| .impossible, .upperBound _ => .impossible
-| .lowerBound x, .lowerBound w => if x < w then .lowerBound w else .lowerBound x
-| .lowerBound x, .upperBound z => if z < x then .impossible else .between x z
-| .upperBound y, .lowerBound w => if y < w then .impossible else .between w y
-| .upperBound y, .upperBound z => if y < z then .upperBound y else .upperBound y
-| .between x y, .lowerBound w =>
-  if y < w then .impossible else if x ≤ w then .between w y else .between x y
-| .between x y, .upperBound z =>
-  if z < x then .impossible else if z ≤ y then .between x z else .between x y
-
-theorem combine_sat :
-    (c : Constraint) → (i : Inequality) → (t : Int) → (c.combine i).sat t = (c.sat t ∧ i.sat t)
-| .impossible, .lowerBound _, t => by simp [sat, combine]
-| .impossible, .upperBound _, t => by simp [sat, combine]
-| .lowerBound x, .lowerBound w, t => by
-  simp [combine]
-  split <;> rename_i h <;> simp [sat, Inequality.sat]
-  · sorry
-  · sorry
-| .lowerBound x, .upperBound z, t => sorry
-| .upperBound y, .lowerBound w, t => sorry
-| .upperBound y, .upperBound z, t => sorry
-| .between x y, .lowerBound w, t => sorry
-| .between x y, .upperBound z, t => sorry
-
-end Constraint
+--   If we have two inequalities with the same coefficients, one must be redundant.
+--   Given a pair of inequalities with opposite coefficients
+--   `a + ∑ cᵢ * xᵢ ≥ 0` and `b - ∑ cᵢ * xᵢ ≥ 0`, we must have `-a ≤ b`.
+--   -/
+--   map : Std.HashMap CoeffsKey (Option Inequality × Option Inequality) := ∅
+--   -- map_spec k : SatisfiesM (x := map.find? k) fun ⟨i₁?, i₂?⟩ =>
+--   --   SatisfiesM (fun i₁ => i₁.key = k ∧ i₁.linearCombo.coeffs.sign = -1) i₁? ∧
+--   --     SatisfiesM (fun i₂ => i₂.key = k ∧ i₂.linearCombo.coeffs.sign = 1) i₂?
 
 
-end Inequalities
+-- namespace Inequalities
+
+-- -- def contains (m : Inequalities) (i : Inequality) : Bool :=
+-- --   match m.map.find? i.key with
+-- --   | none => false
+-- --   | some (none, none) => false
+-- --   | some (some i₁, none) => i₁ == i
+-- --   | some (none, some i₂) => i₂ == i
+-- --   | some (some i₁, some i₂) => i₁ == i || i₂ == i
+
+-- def mem (m : Inequalities) : Inequality → Prop :=
+--   fun i => ∃ k, i ∈ m.map.find? k >>= (·.1) ∨ i ∈ m.map.find? k >>= (·.2)
+
+-- inductive Inequality
+-- | lowerBound (x : Int)
+-- | upperBound (x : Int)
+
+-- namespace Inequality
+
+-- def sat : Inequality → Int → Prop
+-- | .lowerBound x, y => x ≤ y
+-- | .upperBound x, y => y ≤ x
+
+-- end Inequality
+
+-- inductive Constraint
+-- | impossible
+-- | lowerBound (x : Int)
+-- | upperBound (x : Int)
+-- | between (x y : Int)
+
+-- namespace Constraint
+
+-- def sat : Constraint → Int → Prop
+-- | .impossible, _ => False
+-- | .lowerBound x, y => x ≤ y
+-- | .upperBound x, y => y ≤ x
+-- | .between x y, z => x ≤ z ∧ z ≤ y
+
+-- def combine : Constraint → Inequality → Constraint
+-- | .impossible, .lowerBound _ => .impossible
+-- | .impossible, .upperBound _ => .impossible
+-- | .lowerBound x, .lowerBound w => if x < w then .lowerBound w else .lowerBound x
+-- | .lowerBound x, .upperBound z => if z < x then .impossible else .between x z
+-- | .upperBound y, .lowerBound w => if y < w then .impossible else .between w y
+-- | .upperBound y, .upperBound z => if y < z then .upperBound y else .upperBound y
+-- | .between x y, .lowerBound w =>
+--   if y < w then .impossible else if x ≤ w then .between w y else .between x y
+-- | .between x y, .upperBound z =>
+--   if z < x then .impossible else if z ≤ y then .between x z else .between x y
+
+-- theorem combine_sat :
+--     (c : Constraint) → (i : Inequality) → (t : Int) → (c.combine i).sat t = (c.sat t ∧ i.sat t)
+-- | .impossible, .lowerBound _, t => by simp [sat, combine]
+-- | .impossible, .upperBound _, t => by simp [sat, combine]
+-- | .lowerBound x, .lowerBound w, t => by
+--   simp [combine]
+--   split <;> rename_i h <;> simp [sat, Inequality.sat]
+--   · sorry
+--   · sorry
+-- | .lowerBound x, .upperBound z, t => sorry
+-- | .upperBound y, .lowerBound w, t => sorry
+-- | .upperBound y, .upperBound z, t => sorry
+-- | .between x y, .lowerBound w, t => sorry
+-- | .between x y, .upperBound z, t => sorry
+
+-- end Constraint
+
+
+-- end Inequalities
 
 structure Problem where
   possible : Bool := true
   equalities : List Equality := []
-  inequalities : List LinearCombo := []
-  inequalities' : Inequalities := {}
+  inequalities : Array LinearCombo := #[]
+  -- inequalities' : Inequalities := {}
 
 namespace Problem
 
 instance : ToString Problem where
   toString p :=
     if p.possible then
-      if p.equalities = [] ∧ p.inequalities = [] then
+      if p.equalities.isEmpty ∧ p.inequalities.isEmpty then
         "trivial"
       else
         "\n".intercalate <|
-          (p.equalities.map fun e => s!"{e}") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
+          (p.equalities.map fun e => s!"{e}") ++ (p.inequalities.map fun e => s!"{e} ≥ 0").toList
     else
       "impossible"
 
@@ -587,13 +635,13 @@ def hasInequality (p : Problem) (e : LinearCombo) : Prop := e ∈ p.inequalities
 def of (p : Omega.Problem) : Problem where
   possible := p.possible
   equalities := p.equalities.map fun lc => { linearCombo := .of lc }
-  inequalities := p.inequalities.map .of
+  inequalities := p.inequalities.toArray.map .of
 
 @[simps]
 def to (p : Problem) : Omega.Problem where
   possible := p.possible
   equalities := p.equalities.map fun eq => LinearCombo.to eq.linearCombo
-  inequalities := p.inequalities.map LinearCombo.to
+  inequalities := p.inequalities.toList.map LinearCombo.to
 
 structure sat (p : Problem) (values : List Int) : Prop where
   possible : p.possible = true := by trivial
@@ -733,11 +781,11 @@ def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
 
 theorem of_eraseInequality_hasInequality {p : Problem} (w : (p.eraseInequality lc).hasInequality lc') :
     p.hasInequality lc' := by
-  simpa [hasInequality] using List.mem_of_mem_erase w
+  simpa [hasInequality] using Array.mem_of_mem_erase w
 
 theorem of_eraseEquality_hasEquality {p : Problem} (w : (p.eraseEquality e).hasEquality e') :
     p.hasEquality e' := by
-  simpa [hasEquality] using List.mem_of_mem_erase w
+  simpa only [hasEquality] using List.mem_of_mem_erase w
 
 theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
     (p.eraseEquality eq).sat v :=
@@ -781,7 +829,7 @@ def filterInequalities (p : Problem) (f : LinearCombo → Bool) : Problem :=
 
 @[simp] theorem filterInequalities_hasInequality {p : Problem} {f} :
     (p.filterInequalities f).hasInequality e ↔ p.hasInequality e ∧ f e := by
-  simp [List.mem_filter, hasInequality]
+  simp [Array.mem_filter, hasInequality]
 
 theorem filterEqualities_sat (p : Problem) (f) (v : List Int) (s : p.sat v) :
     (p.filterEqualities f).sat v :=
@@ -793,7 +841,7 @@ theorem filterInequalities_sat (p : Problem) (f) (v : List Int) (s : p.sat v) :
     (p.filterInequalities f).sat v :=
   { s with
     inequalities := fun m =>
-      s.inequalities (by simpa [hasInequality] using List.mem_of_mem_filter' m) }
+      s.inequalities (by simpa [hasInequality] using Array.mem_of_mem_filter m) }
 
 def filterEqualities_map (p : Problem) (f) :
     p → (p.filterEqualities f) :=
@@ -897,14 +945,14 @@ theorem sat_of_eraseRedundantInequality_sat
     (s : (p.eraseInequality b).sat v) : p.sat v :=
   { s with
     inequalities := fun m' => by
-      rw [hasInequality, List.mem_iff_mem_erase_or_eq _ _ b] at m'
+      rw [hasInequality, Array.mem_iff_mem_erase_or_eq _ _ b] at m'
       rcases m' with m' | ⟨rfl, m'⟩
       · apply s.inequalities
         exact m'
       · rcases lt with ⟨le, ne⟩
         apply LinearCombo.evalNonneg_of_le le
         apply s.inequalities
-        simpa using (List.mem_erase_of_ne ne).mpr m }
+        simpa using (Array.mem_erase_of_ne ne).mpr m }
 
 /--
 If `a < b` is a strict comparison between inequality constraints,
@@ -936,7 +984,7 @@ theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
 We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
 -/
 example :
-    let p : Problem := { inequalities := [{const:=-1, coeffs:=[1]}, {const:=0, coeffs:=[-1]}] };
+    let p : Problem := { inequalities := #[{const:=-1, coeffs:=[1]}, {const:=0, coeffs:=[-1]}] };
     p.unsat := by
   apply contradiction_of_neg_lt (a := {const:=-1, coeffs:=[1]}) (b := {const:=0, coeffs:=[-1]}) <;>
   simp (config := {decide := true})
@@ -964,7 +1012,7 @@ theorem checkContradictions_equalities_length (p : Problem) :
   · apply Nat.le_refl
 
 theorem checkContradictions_inequalities_length (p : Problem) :
-    p.checkContradictions.inequalities.length ≤ p.inequalities.length := by
+    p.checkContradictions.inequalities.size ≤ p.inequalities.size := by
   dsimp [checkContradictions]
   split
   · apply Nat.zero_le
@@ -978,9 +1026,12 @@ theorem checkContradictions_sat_iff (p : Problem) (v) : p.checkContradictions.sa
       simp_all
     · intro s
       simp only [not_sat_impossible]
-      simp only [List.any_eq_true, decide_eq_true_eq] at h
-      obtain ⟨a, ma, b, mb, w⟩ := h
-      exact p.contradiction_of_neg_lt ma mb w ⟨v, s⟩
+      -- simp only [List.any_eq_true, decide_eq_true_eq] at h
+      -- obtain ⟨a, ma, b, mb, w⟩ := h
+      -- exact p.contradiction_of_neg_lt ma mb w ⟨v, s⟩
+      simp only [Array.any_eq_true, decide_eq_true_eq] at h
+      obtain ⟨i, j, w⟩ := h
+      exact p.contradiction_of_neg_lt Array.getElem?_mem Array.getElem?_mem w ⟨v, s⟩
   · rfl
 
 def checkContradictions_equiv (p : Problem) : p.checkContradictions.equiv p :=
@@ -1045,10 +1096,10 @@ theorem processConstants_equalities_length (p : Problem) :
   · apply Nat.zero_le
 
 theorem processConstants_inequalities_length (p : Problem) :
-    p.processConstants.inequalities.length ≤ p.inequalities.length := by
+    p.processConstants.inequalities.size ≤ p.inequalities.size := by
   dsimp [processConstants]
   split
-  · apply List.length_filter_le
+  · apply Array.size_filter_le
   · apply Nat.zero_le
 
 theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstants.sat v := by
@@ -1057,7 +1108,7 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
   · exact Problem.filterEqualities_sat _ _ _ (Problem.filterInequalities_sat _ _ _ s)
   · exfalso
     simp only [Decidable.not_and] at w
-    simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
+    simp only [List.all_eq_true, Array.all_eq_true', List.mem_filterMap, Array.mem_filterMap, decide_eq_true_eq, forall_exists_index,
       and_imp, not_forall, exists_prop, exists_and_left] at w
     rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
     · have := s.equalities w
@@ -1070,8 +1121,8 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
 theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sat v) : p.sat v := by
   dsimp [processConstants] at s
   split at s <;> rename_i w
-  · simp only [List.all_eq_true, List.mem_filterMap, decide_eq_true_eq, forall_exists_index,
-      and_imp] at w
+  · simp only [List.all_eq_true, List.mem_filterMap, Array.all_eq_true', Array.mem_filterMap,
+      decide_eq_true_eq, forall_exists_index, and_imp] at w
     rcases w with ⟨eqs, ineqs⟩
     constructor
     · exact s.possible
@@ -1104,7 +1155,7 @@ example : processConstants { equalities := [{linearCombo := {const := 1}}] } = i
 example : processConstants { equalities := [{linearCombo := {const := 1}}] } |>.unsat := impossible_unsat
 example : Problem.unsat { equalities := [{linearCombo := {const := 1}}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
-example : Problem.unsat { inequalities := [{const := -1}] } :=
+example : Problem.unsat { inequalities := #[{const := -1}] } :=
   impossible_unsat ∘ (processConstants_equiv _).mpr
 
 theorem processConstants_equalities_of_equalitiesZero {p : Problem} (w : p.equalitiesZero) :
@@ -1301,11 +1352,11 @@ theorem tidy_equalities_length (p : Problem) :
     _ = p.equalities.length := List.length_map _ _
 
 theorem tidy_inequalities_length (p : Problem) :
-    p.tidy.inequalities.length ≤ p.inequalities.length :=
-  calc p.tidy.inequalities.length
-      ≤ p.normalize.processConstants.inequalities.length := checkContradictions_inequalities_length _
-    _ ≤ p.normalize.inequalities.length := processConstants_inequalities_length _
-    _ = p.inequalities.length := List.length_map _ _
+    p.tidy.inequalities.size ≤ p.inequalities.size :=
+  calc p.tidy.inequalities.size
+      ≤ p.normalize.processConstants.inequalities.size := checkContradictions_inequalities_length _
+    _ ≤ p.normalize.inequalities.size := processConstants_inequalities_length _
+    _ = p.inequalities.size := Array.size_map _ _
 
 def tidy_equiv (p : Problem) : p.tidy.equiv p :=
   (Problem.checkContradictions_equiv _).trans ((Problem.processConstants_equiv _).trans p.normalize_equiv)
@@ -1417,7 +1468,7 @@ theorem of_eliminateEquality_hasEquality (w : (eliminateEquality p a i).hasEqual
     (eliminateEquality p a i).hasInequality lc ↔
       ∃ lc', p.hasInequality lc' ∧ lc'.substitute i (a.solveFor i) = lc := by
   simp only [hasInequality]
-  simp only [eliminateEquality_inequalities, List.mem_map]
+  simp only [eliminateEquality_inequalities, Array.mem_map]
 
 theorem eliminateEquality_equalities_length (p : Problem) {a : Equality} (i : Nat)
     (ma : a ∈ p.equalities) :
@@ -1807,14 +1858,14 @@ def addAndEliminateEquality_equiv (p : Problem) (eq : Equality) (i : Nat)
 def numVars (p : Problem) : Nat :=
   List.foldr (Nat.max)
     (List.foldr (Nat.max) 0 (p.equalities.map (fun eq => eq.linearCombo.coeffs.length)))
-    (p.inequalities.map (fun ineq => ineq.coeffs.length))
+    (p.inequalities.toList.map (fun ineq => ineq.coeffs.length))
 
 theorem equality_length_le_numVars {p : Problem} {eq : Equality} (m : eq ∈ p.equalities) :
     eq.linearCombo.coeffs.length ≤ p.numVars := by
   dsimp [numVars]
   generalize p.equalities = equalities at m -- Sad we can't just `induction p.equalities`.
   -- Humans should not need to write proofs like this one.
-  induction p.inequalities with
+  induction p.inequalities.toList with
   | nil =>
     induction equalities with
     | nil => simp_all
@@ -1843,7 +1894,8 @@ theorem inequality_length_le_numVars
     {p : Problem} {ineq : LinearCombo} (m : ineq ∈ p.inequalities) :
     ineq.coeffs.length ≤ p.numVars := by
   dsimp [numVars]
-  generalize p.inequalities = inequalities at m
+  rw [← Array.mem_toList] at m
+  generalize p.inequalities.toList = inequalities at m
   induction inequalities with
   | nil => simp_all
   | cons ineq ineqs ih =>
@@ -2346,7 +2398,7 @@ decreasing_by
 Separate the inequalities in a problems into the lower bounds for a variable,
 the upper bounds for that variable, and the inequalities not involving that variable.
 -/
-def bounds (p : Problem) (i : Nat) : List LinearCombo × List LinearCombo × List LinearCombo :=
+def bounds (p : Problem) (i : Nat) : List LinearCombo × Array LinearCombo × Array LinearCombo :=
   let (relevant, irrelevant) := p.inequalities.partition fun ineq => ineq.coeff i ≠ 0
   let (lower, upper) := relevant.partition fun ineq => ineq.coeff i > 0
   (lower, upper, irrelevant)
@@ -2354,7 +2406,7 @@ def bounds (p : Problem) (i : Nat) : List LinearCombo × List LinearCombo × Lis
 theorem mem_of_mem_bounds_1 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).1) :
     lc ∈ p.inequalities := by
   simp [bounds] at h
-  exact List.mem_of_mem_filter' h
+  exact Array.mem_of_mem_filter h
 theorem mem_of_mem_bounds_2 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.1) :
     lc ∈ p.inequalities := by
   simp [bounds] at h
