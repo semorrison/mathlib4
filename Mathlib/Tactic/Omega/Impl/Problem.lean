@@ -12,8 +12,6 @@ import Mathlib.Tactic.Rewrites
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
-
-
 namespace Array
 
 @[simp] theorem data_length {l : Array α} : l.data.length = l.size := rfl
