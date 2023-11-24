@@ -13,6 +13,20 @@ def Lex' (α : Type _) := α
 instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+namespace Prod
+
+theorem mk.inj_iff' {a₁ a₂ : α} {b₁ b₂ : β} : (a₁, b₁) = (a₂, b₂) ↔ a₁ = a₂ ∧ b₁ = b₂ :=
+  Iff.of_eq (mk.injEq _ _ _ _)
+
+theorem ext_iff' {p q : α × β} : p = q ↔ p.1 = q.1 ∧ p.2 = q.2 := by
+  rw [mk.inj_iff']
+
+@[ext]
+theorem ext' {α β} {p q : α × β} (h₁ : p.1 = q.1) (h₂ : p.2 = q.2) : p = q :=
+  ext_iff'.2 ⟨h₁, h₂⟩
+
+end Prod
+
 /-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
 @[simp] theorem dite_eq_ite' [Decidable P] : (dite P (fun _ ↦ a) fun _ ↦ b) = ite P a b :=
   rfl

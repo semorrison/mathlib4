@@ -16,49 +16,152 @@ set_option relaxedAutoImplicit true
 
 namespace Array
 
+@[simp] theorem data_length {l : Array α} : l.data.length = l.size := rfl
+
+@[simp] theorem mem_data {a : α} {l : Array α} : a ∈ l.data ↔ a ∈ l := (mem_def _ _).symm
+
+@[simp] theorem not_mem_nil (a : α) : ¬ a ∈ #[] := fun.
+
+theorem getElem?_mem {l : Array α} {i : Fin l.size} : l[i] ∈ l := by
+  erw [Array.mem_def, getElem_eq_data_get]
+  apply List.get_mem
+
+theorem all_iff_forall (p : α → Bool) (as : Array α) (start stop) :
+    all as p start stop ↔ ∀ i : Fin as.size, start ≤ i.1 ∧ i.1 < stop → p as[i] := by
+  have := SatisfiesM_anyM_iff_exists (m := Id) (fun a => ! p a) as start stop (! p as[·]) (by simp)
+  rw [SatisfiesM_Id_eq] at this
+  dsimp [all, allM, Id.run]
+  rw [show ∀ b : Bool, (!b) = true ↔ !(b = true) by decide]
+  simp [this]
+
+theorem all_eq_true (p : α → Bool) (as : Array α) :
+    all as p ↔ ∀ i : Fin as.size, p as[i] := by simp [all_iff_forall, Fin.isLt]
+
+theorem all_def {p : α → Bool} (as : Array α) : as.all p = as.data.all p := by
+  rw [Bool.eq_iff_iff, all_eq_true, List.all_eq_true]; simp only [List.mem_iff_get]
+  constructor
+  · rintro w x ⟨r, rfl⟩
+    rw [← getElem_eq_data_get]
+    apply w
+  · intro w i
+    exact w as[i] ⟨i, (getElem_eq_data_get as i.2).symm⟩
+
+theorem all_eq_true_iff_forall_mem {l : Array α} : l.all p ↔ ∀ x, x ∈ l → p x := by
+  simp only [all_def, List.all_eq_true, mem_def]
+
+@[simp] theorem mem_map {f : α → β} {l : Array α} : b ∈ l.map f ↔ ∃ a, a ∈ l ∧ f a = b := by
+  simp only [mem_def, map_data, List.mem_map]
+
+@[simp] theorem filter_data (p : α → Bool) (l : Array α) :
+    (l.filter p).data = l.data.filter p := by
+  dsimp only [filter]
+  rw [foldl_eq_foldl_data]
+  generalize l.data = l
+  suffices ∀ a, (List.foldl (fun r a => if p a = true then push r a else r) a l).data =
+      a.data ++ List.filter p l by
+    simpa using this #[]
+  induction l
+  · simp_all
+  · simp only [List.filter_cons]
+    split <;> simp_all
+
+@[simp] theorem filter_filter (q) (l : Array α) :
+    filter p (filter q l) = filter (fun a => p a ∧ q a) l := by
+  apply ext'
+  simp only [filter_data, List.filter_filter]
+
 theorem size_filter_le (p : α → Bool) (l : Array α) :
-    (l.filter p).size ≤ l.size := sorry
+    (l.filter p).size ≤ l.size := by
+  simp only [← data_length, filter_data]
+  apply List.length_filter_le
 
-@[simp] theorem mem_data {a : α} {l : Array α} : a ∈ l.data ↔ a ∈ l :=
-  sorry
-
-@[simp] theorem mem_toList {a : α} {l : Array α} : a ∈ l.toList ↔ a ∈ l :=
-  sorry
-
-@[simp] theorem mem_map {f : α → β} {l : Array α} : b ∈ l.map f ↔ ∃ a, a ∈ l ∧ f a = b :=
-  -- Presumably this should be proved by using `List.mem_map` on `l.toData`.
-  -- How to do so ergonomically?
-  sorry
-
-theorem mem_filter : x ∈ filter p as ↔ x ∈ as ∧ p x := sorry
+theorem mem_filter : x ∈ filter p as ↔ x ∈ as ∧ p x := by
+  simp only [mem_def, filter_data, List.mem_filter]
 
 theorem mem_of_mem_filter {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
   (mem_filter.mp h).1
 
-@[simp] theorem mem_filterMap (f : α → Option β) (l : Array α) {b : β} :
-    b ∈ filterMap f l ↔ ∃ a, a ∈ l ∧ f a = some b := sorry
+@[simp] theorem filterMap_data (f : α → Option β) (l : Array α) :
+    (l.filterMap f).data = l.data.filterMap f := by
+  dsimp only [filterMap, filterMapM]
+  rw [foldlM_eq_foldlM_data]
+  generalize l.data = l
+  have this : ∀ a : Array β, (Id.run (List.foldlM (m := Id) ?_ a l)).data =
+    a.data ++ List.filterMap f l := ?_
+  exact this #[]
+  induction l
+  · simp_all [Id.run]
+  · simp_all [Id.run]
+    split <;> simp_all
 
-theorem mem_of_mem_erase [DecidableEq α] {a b : α} {l : Array α} (h : a ∈ l.erase b) : a ∈ l := sorry
+@[simp] theorem mem_filterMap (f : α → Option β) (l : Array α) {b : β} :
+    b ∈ filterMap f l ↔ ∃ a, a ∈ l ∧ f a = some b := by
+  simp only [mem_def, filterMap_data, List.mem_filterMap]
+
+@[simp] theorem erase_data [BEq α] (l : Array α) (a : α) : (l.erase a).data = l.data.erase a := by
+  sorry
+
+theorem mem_of_mem_erase [DecidableEq α] {a b : α} {l : Array α} (h : a ∈ l.erase b) : a ∈ l := by
+  simp only [mem_def, erase_data] at *
+  exact List.mem_of_mem_erase h
 
 @[simp] theorem mem_erase_of_ne [DecidableEq α] {a b : α} {l : Array α} (ab : a ≠ b) :
-    a ∈ l.erase b ↔ a ∈ l := sorry
+    a ∈ l.erase b ↔ a ∈ l := by
+  simp only [mem_def, erase_data, List.mem_erase_of_ne ab]
 
 theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : Array α) (a b : α) :
-    a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := sorry
+    a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
+  simp only [mem_def, erase_data]
+  apply List.mem_iff_mem_erase_or_eq
 
-@[simp] theorem not_mem_nil (a : α) : ¬ a ∈ #[] := fun.
+-- @[simp] theorem partition_fst_data (p : α → Bool) (l : Array α) :
+--     (partition p l).fst.data = (List.partition p l.data).fst := by
+--   sorry
 
-theorem getElem?_mem {l : Array α} {i : Fin l.size} : l[i] ∈ l := sorry
+-- @[simp] theorem partition_eq_filter_filter (p : α → Bool) (l : Array α) :
+--     partition p l = (filter p l, filter (not ∘ p) l) := by
+--   ext
+--   apply ext'
+--   all_goals sorry
 
-theorem all_eq_true {l : Array α} : l.all p ↔ ∀ i : Fin l.size, p l[i] := sorry
-theorem all_eq_true' {l : Array α} : l.all p ↔ ∀ x, x ∈ l → p x := sorry
+
+/--
+`O(|join L|)`. `join L` concatenates all the arrays in `L` into one array.
+* `join #[#[a], #[], #[b, c], #[d, e, f]] = #[a, b, c, d, e, f]`
+-/
+def join (l : Array (Array α)) : Array α :=
+  l.foldl (init := #[]) fun a m => m.foldl (init := a) fun a' x => a'.push x
+
+@[simp] theorem join_data {l : Array (Array α)} : l.join.data = (l.data.map data).join := by
+  dsimp [join]
+  simp only [foldl_eq_foldl_data]
+  generalize l.data = l
+  have : ∀ a : Array α, (List.foldl ?_ a l).data = a.data ++ ?_ := ?_
+  exact this #[]
+  induction l with
+  | nil => simp_all
+  | cons h t ih =>
+    simp only [List.foldl_cons, ih, List.map_cons, List.join_cons, ← List.append_assoc]
+    induction h.data <;> simp_all
+
+theorem mem_join : ∀ {L : Array (Array α)}, a ∈ L.join ↔ ∃ l, l ∈ L ∧ a ∈ l := by
+  simp only [mem_def, join_data, List.mem_join, List.mem_map]
+  intro l
+  constructor
+  · rintro ⟨_, ⟨s, m, rfl⟩, h⟩
+    exact ⟨s, m, h⟩
+  · rintro ⟨s, h₁, h₂⟩
+    refine ⟨s.data, ⟨⟨s, h₁, rfl⟩, h₂⟩⟩
+
+@[simp] theorem mem_append {a : α} {s t : Array α} : a ∈ s ++ t ↔ a ∈ s ∨ a ∈ t := by
+  simp only [mem_def, append_data, List.mem_append]
 
 end Array
 
 namespace List
 
-@[simp] theorem mem_toArray {a : α} {l : List α} : a ∈ l.toArray ↔ a ∈ l :=
-  sorry
+@[simp] theorem mem_toArray {a : α} {l : List α} : a ∈ l.toArray ↔ a ∈ l := by
+  simp [Array.mem_def]
 
 end List
 
@@ -1108,7 +1211,8 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
   · exact Problem.filterEqualities_sat _ _ _ (Problem.filterInequalities_sat _ _ _ s)
   · exfalso
     simp only [Decidable.not_and] at w
-    simp only [List.all_eq_true, Array.all_eq_true', List.mem_filterMap, Array.mem_filterMap, decide_eq_true_eq, forall_exists_index,
+    simp only [List.all_eq_true, Array.all_eq_true_iff_forall_mem, List.mem_filterMap,
+      Array.mem_filterMap, decide_eq_true_eq, forall_exists_index,
       and_imp, not_forall, exists_prop, exists_and_left] at w
     rcases w with (⟨c, eq, w, m, ne⟩ | ⟨c, eq, w, m, ne⟩)
     · have := s.equalities w
@@ -1121,8 +1225,8 @@ theorem processConstants_sat (p : Problem) (v) (s : p.sat v) : p.processConstant
 theorem sat_of_processConstants_sat (p : Problem) (v) (s : p.processConstants.sat v) : p.sat v := by
   dsimp [processConstants] at s
   split at s <;> rename_i w
-  · simp only [List.all_eq_true, List.mem_filterMap, Array.all_eq_true', Array.mem_filterMap,
-      decide_eq_true_eq, forall_exists_index, and_imp] at w
+  · simp only [List.all_eq_true, List.mem_filterMap, Array.all_eq_true_iff_forall_mem,
+      Array.mem_filterMap, decide_eq_true_eq, forall_exists_index, and_imp] at w
     rcases w with ⟨eqs, ineqs⟩
     constructor
     · exact s.possible
@@ -1858,14 +1962,14 @@ def addAndEliminateEquality_equiv (p : Problem) (eq : Equality) (i : Nat)
 def numVars (p : Problem) : Nat :=
   List.foldr (Nat.max)
     (List.foldr (Nat.max) 0 (p.equalities.map (fun eq => eq.linearCombo.coeffs.length)))
-    (p.inequalities.toList.map (fun ineq => ineq.coeffs.length))
+    (p.inequalities.data.map (fun ineq => ineq.coeffs.length))
 
 theorem equality_length_le_numVars {p : Problem} {eq : Equality} (m : eq ∈ p.equalities) :
     eq.linearCombo.coeffs.length ≤ p.numVars := by
   dsimp [numVars]
   generalize p.equalities = equalities at m -- Sad we can't just `induction p.equalities`.
   -- Humans should not need to write proofs like this one.
-  induction p.inequalities.toList with
+  induction p.inequalities.data with
   | nil =>
     induction equalities with
     | nil => simp_all
@@ -1894,8 +1998,8 @@ theorem inequality_length_le_numVars
     {p : Problem} {ineq : LinearCombo} (m : ineq ∈ p.inequalities) :
     ineq.coeffs.length ≤ p.numVars := by
   dsimp [numVars]
-  rw [← Array.mem_toList] at m
-  generalize p.inequalities.toList = inequalities at m
+  rw [← Array.mem_data] at m
+  generalize p.inequalities.data = inequalities at m
   induction inequalities with
   | nil => simp_all
   | cons ineq ineqs ih =>
@@ -2398,23 +2502,32 @@ decreasing_by
 Separate the inequalities in a problems into the lower bounds for a variable,
 the upper bounds for that variable, and the inequalities not involving that variable.
 -/
-def bounds (p : Problem) (i : Nat) : List LinearCombo × Array LinearCombo × Array LinearCombo :=
-  let (relevant, irrelevant) := p.inequalities.partition fun ineq => ineq.coeff i ≠ 0
+def bounds (p : Problem) (i : Nat) : List LinearCombo × List LinearCombo × List LinearCombo :=
+  let (relevant, irrelevant) := p.inequalities.data.partition fun ineq => ineq.coeff i ≠ 0
   let (lower, upper) := relevant.partition fun ineq => ineq.coeff i > 0
   (lower, upper, irrelevant)
 
 theorem mem_of_mem_bounds_1 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).1) :
     lc ∈ p.inequalities := by
-  simp [bounds] at h
+  simp only [bounds, gt_iff_lt, ne_eq, decide_not, List.partition_eq_filter_filter,
+    List.filter_filter, decide_eq_true_eq, Bool.not_eq_true', decide_eq_false_iff_not,
+    Function.comp_apply] at h
+  simp only [← Array.filter_data, ← Array.mem_def] at h
   exact Array.mem_of_mem_filter h
 theorem mem_of_mem_bounds_2 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.1) :
     lc ∈ p.inequalities := by
-  simp [bounds] at h
-  exact List.mem_of_mem_filter' h
+  simp only [bounds, gt_iff_lt, ne_eq, decide_not, List.partition_eq_filter_filter,
+    List.filter_filter, decide_eq_true_eq, Bool.not_eq_true', decide_eq_false_iff_not,
+    Function.comp_apply] at h
+  simp only [← Array.filter_data, ← Array.mem_def] at h
+  exact Array.mem_of_mem_filter h
 theorem mem_of_mem_bounds_3 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).2.2) :
     lc ∈ p.inequalities := by
-  simp [bounds] at h
-  exact List.mem_of_mem_filter' h
+  simp only [bounds, gt_iff_lt, ne_eq, decide_not, List.partition_eq_filter_filter,
+    List.filter_filter, decide_eq_true_eq, Bool.not_eq_true', decide_eq_false_iff_not,
+    Function.comp_apply] at h
+  simp only [← Array.filter_data, ← Array.mem_def] at h
+  exact Array.mem_of_mem_filter h
 
 theorem coeff_of_mem_bounds_1 {p : Problem} {i : Nat} (h : lc ∈ (p.bounds i).1) :
     lc.coeff i > 0 := by simp_all [bounds, List.mem_filter]
@@ -2451,37 +2564,42 @@ theorem combineBounds_eval (lower upper : LinearCombo) (i : Nat)
 def realShadow (p : Problem) (i : Nat) : Problem :=
   let (lower, upper, irrelevant) := p.bounds i
   if lower.length = 0 ∨ upper.length = 0 then
-    { p with inequalities := irrelevant }
+    { p with inequalities := irrelevant.toArray }
   else
-    let combined := lower.bind fun l => upper.map fun u => combineBounds l u i
-    { p with inequalities := irrelevant ++ combined }
+    let combined := (lower.map fun l => upper.map fun u => combineBounds l u i).join
+    { p with inequalities := (irrelevant ++ combined).toArray }
 
 def realShadow_map (p : Problem) (i : Nat) : p → p.realShadow i :=
   fun ⟨v, h⟩ => ⟨v, by
     dsimp [realShadow]
     split <;> rename_i w
     · exact { h with
-        inequalities := @fun lc m => h.inequalities (mem_of_mem_bounds_3 m) }
-    · exact { h with
+        inequalities := @fun lc m => h.inequalities (mem_of_mem_bounds_3 (List.mem_toArray.mp m)) }
+    · rcases h with ⟨po, e, i⟩
+      exact {
+        possible := po
+        equalities := @fun eq m => e m
         inequalities := @fun lc m => by
-          simp [hasInequality] at m
+          simp only [hasInequality, List.mem_toArray, List.mem_append] at m
           rcases m with m|m
-          · exact h.inequalities (mem_of_mem_bounds_3 m)
-          · simp only [List.mem_bind, List.mem_map] at m
-            obtain ⟨l, ml, u, mu, rfl⟩ := m
+          · exact i (mem_of_mem_bounds_3 m)
+          · simp only [List.mem_join, List.mem_map] at m
+            obtain ⟨_, ⟨l, ml, rfl⟩, mu⟩ := m
+            simp only [List.mem_map] at mu
+            obtain ⟨u, mu, rfl⟩ := mu
             apply combineBounds_eval
             · exact coeff_of_mem_bounds_1 ml
             · exact coeff_of_mem_bounds_2 mu
-            · exact h.inequalities (mem_of_mem_bounds_1 ml)
-            · exact h.inequalities (mem_of_mem_bounds_2 mu) }⟩
+            · exact i (mem_of_mem_bounds_1 ml)
+            · exact i (mem_of_mem_bounds_2 mu) }⟩
 
 -- TODO these next four functions should probably be cached, or computed all at once, etc.
 
 def minimumInequalityCoeff (p : Problem) (i : Nat) : Option Int :=
-  (p.inequalities.map fun ineq => ineq.coeff i).minimum?
+  (p.inequalities.map fun ineq => ineq.coeff i).toList.minimum?
 
 def maximumInequalityCoeff (p : Problem) (i : Nat) : Option Int :=
-  (p.inequalities.map fun ineq => ineq.coeff i).maximum?
+  (p.inequalities.map fun ineq => ineq.coeff i).toList.maximum?
 
 def countLowerBounds (p : Problem) (i : Nat) : Nat := (p.bounds i).1.length
 def countUpperBounds (p : Problem) (i : Nat) : Nat := (p.bounds i).2.1.length
