@@ -565,7 +565,7 @@ instance : ToString Problem where
         "trivial"
       else
         "\n".intercalate <|
-          (p.equalities.map fun e => s!"{e}") ++(p.inequalities.map fun e => s!"{e} ≥ 0")
+          (p.equalities.map fun e => s!"{e}") ++ (p.inequalities.map fun e => s!"{e} ≥ 0")
     else
       "impossible"
 

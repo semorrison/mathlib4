@@ -5,11 +5,12 @@ import Mathlib.Tactic.Omega.Impl.MinNatAbs
 import Mathlib.Tactic.Omega.Impl.bmod
 import Qq
 import Mathlib.Tactic.LibrarySearch
+import Mathlib.Util.Time
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
-open Std (HashMap RBSet RBMap)
+open Std (HashMap RBSet RBMap AssocList)
 
 namespace Std.HashMap
 
@@ -17,6 +18,14 @@ def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bo
   m.fold (init := true) fun r a b => r && f a b
 
 end Std.HashMap
+
+namespace Std.AssocList
+
+def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
+  | .nil => .cons a b .nil
+  | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
+
+end Std.AssocList
 
 inductive Bound
 | lowerBound (x : Int)
@@ -41,6 +50,15 @@ deriving BEq, Repr
 
 namespace Constraint
 
+instance : ToString Constraint where
+  toString := fun
+  | impossible => "∅"
+  | .lowerBound x => s!"[{x}, ∞)"
+  | .upperBound y => s!"(-∞, {y}]"
+  | .between x y => s!"[{x}, {y}]"
+  | .exact x => s!"\{{x}}"
+  | .trivial => s!"(-∞, ∞)"
+
 def sat : Constraint → Int → Bool
 | .impossible, _ => false
 | .lowerBound x, y => x ≤ y
@@ -57,19 +75,35 @@ def translate : Constraint → Int → Constraint
 | .exact x, t => .exact (x + t)
 | .trivial, _ => .trivial
 
+def neg : Constraint → Constraint
+| .impossible => .impossible
+| .lowerBound x => .upperBound (-x)
+| .upperBound y => .lowerBound (-y)
+| .between x y => .between (-y) (-x)
+| .exact x => .exact (-x)
+| .trivial => .trivial
+
 theorem translate_sat : sat c v → sat (c.translate t) (v + t) := sorry
+
+def interval (x y : Int) : Constraint :=
+  if y < x then
+    .impossible
+  else if x = y then
+    .exact x
+  else
+    .between x y
 
 def combine_bound : Constraint → Bound → Constraint
 | .impossible, .lowerBound _ => .impossible
 | .impossible, .upperBound _ => .impossible
 | .lowerBound x, .lowerBound w => if x < w then .lowerBound w else .lowerBound x
-| .lowerBound x, .upperBound z => if z < x then .impossible else .between x z
-| .upperBound y, .lowerBound w => if y < w then .impossible else .between w y
+| .lowerBound x, .upperBound z => interval x z
+| .upperBound y, .lowerBound w => interval w y
 | .upperBound y, .upperBound z => if y < z then .upperBound y else .upperBound y
 | .between x y, .lowerBound w =>
-  if y < w then .impossible else if x ≤ w then .between w y else .between x y
+  if x ≤ w then interval w y else .between x y
 | .between x y, .upperBound z =>
-  if z < x then .impossible else if z ≤ y then .between x z else .between x y
+  if z ≤ y then interval x z else .between x y
 | .exact x, .lowerBound w => if w ≤ x then .exact x else .impossible
 | .exact x, .upperBound z => if x ≤ z then .exact x else .impossible
 | .trivial, .lowerBound w => .lowerBound w
@@ -106,7 +140,10 @@ def div : Constraint → Nat → Constraint
 | .impossible, _ => .impossible
 | .lowerBound x, k => .lowerBound (- ((- x) / k))
 | .upperBound y, k => .upperBound (y / k)
-| .between x y, k => .between (- ((- x) / k)) (y / k) -- Careful, this could become an `.exact`
+| .between x y, k =>
+  let x' := - ((- x) / k)
+  let y' := y / k
+  if x'  = y' then .exact x' else .between x' y'
 | .exact x, k => if (k : Int) ∣ x then .exact (x / k) else .impossible
 | .trivial, _ => .trivial
 
@@ -114,7 +151,7 @@ end Constraint
 
 structure Coefficients where
   coeffs : List Int
-  -- spec: first nonzero entry is nonnegative
+  -- spec: first nonzero entry is nonnegative, and no trailing zeroes?
   gcd : Nat := IntList.gcd coeffs
   -- gcd_spec
 
@@ -125,8 +162,21 @@ structure Coefficients where
 
   maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
   -- maxNatAbs_spec
-deriving BEq, Repr
+deriving Repr, DecidableEq
+
 namespace Coefficients
+
+instance : Ord Coefficients where
+  compare x y := compareOfLessAndEq x.coeffs y.coeffs
+
+instance : BEq Coefficients where
+  beq x y := x.coeffs == y.coeffs
+
+-- TODO remove the `DecidableEq` instance, which compares determined fields,
+-- in favour of a `LawfulBEq` instance.
+
+instance : ToString Coefficients where
+  toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
 
 def eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
 
@@ -138,7 +188,7 @@ instance : Hashable Coefficients := ⟨hash⟩
 example : hash ({ coeffs := [1, 2] } : Coefficients) = 22983 := rfl
 
 def div_gcd (c : Coefficients) : Coefficients :=
-  { coeffs := IntList.sdiv c.coeffs c.gcd
+  { coeffs := IntList.sdiv c.coeffs c.gcd |>.trim
     gcd := 1
     minNatAbs := c.minNatAbs / c.gcd }
 
@@ -191,18 +241,29 @@ end Coefficients
 --   m.values[i]?
 
 structure Problem where
-  constraints : HashMap Coefficients Constraint := ∅
+  constraints : RBMap Coefficients Constraint compare := ∅
 
   possible : Bool := true
   -- possible_spec : ¬ ∃ c, contraints.find? c matches some (.impossible)
 
-  equalities : HashMap Coefficients Unit := ∅
+  equalities : RBSet Coefficients compare := ∅
   -- equalities_spec : ∀ i, equalities.contains i ↔ constraints.find? i matches some (.exact _)
 
   -- lowerBounds : Array (HashSet Nat)
   -- lowerBounds_spec :
   -- upperBounds : Array (HashSet Nat)
 
+
+instance : ToString Problem where
+  toString p :=
+    if p.possible then
+      if p.constraints.isEmpty then
+        "trivial"
+      else
+        "\n".intercalate <|
+          (p.constraints.toList.map fun ⟨coeffs, cst⟩ => s!"{coeffs} ∈ {cst}")
+    else
+      "impossible"
 
 structure Inequality where
   coeffs : Coefficients
@@ -230,26 +291,23 @@ def normalize (i : Inequality) : Inequality :=
 theorem normalize_sat {i : Inequality} : i.normalize.sat v = i.sat v :=
   sorry
 
-/-- Convert `const + ∑ coeffs[i] * xᵢ ≥ 0` into an `Inequality`. -/
-def of_le (coeffs : List Int) (const : Int) : Inequality :=
+def of (coeffs : List Int) (cst : Constraint) : Inequality :=
+  let coeffs := IntList.trim coeffs
   normalize <|
   if 0 ≤ (coeffs.find? (! · == 0) |>.getD 0) then
     { coeffs := { coeffs }
-      cst := .lowerBound (- const) }
+      cst := cst }
   else
     { coeffs := { coeffs := IntList.smul coeffs (-1) }
-      cst := .upperBound const }
+      cst := cst.neg }
+
+/-- Convert `const + ∑ coeffs[i] * xᵢ ≥ 0` into an `Inequality`. -/
+def of_le (coeffs : List Int) (const : Int) : Inequality :=
+  of coeffs (.lowerBound (-const))
 
 /-- Convert `const + ∑ coeffs[i] * xᵢ = 0` into an `Inequality`. -/
 def of_eq (coeffs : List Int) (const : Int) : Inequality :=
-  normalize <|
-  if 0 ≤ (coeffs.find? (! · == 0) |>.getD 0) then
-    { coeffs := { coeffs }
-      cst := .exact (- const) }
-  else
-    { coeffs := { coeffs := IntList.smul coeffs (-1) }
-      cst := .exact const }
-
+  of coeffs (.exact (-const))
 
 theorem of_le_sat {coeffs const} : (of_le coeffs const).sat v = (0 ≤ (IntList.dot coeffs v) + const) :=
   sorry
@@ -276,7 +334,7 @@ def addInequality (p : Problem) (ineq : Inequality) : Problem :=
         -- possible_spec := sorry
         equalities :=
         if cst' matches .exact _ then
-          p.equalities.insert ineq.coeffs ()
+          p.equalities.insert ineq.coeffs
         else
           p.equalities
         -- equalities_spec := sorry
@@ -306,28 +364,27 @@ example : (Problem.addInequalities {}
     [Inequality.of_eq [2] 1] |>.possible) = false := rfl
 
 def selectEquality (p : Problem) : Option Coefficients :=
-  p.equalities.fold (init := none) fun
-  | none, c, _ => c
-  | some r, c, _ => if c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs then c else r
+  p.equalities.foldl (init := none) fun
+  | none, c => c
+  | some r, c => if c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs then c else r
 
 def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
   let i := c.coeffs.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
   let sign := c.coeffs.get? i |>.getD 0 |> Int.sign
   match p.constraints.find? c with
   | some (.exact r) =>
-    let constraints := p.constraints.fold (init := ∅) fun m coeffs cst =>
+    p.constraints.foldl (init := {}) fun p' coeffs cst =>
       match coeffs.coeffs.get? i |>.getD 0 with
-      | 0 => m.insert coeffs cst
+      | 0 =>
+        p'.addInequality ⟨coeffs, cst⟩
       | ci =>
         let k := -1 * sign * ci
-        let new : Inequality := .normalize
-          { coeffs := { coeffs := coeffs.coeffs + IntList.smul c.coeffs k }
-            cst := cst.translate (k * r) }
-        m.insert new.coeffs new.cst
-    { constraints }
+        p'.addInequality <| .of
+          (coeffs.coeffs + IntList.smul c.coeffs k)
+          (cst.translate (k * r))
   | _ => unreachable!
 
-def freshVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.coeffs.length
+def freshVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.coeffs.length
 
 /--
 We deal with a hard equality by introducing a new easy equality.
@@ -345,27 +402,21 @@ def dealWithHardEquality (p : Problem) (c : Coefficients) : Problem :=
         { coeffs := IntList.add (c.coeffs.map fun x => Int.bmod x m)
             (List.replicate j 0 ++ [- (m : Int)]) }
         cst := .exact (Int.bmod r m) }
-  | _ => unreachable!
+  | cst =>
+    dbgTrace (toString cst)
+      fun _ => unreachable!
 
 def solveEquality (p : Problem) (c : Coefficients) : Problem :=
-  if c.gcd = 1 then
+  if c.minNatAbs = 1 then
     p.solveEasyEquality c
   else
     p.dealWithHardEquality c
 
-partial def solveEqualities (p : Problem) : Problem :=
+def solveEqualities (p : Problem) (fuel : Nat := 100) : Problem :=
+  match fuel with
+  | 0 => p
+  | f + 1 =>
+  -- dbgTrace ("---\n" ++ toString p) fun _ =>
   match p.selectEquality with
-  | some c => (p.solveEquality c).solveEqualities
+  | some c => (p.solveEquality c).solveEqualities f
   | none => p
-
-def ex1 : Problem := Problem.addInequalities {}
-    [Inequality.of_eq [7, 12, 31] (-17), Inequality.of_eq [3, 5, 24] (-7)]
-
-example : ex1.possible = true := rfl
-
-#eval ex1.constraints.toList
-
-#eval ex1.equalities.toList
-
-example : (Problem.addInequalities {}
-    [Inequality.of_eq [2] 1] |>.possible) = false := rfl
