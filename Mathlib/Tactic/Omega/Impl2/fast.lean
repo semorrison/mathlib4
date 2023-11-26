@@ -12,13 +12,19 @@ set_option relaxedAutoImplicit true
 
 open Std (HashMap RBSet RBMap AssocList)
 
+namespace List
+
+@[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
+  if l.elem a then l else a :: l
+
+end List
+
 namespace Std.HashMap
 
 def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
   m.fold (init := true) fun r a b => r && f a b
 
 end Std.HashMap
-
 namespace Std.AssocList
 
 def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
@@ -149,6 +155,9 @@ def div : Constraint → Nat → Constraint
 
 end Constraint
 
+def hashIntList (v : List Int) : UInt64 :=
+  v.foldl (init := 37) fun r x => 7 * r + Hashable.hash (73 * (x + 17))
+
 structure Coefficients where
   coeffs : List Int
   -- spec: first nonzero entry is nonnegative, and no trailing zeroes?
@@ -156,13 +165,14 @@ structure Coefficients where
   -- gcd_spec
 
   -- TODO cache the hash
+  hash : UInt64 := hashIntList coeffs
 
   minNatAbs : Nat := coeffs.minNatAbs
   -- minNatAbs_spec
 
   maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
   -- maxNatAbs_spec
-deriving Repr, DecidableEq
+deriving Repr
 
 namespace Coefficients
 
@@ -170,7 +180,7 @@ instance : Ord Coefficients where
   compare x y := compareOfLessAndEq x.coeffs y.coeffs
 
 instance : BEq Coefficients where
-  beq x y := x.coeffs == y.coeffs
+  beq x y := x.hash == y.hash && x.coeffs == y.coeffs
 
 -- TODO remove the `DecidableEq` instance, which compares determined fields,
 -- in favour of a `LawfulBEq` instance.
@@ -179,8 +189,6 @@ instance : ToString Coefficients where
   toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
 
 def eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
-
-def hash (c : Coefficients) : UInt64 := c.coeffs.foldl (init := 37) fun r x => 7 * r + Hashable.hash (73 * (x + 17))
 
 instance : Hashable Coefficients := ⟨hash⟩
 
@@ -241,12 +249,12 @@ end Coefficients
 --   m.values[i]?
 
 structure Problem where
-  constraints : RBMap Coefficients Constraint compare := ∅
+  constraints : AssocList Coefficients Constraint := ∅
 
   possible : Bool := true
   -- possible_spec : ¬ ∃ c, contraints.find? c matches some (.impossible)
 
-  equalities : RBSet Coefficients compare := ∅
+  equalities : List Coefficients := ∅
   -- equalities_spec : ∀ i, equalities.contains i ↔ constraints.find? i matches some (.exact _)
 
   -- lowerBounds : Array (HashSet Nat)
@@ -334,7 +342,7 @@ def addInequality (p : Problem) (ineq : Inequality) : Problem :=
         -- possible_spec := sorry
         equalities :=
         if cst' matches .exact _ then
-          p.equalities.insert ineq.coeffs
+          p.equalities.insert' ineq.coeffs
         else
           p.equalities
         -- equalities_spec := sorry
@@ -366,7 +374,7 @@ example : (Problem.addInequalities {}
 def selectEquality (p : Problem) : Option Coefficients :=
   p.equalities.foldl (init := none) fun
   | none, c => c
-  | some r, c => if c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs then c else r
+  | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
 def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
   let i := c.coeffs.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some

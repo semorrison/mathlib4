@@ -197,3 +197,32 @@ theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p 
     split <;> simp_all
 
 end List
+
+-- Currently not even using
+namespace UInt64
+
+attribute [ext] UInt64
+
+protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b := rfl
+protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
+protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
+
+@[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
+  rw [UInt64.le_def, UInt64.lt_def]
+  exact Fin.not_le
+
+protected theorem min_comm {a b : UInt64} : min a b = min b a := by
+  ext
+  have min_val_val : ∀ a b : UInt64, (min a b).val.val = min a.val.val b.val.val := by
+    intros
+    simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
+    split <;> rfl
+  simp [min_val_val, Nat.min_comm]
+
+protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
+  simp [UInt64.min_def, h]
+
+protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
+  rw [UInt64.min_comm]; exact UInt64.min_eq_left h
+
+end UInt64
