@@ -7,8 +7,9 @@ date && git rev-parse HEAD && \
 hyperfine "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231126.lean"
 ```
 
+Use any2
 Sun Nov 26 21:28:22 AEDT 2023
-31871f94d5809dff7a6c24d1ece9355f0e7ae4ac
+5520e81760522b8ecec02f157da1aca3e25a359e
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231126.lean
   Time (mean ± σ):     568.1 ms ±   4.5 ms    [User: 434.8 ms, System: 123.9 ms]
   Range (min … max):   563.4 ms … 578.4 ms    10 runs
