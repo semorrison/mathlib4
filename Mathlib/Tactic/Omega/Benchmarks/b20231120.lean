@@ -40,6 +40,27 @@ bb9af0b5e44cb55d36d7baae6062a53ff94c2134
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
   Time (mean ± σ):      3.754 s ±  0.006 s    [User: 3.569 s, System: 0.176 s]
   Range (min … max):    3.745 s …  3.765 s    10 runs
+
+Before gcd_spec
+Sun Nov 26 17:37:07 AEDT 2023
+5562f7bac2590f0a7d6464cab98949bf04e5fb02
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.748 s ±  0.011 s    [User: 3.568 s, System: 0.172 s]
+  Range (min … max):    3.730 s …  3.764 s    10 runs
+
+gcd_spec but not taking advantage of it
+Sun Nov 26 17:39:23 AEDT 2023
+0852452e555aff5b4a1d61111e8eb37ba971dde9
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.845 s ±  0.007 s    [User: 3.622 s, System: 0.214 s]
+  Range (min … max):    3.832 s …  3.855 s    10 runs
+
+gcd_spec, at the cost of some new sorries
+Sun Nov 26 17:49:58 AEDT 2023
+0852452e555aff5b4a1d61111e8eb37ba971dde9
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.739 s ±  0.004 s    [User: 3.550 s, System: 0.180 s]
+  Range (min … max):    3.735 s …  3.745 s    5 runs
 -/
 
 example : True := by
