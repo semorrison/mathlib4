@@ -13,7 +13,133 @@ import Mathlib.Tactic.Rewrites
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+theorem cond_eq_if : (bif b then x else y) = (if b then x else y) := by
+  cases b <;> simp
 
+namespace List
+
+theorem foldrIdx_start :
+    (xs : List α).foldrIdx f i s = (xs : List α).foldrIdx (fun i => f (i + s)) i := by
+  induction xs generalizing f i s with
+  | nil => rfl
+  | cons h t ih =>
+    dsimp [foldrIdx]
+    simp only [@ih f]
+    simp only [@ih (fun i => f (i + s))]
+    simp [Nat.add_assoc, Nat.add_comm 1 s]
+
+@[simp] theorem foldrIdx_cons :
+    (x :: xs : List α).foldrIdx f i s = f s x (foldrIdx f i xs (s + 1)) := rfl
+
+theorem findIdx_cons_aux (p : α → Bool) :
+    foldrIdx (fun i a is ↦ if p a = true then (i + 1) :: is else is) [] xs s =
+      map (fun x ↦ x + 1) (foldrIdx (fun i a is ↦ if p a = true then i :: is else is) [] xs s) := by
+  induction xs generalizing s with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [foldrIdx]
+    split <;> simp [ih]
+
+theorem findIdxs_cons :
+    (x :: xs : List α).findIdxs p =
+      bif p x then 0 :: (xs.findIdxs p).map (· + 1) else (xs.findIdxs p).map (· + 1) := by
+  dsimp [findIdxs]
+  rw [cond_eq_if]
+  split <;>
+  · simp only [Nat.zero_add, foldrIdx_start, Nat.add_zero, cons.injEq, true_and]
+    apply findIdx_cons_aux
+
+@[simp] theorem indexesOf_nil [BEq α] : ([] : List α).indexesOf x = [] := rfl
+theorem indexesOf_cons [BEq α] : (x :: xs : List α).indexesOf y =
+    bif x == y then 0 :: (xs.indexesOf y).map (· + 1) else (xs.indexesOf y).map (· + 1) := by
+  simp [indexesOf, findIdxs_cons]
+
+@[simp] theorem indexOf_nil [BEq α] : ([] : List α).indexOf x = 0 := rfl
+theorem indexOf_cons [BEq α] :
+    (x :: xs : List α).indexOf y = bif y == x then 0 else xs.indexOf y + 1 := by
+  dsimp [indexOf]
+  simp [findIdx_cons]
+
+-- FIXME `indexOf` and `indexesOf` use `a == ·` and `· == a`. Make these uniform!
+-- Then drop the `LawfulBEq`
+theorem indexOf_mem_indexesOf [BEq α] [LawfulBEq α] {xs : List α} (m : x ∈ xs) : xs.indexOf x ∈ xs.indexesOf x := by
+  induction xs with
+  | nil => simp_all
+  | cons h t ih =>
+    simp [indexOf_cons, indexesOf_cons, cond_eq_if]
+    split <;> rename_i w <;> simp at w
+    · rw [if_pos]
+      · apply mem_cons_self
+      · simp_all
+    · rw [if_neg]
+      · simp [w] at m
+        specialize ih m
+        simpa
+      · simp_all [Ne.symm]
+
+/-- Optimized version of `List.any`. -/
+def anyTR (xs : List α) (p : α → Bool) : Bool :=
+  go false xs
+where go : Bool → List α → Bool
+  | true, _ => true
+  | false, [] => false
+  | false, h :: t => go (p h) t
+
+@[csimp] theorem any_eq_anyTR : @any = @anyTR := by
+  funext α xs p
+  dsimp [any, anyTR]
+  induction xs with
+  | nil => simp [anyTR.go]
+  | cons h t ih =>
+    simp_all [anyTR.go]
+    by_cases w : p h
+    · simp [w, anyTR.go]
+    · simp [w]
+
+def any₂ (xs : List α) (p : α → α → Bool) : Bool :=
+  go false xs
+where go : Bool → List α → Bool
+  | true, _ => true
+  | false, [] => false
+  | false, h :: t => go (t.any (p h)) t
+
+@[simp] theorem any₂_nil : ([] : List α).any₂ p = false := rfl
+@[simp] theorem any₂_singleton : ([x] : List α).any₂ p = false := rfl
+
+-- TODO this should be an `iff`, but only one direction is needed for now.
+theorem any₂_spec [BEq α] [LawfulBEq α] {xs : List α} {p : α → α → Bool} (w : xs.any₂ p) :
+    ∃ x y, x ∈ xs ∧ y ∈ xs ∧ p x y ∧ ∃ i, i ∈ xs.indexesOf y ∧ xs.indexOf x ≤ i := by
+  induction xs with
+  | nil => simp_all
+  | cons x t ih =>
+    dsimp [any₂] at ih
+    dsimp [any₂, any₂.go] at w
+    by_cases r : t.any (p x)
+    · simp [any_eq_true] at r
+      obtain ⟨y, ym, r⟩ := r
+      refine ⟨x, y, ⟨mem_cons_self x t, mem_cons_of_mem x ym, r, ?_⟩⟩
+      refine ⟨t.indexOf y + 1, ?_⟩
+      constructor
+      · simp only [indexesOf_cons, cond_eq_if, beq_iff_eq]
+        split <;> simpa using indexOf_mem_indexesOf ym
+      · simp [indexOf_cons]
+    · simp [r] at w
+      specialize ih w
+      obtain ⟨x', y, xm, ym, h, ⟨i, im, le⟩⟩ := ih
+      refine ⟨x', y, mem_cons_of_mem x xm, mem_cons_of_mem x ym, h, ?_⟩
+      simp only [indexesOf_cons]
+      refine ⟨i + 1, ?_⟩
+      simp only [cond_eq_if]
+      split <;>
+      · constructor
+        · simp_all
+        · simp only [indexOf_cons]
+          by_cases h' : x' == x
+          · simp [h']
+          · simpa [h'] using Nat.add_le_add_right le 1
+
+
+end List
 
 open Classical
 
@@ -508,41 +634,41 @@ Erasing an inequality results in a larger solution space.
 -/
 namespace Problem
 
--- @[simps]
--- def eraseEquality (p : Problem) (eq : Equality) : Problem :=
---   { p with equalities := p.equalities.erase eq }
+@[simps]
+def eraseEquality (p : Problem) (eq : Equality) : Problem :=
+  { p with equalities := p.equalities.erase eq }
 
--- @[simps]
--- def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
---   { p with inequalities := p.inequalities.erase lc }
+@[simps]
+def eraseInequality (p : Problem) (lc : LinearCombo) : Problem :=
+  { p with inequalities := p.inequalities.erase lc }
 
--- theorem of_eraseInequality_hasInequality {p : Problem} (w : (p.eraseInequality lc).hasInequality lc') :
---     p.hasInequality lc' := by
---   simpa [hasInequality] using List.mem_of_mem_erase w
+theorem of_eraseInequality_hasInequality {p : Problem} (w : (p.eraseInequality lc).hasInequality lc') :
+    p.hasInequality lc' := by
+  simpa [hasInequality] using List.mem_of_mem_erase w
 
--- theorem of_eraseEquality_hasEquality {p : Problem} (w : (p.eraseEquality e).hasEquality e') :
---     p.hasEquality e' := by
---   simpa [hasEquality] using List.mem_of_mem_erase w
+theorem of_eraseEquality_hasEquality {p : Problem} (w : (p.eraseEquality e).hasEquality e') :
+    p.hasEquality e' := by
+  simpa [hasEquality] using List.mem_of_mem_erase w
 
--- theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
---     (p.eraseEquality eq).sat v :=
---   { s with
---     equalities := fun m => s.equalities (of_eraseEquality_hasEquality m) }
+theorem eraseEquality_sat (p : Problem) (eq : Equality) (v : List Int) (s : p.sat v) :
+    (p.eraseEquality eq).sat v :=
+  { s with
+    equalities := fun m => s.equalities (of_eraseEquality_hasEquality m) }
 
--- theorem eraseInequality_sat (p : Problem) (lc : LinearCombo) (v : List Int) (s : p.sat v) :
---     (p.eraseInequality lc).sat v :=
---   { s with
---     inequalities := fun m => s.inequalities (of_eraseInequality_hasInequality m) }
+theorem eraseInequality_sat (p : Problem) (lc : LinearCombo) (v : List Int) (s : p.sat v) :
+    (p.eraseInequality lc).sat v :=
+  { s with
+    inequalities := fun m => s.inequalities (of_eraseInequality_hasInequality m) }
 
--- /-- Any solution gives a solution after erasing an equality. -/
--- def eraseEquality_map (p : Problem) (eq : Equality) :
---     p → { p with equalities := p.equalities.erase eq } :=
---   map_of_sat (p.eraseEquality_sat eq)
+/-- Any solution gives a solution after erasing an equality. -/
+def eraseEquality_map (p : Problem) (eq : Equality) :
+    p → { p with equalities := p.equalities.erase eq } :=
+  map_of_sat (p.eraseEquality_sat eq)
 
--- /-- Any solution gives a solution after erasing an inequality. -/
--- def eraseInequality_map (p : Problem) (lc : LinearCombo) :
---     p → { p with inequalities := p.inequalities.erase lc } :=
---   map_of_sat (p.eraseInequality_sat lc)
+/-- Any solution gives a solution after erasing an inequality. -/
+def eraseInequality_map (p : Problem) (lc : LinearCombo) :
+    p → { p with inequalities := p.inequalities.erase lc } :=
+  map_of_sat (p.eraseInequality_sat lc)
 
 @[simps]
 def filterEqualities (p : Problem) (f : Equality → Bool) : Problem :=
@@ -671,37 +797,37 @@ theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v 
 
 end LinearCombo
 
--- namespace Problem
+namespace Problem
 
--- /--
--- If `a < b` is a strict comparison between inequality constraints,
--- in any problems containing `a`, we can discard `b`.
--- -/
--- theorem sat_of_eraseRedundantInequality_sat
---     (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) (v)
---     (s : (p.eraseInequality b).sat v) : p.sat v :=
---   { s with
---     inequalities := fun m' => by
---       rw [hasInequality, List.mem_iff_mem_erase_or_eq _ _ b] at m'
---       rcases m' with m' | ⟨rfl, m'⟩
---       · apply s.inequalities
---         exact m'
---       · rcases lt with ⟨le, ne⟩
---         apply LinearCombo.evalNonneg_of_le le
---         apply s.inequalities
---         simpa using (List.mem_erase_of_ne ne).mpr m }
+/--
+If `a < b` is a strict comparison between inequality constraints,
+in any problems containing `a`, we can discard `b`.
+-/
+theorem sat_of_eraseRedundantInequality_sat
+    (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) (v)
+    (s : (p.eraseInequality b).sat v) : p.sat v :=
+  { s with
+    inequalities := fun m' => by
+      rw [hasInequality, List.mem_iff_mem_erase_or_eq _ _ b] at m'
+      rcases m' with m' | ⟨rfl, m'⟩
+      · apply s.inequalities
+        exact m'
+      · rcases lt with ⟨le, ne⟩
+        apply LinearCombo.evalNonneg_of_le le
+        apply s.inequalities
+        simpa using (List.mem_erase_of_ne ne).mpr m }
 
--- /--
--- If `a < b` is a strict comparison between inequality constraints,
--- in any problems containing `a`, we can discard `b` to obtain an equivalent problem.
--- -/
--- def eraseRedundantInequality_equiv
---     (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) :
---     { p with inequalities := p.inequalities.erase b }.equiv p :=
---   equiv_of_sat_iff
---     fun v => ⟨p.sat_of_eraseRedundantInequality_sat lt m v, p.eraseInequality_sat b v⟩
+/--
+If `a < b` is a strict comparison between inequality constraints,
+in any problems containing `a`, we can discard `b` to obtain an equivalent problem.
+-/
+def eraseRedundantInequality_equiv
+    (p : Problem) {a b : LinearCombo} (lt : a < b) (m : a ∈ p.inequalities) :
+    { p with inequalities := p.inequalities.erase b }.equiv p :=
+  equiv_of_sat_iff
+    fun v => ⟨p.sat_of_eraseRedundantInequality_sat lt m v, p.eraseInequality_sat b v⟩
 
--- end Problem
+end Problem
 
 /-!
 We define negation of a linear combination,
@@ -717,18 +843,9 @@ theorem contradiction_of_neg_lt (p : Problem) {a b : LinearCombo}
   apply Int.lt_irrefl 0 (Int.lt_of_lt_of_le (Int.lt_of_le_of_lt (s.inequalities ma) this)
     (Int.neg_le_neg (s.inequalities mb)))
 
-/--
-We verify that `x - 1 ≥ 0` and `-x ≥ 0` have no solutions.
--/
-example :
-    let p : Problem := { inequalities := [{const:=-1, coeffs:=[1]}, {const:=0, coeffs:=[-1]}] };
-    p.unsat := by
-  apply contradiction_of_neg_lt (a := {const:=-1, coeffs:=[1]}) (b := {const:=0, coeffs:=[-1]}) <;>
-  simp (config := {decide := true})
-
-instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
-    Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
-  decidable_of_iff (∃ (a : α), a ∈ l ∧ p a) (exists_congr (fun _ => exists_prop.symm))
+-- instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, Decidable (p a)] :
+--     Decidable (∃ (a : α) (_ : a ∈ l), p a) :=
+--   decidable_of_iff (∃ (a : α), a ∈ l ∧ p a) (exists_congr (fun _ => exists_prop.symm))
 
 -- FIXME
 -- Dump redundant inequalities (i.e `a < b`)!
@@ -736,8 +853,12 @@ instance {α : Type _} [DecidableEq α] {l : List α} (p : α → Prop) [∀ a, 
 
 -- TODO make this efficient using the map
 def checkContradictions (p : Problem) : Problem :=
-  if p.inequalities.any fun a => p.inequalities.any fun b => a < -b then
-  -- if ∃ (a : LinearCombo) (_ : a ∈ p.inequalities) (b : LinearCombo) (_ : b ∈ p.inequalities), a < -b then
+  -- This looks unnecessarily quadratic:
+  -- one could use a map here, indexed by the coefficients.
+  -- However every variant I've tried here ends up slower in the kernel!
+  -- We at least use `any₂`, to take advantage of the fact that `a < -b` is symmetric.
+  if p.inequalities.any₂ fun a b => a < -b then
+  -- if p.inequalities.any fun a => p.inequalities.any fun b => a < -b then
     impossible
   else p
 
@@ -763,8 +884,8 @@ theorem checkContradictions_sat_iff (p : Problem) (v) : p.checkContradictions.sa
       simp_all
     · intro s
       simp only [not_sat_impossible]
-      simp only [List.any_eq_true, decide_eq_true_eq] at h
-      obtain ⟨a, ma, b, mb, w⟩ := h
+      obtain ⟨a, b, ma, mb, w, _⟩ := List.any₂_spec h
+      simp only [decide_eq_true_eq] at w
       exact p.contradiction_of_neg_lt ma mb w ⟨v, s⟩
   · rfl
 

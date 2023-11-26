@@ -61,6 +61,13 @@ Sun Nov 26 17:49:58 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
   Time (mean ± σ):      3.739 s ±  0.004 s    [User: 3.550 s, System: 0.180 s]
   Range (min … max):    3.735 s …  3.745 s    5 runs
+
+Use List.any₂
+Sun Nov 26 18:29:50 AEDT 2023
+31871f94d5809dff7a6c24d1ece9355f0e7ae4ac
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      3.226 s ±  0.006 s    [User: 3.036 s, System: 0.180 s]
+  Range (min … max):    3.217 s …  3.231 s    5 runs
 -/
 
 example : True := by
