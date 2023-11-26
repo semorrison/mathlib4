@@ -22,14 +22,14 @@ namespace Omega.Impl
 structure LinearCombo where
   const : Int := 0
   coeffs : IntList := []
-  -- smallCoeff : Option Nat := coeffs.findIdx? fun i => i.natAbs = 1
-  -- smallCoeff_eq : smallCoeff = coeffs.findIdx? fun i => i.natAbs = 1 := by rfl
+  gcd : Nat := coeffs.gcd
+  gcd_spec : gcd = coeffs.gcd := by rfl
 deriving DecidableEq, Repr
 
 instance : ToString LinearCombo where
   toString lc := s!"{lc.const}{String.join <| lc.coeffs.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
 
-example : toString (⟨7, [3, 5]/-, none, rfl-/⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
+example : toString (⟨7, [3, 5], _ , rfl⟩ : LinearCombo) = "7 + 3 * x1 + 5 * x2" := rfl
 
 namespace LinearCombo
 
@@ -46,7 +46,7 @@ instance : Inhabited LinearCombo := ⟨{const := 1}⟩
   cases a; cases b
   subst w₁; subst w₂
   congr
-  -- simp_all
+  simp_all
 
 theorem ext_iff {a b : LinearCombo} : a = b ↔ a.const = b.const ∧ a.coeffs = b.coeffs :=
   ⟨by rintro rfl; simp, fun ⟨w₁, w₂⟩ => ext w₁ w₂⟩
@@ -57,8 +57,8 @@ def sign (a : LinearCombo) : Int :=
 def coordinate (i : Nat) : LinearCombo where
   const := 0
   coeffs := List.replicate i 0 ++ [1]
-  -- smallCoeff := i
-  -- smallCoeff_eq := by simp
+  gcd := 1
+  gcd_spec := sorry
 
 /--
 Evaluate a linear combination `⟨r, [c_1, …, c_k]⟩` at values `[v_1, …, v_k]` to obtain
@@ -105,6 +105,8 @@ instance : Sub LinearCombo := ⟨sub⟩
 def neg (lc : LinearCombo) : LinearCombo where
   const := -lc.const
   coeffs := -lc.coeffs
+  gcd := lc.gcd
+  gcd_spec := sorry
 
 instance : Neg LinearCombo := ⟨neg⟩
 
@@ -120,6 +122,8 @@ theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ :=
 def smul (lc : LinearCombo) (i : Int) : LinearCombo where
   const := i * lc.const
   coeffs := lc.coeffs.smul i
+  gcd := i.natAbs * lc.gcd
+  gcd_spec := sorry
 
 instance : HMul Int LinearCombo LinearCombo := ⟨fun i lc => lc.smul i⟩
 
@@ -336,142 +340,10 @@ theorem smallCoeff_natAbs {a : Equality} (w : a.smallCoeff = some i) :
 
 end Equality
 
--- structure CoeffsKey where
---   coeffs : IntList
---   sign_nonneg : 0 ≤ coeffs.sign
---   coeffsHash : UInt64 := coeffs.hash
---   coeffsHash_spec : coeffsHash = coeffs.hash := by rfl
-
--- @[ext] theorem CoeffsKey.ext {k₁ k₂ : CoeffsKey} (w : k₁.coeffs = k₂.coeffs) : k₁ = k₂ := by
---   cases k₁; cases k₂; simp_all
-
--- instance : Hashable CoeffsKey := ⟨CoeffsKey.coeffsHash⟩
--- instance : BEq CoeffsKey := ⟨fun k₁ k₂ => k₁.coeffs == k₂.coeffs⟩
-
--- @[simp] theorem CoeffsKey_beq {k₁ k₂ : CoeffsKey} : (k₁ == k₂) = (k₁.coeffs == k₂.coeffs) := rfl
-
--- instance : LawfulBEq CoeffsKey where
---   eq_of_beq := by intros; ext; simp_all
---   rfl := by simp
-
--- structure Inequality where
---   linearCombo : LinearCombo
---   sign : Int := linearCombo.coeffs.sign
---   sign_spec : sign = linearCombo.coeffs.sign := by rfl
---   key : CoeffsKey :=
---   { coeffs := linearCombo.coeffs.sign * linearCombo.coeffs
---     sign_nonneg := IntList.sign_mul_self_nonneg }
---   key_spec : key.coeffs = linearCombo.coeffs.sign * linearCombo.coeffs := by rfl
-
--- @[ext] theorem Inequality.ext {i₁ i₂ : Inequality} (w : i₁.linearCombo = i₂.linearCombo) :
---     i₁ = i₂ := by
---   cases i₁; cases i₂
---   simp_all only [mk.injEq, true_and]
---   ext1
---   simp_all
-
--- instance : BEq Inequality := ⟨fun i₁ i₂ => i₁.linearCombo == i₂.linearCombo⟩
-
--- @[simp] theorem Inequality_beq {i₁ i₂ : Inequality} :
---     (i₁ == i₂) = (i₁.linearCombo == i₂.linearCombo) := rfl
-
--- instance : LawfulBEq Inequality where
---   eq_of_beq := by intros; ext1; simp_all
---   rfl := by simp
-
-
--- structure Inequalities where
---   /--
---   For each list of coefficients (with first nonzero entry positive), we store
---   at most one inequality with those coefficients, and
---   at most one inequality with those coefficients negated.
-
---   If we have two inequalities with the same coefficients, one must be redundant.
---   Given a pair of inequalities with opposite coefficients
---   `a + ∑ cᵢ * xᵢ ≥ 0` and `b - ∑ cᵢ * xᵢ ≥ 0`, we must have `-a ≤ b`.
---   -/
---   map : Std.HashMap CoeffsKey (Option Inequality × Option Inequality) := ∅
---   -- map_spec k : SatisfiesM (x := map.find? k) fun ⟨i₁?, i₂?⟩ =>
---   --   SatisfiesM (fun i₁ => i₁.key = k ∧ i₁.linearCombo.coeffs.sign = -1) i₁? ∧
---   --     SatisfiesM (fun i₂ => i₂.key = k ∧ i₂.linearCombo.coeffs.sign = 1) i₂?
-
-
--- namespace Inequalities
-
--- -- def contains (m : Inequalities) (i : Inequality) : Bool :=
--- --   match m.map.find? i.key with
--- --   | none => false
--- --   | some (none, none) => false
--- --   | some (some i₁, none) => i₁ == i
--- --   | some (none, some i₂) => i₂ == i
--- --   | some (some i₁, some i₂) => i₁ == i || i₂ == i
-
--- def mem (m : Inequalities) : Inequality → Prop :=
---   fun i => ∃ k, i ∈ m.map.find? k >>= (·.1) ∨ i ∈ m.map.find? k >>= (·.2)
-
--- inductive Inequality
--- | lowerBound (x : Int)
--- | upperBound (x : Int)
-
--- namespace Inequality
-
--- def sat : Inequality → Int → Prop
--- | .lowerBound x, y => x ≤ y
--- | .upperBound x, y => y ≤ x
-
--- end Inequality
-
--- inductive Constraint
--- | impossible
--- | lowerBound (x : Int)
--- | upperBound (x : Int)
--- | between (x y : Int)
-
--- namespace Constraint
-
--- def sat : Constraint → Int → Prop
--- | .impossible, _ => False
--- | .lowerBound x, y => x ≤ y
--- | .upperBound x, y => y ≤ x
--- | .between x y, z => x ≤ z ∧ z ≤ y
-
--- def combine : Constraint → Inequality → Constraint
--- | .impossible, .lowerBound _ => .impossible
--- | .impossible, .upperBound _ => .impossible
--- | .lowerBound x, .lowerBound w => if x < w then .lowerBound w else .lowerBound x
--- | .lowerBound x, .upperBound z => if z < x then .impossible else .between x z
--- | .upperBound y, .lowerBound w => if y < w then .impossible else .between w y
--- | .upperBound y, .upperBound z => if y < z then .upperBound y else .upperBound y
--- | .between x y, .lowerBound w =>
---   if y < w then .impossible else if x ≤ w then .between w y else .between x y
--- | .between x y, .upperBound z =>
---   if z < x then .impossible else if z ≤ y then .between x z else .between x y
-
--- theorem combine_sat :
---     (c : Constraint) → (i : Inequality) → (t : Int) → (c.combine i).sat t = (c.sat t ∧ i.sat t)
--- | .impossible, .lowerBound _, t => by simp [sat, combine]
--- | .impossible, .upperBound _, t => by simp [sat, combine]
--- | .lowerBound x, .lowerBound w, t => by
---   simp [combine]
---   split <;> rename_i h <;> simp [sat, Inequality.sat]
---   · sorry
---   · sorry
--- | .lowerBound x, .upperBound z, t => sorry
--- | .upperBound y, .lowerBound w, t => sorry
--- | .upperBound y, .upperBound z, t => sorry
--- | .between x y, .lowerBound w, t => sorry
--- | .between x y, .upperBound z, t => sorry
-
--- end Constraint
-
-
--- end Inequalities
-
 structure Problem where
   possible : Bool := true
   equalities : List Equality := []
   inequalities : List LinearCombo := []
-  -- inequalities' : Inequalities := {}
 
 namespace Problem
 
@@ -580,7 +452,6 @@ inductive Solution (p : Problem)
 | sat : p → Solution p
 | unsat : p.unsat → Solution p
 
-
 instance : ToString (Solution p) where
   toString s := match s with
   | .sat ⟨v, _⟩ => s!"satisfied at {v}"
@@ -613,31 +484,6 @@ end equiv
 
 end Problem
 
--- structure DisjunctiveProblem where
---   problems : List Problem
-
--- namespace DisjunctiveProblem
-
--- def sat (d : DisjunctiveProblem) (values : List Int) : Prop :=
---   ∃ p ∈ d.problems, p.sat values
-
--- def solutions (p : DisjunctiveProblem) : Type :=
---   { values // p.sat values }
-
--- instance : CoeSort DisjunctiveProblem Type where
---   coe := solutions
-
--- def unsat (p : DisjunctiveProblem) : Prop := p → False
-
--- inductive Solution (d : DisjunctiveProblem)
--- | sat : d.sat values → Solution d
--- | unsat : d.unsat → Solution d
-
--- end DisjunctiveProblem
-
-/-!
-Erasing an inequality results in a larger solution space.
--/
 namespace Problem
 
 -- @[simps]
@@ -727,14 +573,6 @@ Define `a ≤ b` on linear combinations to mean that the coefficients are identi
 and the constant terms satisfy `≤`.
 
 If `a ≤ b`, then the non-negative set for `a` is a subset of the non-negative set for `b`.
-
-(Note this is only a preorder, not even a partial order,
-as we don't allow for rescaling when comparing coefficients.)
-
-We show:
-```
-a < b → a ∈ p.inequalities → { p with equalities := p.equalities.erase b } → p
-```
 -/
 
 namespace LinearCombo
@@ -744,9 +582,6 @@ Define `a ≤ b` on linear combinations to mean that the coefficients are identi
 and the constant terms satisfy `≤`.
 
 If `a ≤ b`, then the non-negative set for `a` is a subset of the non-negative set for `b`.
-
-(Note this is only a preorder, not even a partial order,
-as we don't allow for rescaling when comparing coefficients.)
 -/
 def le (a b : LinearCombo) : Prop :=
   a.coeffs = b.coeffs ∧ a.const ≤ b.const
@@ -804,6 +639,11 @@ theorem eval_lt_of_lt {a b : LinearCombo} (h : a < b) (v : List Int) : a.eval v 
 end LinearCombo
 
 -- namespace Problem
+
+-- We show:
+-- ```
+-- a < b → a ∈ p.inequalities → { p with equalities := p.equalities.erase b } → p
+-- ```
 
 -- /--
 -- If `a < b` is a strict comparison between inequality constraints,
@@ -1044,14 +884,17 @@ To normalize an inequality, we divide through by the gcd of the coefficients,
 using floor rounding when we divide the constant term.
 -/
 def normalizeInequality (lc : LinearCombo) : LinearCombo :=
-  let gcd := lc.coeffs.gcd
+  let gcd := lc.gcd
   if gcd = 0 then
     { const := lc.const
-      coeffs := [] }
+      coeffs := []
+      gcd := 0 }
   else
     { coeffs := lc.coeffs.sdiv gcd
       -- Since `gcd ≥ 0`, `ediv` and `fdiv` coincide: this is floor rounding.
-      const := lc.const / gcd }
+      const := lc.const / gcd
+      gcd := 1
+      gcd_spec := sorry }
 
 example : ({const := 1, coeffs := [2]} : LinearCombo).normalizeInequality =
     {const := 0, coeffs := [1]} := rfl
@@ -1067,40 +910,39 @@ To normalize an equality, we check if the constant term is divisible by the gcd 
 If it is, we divide through by the gcd. Otherwise, the equality is unsatisfiable.
 -/
 def normalizeEquality (lc : LinearCombo) : LinearCombo :=
-  let gcd := lc.coeffs.gcd
+  let gcd := lc.gcd
   if (gcd : Int) ∣ lc.const then
     { coeffs := lc.coeffs.sdiv gcd
-      const := lc.const / gcd }
+      const := lc.const / gcd
+      gcd := 1
+      gcd_spec := sorry }
   else
     { coeffs := []
-      const := 1 }
-
-example : ({const := 1, coeffs := [2]} : LinearCombo).normalizeEquality = {const := 1} := rfl
-example : ({const := -1, coeffs := [-2]} : LinearCombo).normalizeEquality = {const := 1} := rfl
-example : ({const := 1, coeffs := [6, 9]} : LinearCombo).normalizeEquality = {const := 1} := rfl
-example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
-    {const := 1, coeffs := [2, 3]} := rfl
+      const := 1
+      gcd := 0 }
 
 @[simp] theorem normalizeInequality_eval {lc : LinearCombo} :
     lc.normalizeInequality.eval v ≥ 0 ↔ lc.eval v ≥ 0 := by
-  rcases lc with ⟨const, coeffs⟩
+  rcases lc with ⟨const, coeffs, _, gcd_spec⟩
   dsimp [normalizeInequality, eval]
   split <;> rename_i h
-  · rw [IntList.gcd_eq_zero] at h
+  · rw [gcd_spec, IntList.gcd_eq_zero] at h
     simp [IntList.dot_of_left_zero h]
-  · rw [IntList.dot_sdiv_gcd_left, ← Int.add_ediv_of_dvd_right (IntList.gcd_dvd_dot_left coeffs v),
+  · rw [gcd_spec] at h
+    simp only [gcd_spec]
+    rw [IntList.dot_sdiv_gcd_left, ← Int.add_ediv_of_dvd_right (IntList.gcd_dvd_dot_left coeffs v),
       Int.div_nonneg_iff_of_pos]
     match coeffs.gcd, h with
     | (n+1), _ => exact Int.ofNat_succ_pos n
 
 @[simp] theorem normalizeEquality_eval {lc : LinearCombo} :
     lc.normalizeEquality.eval v = 0 ↔ lc.eval v = 0 := by
-  rcases lc with ⟨const, coeffs⟩
+  rcases lc with ⟨const, coeffs, _, gcd_spec⟩
   dsimp [normalizeEquality, eval]
   split <;> rename_i h
-  · simp only [IntList.dot_sdiv_gcd_left]
+  · simp only [gcd_spec, IntList.dot_sdiv_gcd_left]
     by_cases w : coeffs.gcd = 0
-    · simp only [w, Int.ofNat_zero, Int.zero_dvd, Int.ediv_zero, Int.add_zero, true_iff] at h ⊢
+    · simp only [w, gcd_spec, Int.ofNat_zero, Int.zero_dvd, Int.ediv_zero, Int.add_zero, true_iff] at h ⊢
       simp only [h, Int.zero_add]
       simp at w
       rw [IntList.dot_of_left_zero w]
@@ -1111,6 +953,7 @@ example : ({const := 3, coeffs := [6, 9]} : LinearCombo).normalizeEquality =
   · simp (config := {decide := true}) only [IntList.dot_nil_left, Int.add_zero, false_iff]
     intro w
     apply h
+    simp only [gcd_spec]
     replace w := congrArg (fun x : Int => x % coeffs.gcd) w
     simp [Int.add_emod] at w
     exact Int.dvd_of_emod_eq_zero w
@@ -1139,6 +982,7 @@ theorem normalize_minCoeff_le (eq : Equality) : eq.normalize.minCoeff ≤ eq.min
       · rintro rfl; simp
       · intro h
         rw [← Int.ediv_mul_cancel (IntList.gcd_dvd _ m)]
+        simp only [eq.linearCombo.gcd_spec] at h
         simp [h]
     · intro a _ _
       apply Int.natAbs_div_le_natAbs
@@ -1732,7 +1576,7 @@ theorem normalize_processConstants_impossible_or₁ (p : Problem) :
     not_forall, exists_prop, exists_and_left]
   refine ⟨1, eq.normalize, List.mem_map_of_mem _ m, ?_, by decide⟩
   dsimp [Equality.normalize, LinearCombo.normalizeEquality]
-  rw [if_neg h]
+  simp only [eq.linearCombo.gcd_spec, if_neg h]
   rfl
 
 -- theorem _root_.IntList.sdiv_gcd_minNatAbs {xs : IntList} :

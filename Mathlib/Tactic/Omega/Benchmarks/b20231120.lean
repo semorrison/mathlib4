@@ -4,7 +4,7 @@ import Mathlib.Tactic.Omega.Frontend
 ```
 lake build Mathlib.Tactic.Omega.Benchmarks.b20231120 > /dev/null && \
 date && git rev-parse HEAD && \
-hyperfine "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean"
+hyperfine --warmup 1 -r 5 "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean"
 ```
 
 Mon Nov 20 21:22:44 AEDT 2023
