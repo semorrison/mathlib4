@@ -1,7 +1,6 @@
 import Mathlib.Tactic.Omega.Problem
 import Mathlib.Tactic.Omega.Int
-import Mathlib.Tactic.Omega.OmegaM
-import Mathlib.Tactic.Omega.Impl.Problem
+import Mathlib.Tactic.Omega.Impl2.fast
 
 set_option autoImplicit true
 
@@ -36,9 +35,7 @@ structure MetaProblem where
   /-- Facts which have already been processed; we keep these to avoid duplicates. -/
   processedFacts : HashSet Expr := ∅
   /-- An integer linear arithmetic problem. -/
-  problem : Problem := .trivial
-  /-- A proof, in the `OmegaM` monad, that `problem` is satisfiable at the atoms. -/
-  sat : OmegaM Expr := trivialSat
+  problem : ProofProducing.Problem := {}
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
@@ -188,16 +185,15 @@ where
 
 end
 
-/-- The statement that a problem is satisfied at `atomsList`. -/
-def satType (p : Problem) : OmegaM Expr :=
-  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
+-- /-- The statement that a problem is satisfied at `atomsList`. -/
+-- def satType (p : Problem) : OmegaM Expr :=
+--   return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
 
 namespace MetaProblem
 
 /-- The trivial `MetaProblem`, with no facts to processs and a trivial `Problem`. -/
 def trivial : MetaProblem where
-  problem := .trivial
-  sat := trivialSat
+  problem := {}
 
 instance : Inhabited MetaProblem := ⟨trivial⟩
 
@@ -212,14 +208,12 @@ def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addEquality lc
-    sat := do
-      mkAppM ``Problem.addEquality_sat #[← p.sat, ← mkEqTrans (← mkEqSymm (← prf)) h] }
+    problem := p.problem.addEquality lc.coeffs lc.const
+      (some do mkEqTrans (← mkEqSymm (← prf)) h) }
 
 /--
 Add an integer inequality to the `Problem`.
 -/
--- TODO once we've got this working, we should run `tidy` at every step
 def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo y
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
@@ -227,9 +221,8 @@ def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addInequality lc
-    sat := do
-      mkAppM ``Problem.addInequality_sat #[← p.sat, ← mkAppM ``le_of_le_of_eq #[h, (← prf)]] }
+    problem := p.problem.addInequality lc.coeffs lc.const
+      (some do mkAppM ``le_of_le_of_eq #[h, (← prf)]) }
 
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
 def pushNot (h P : Expr) : Option Expr := do
@@ -274,10 +267,6 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
     | (``LE.le, #[.const ``Nat [], _, x, y]) =>
       p.addFact (mkApp3 (.const ``Int.ofNat_le_of_le []) x y h)
     -- TODO Add support for `k ∣ b`?
-    | (``False, #[]) => pure <|
-      { facts := []
-        problem := .impossible,
-        sat := pure (.app (.app (.const ``False.elim []) (← satType p.problem)) h) }
     | _ => pure p
 
 /--
@@ -298,23 +287,6 @@ partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
 
 end MetaProblem
 
-def runOmega (p : Problem) : Problem :=
-  let p₀ := Impl.Problem.of p
-  let p₁ := p₀.tidy
-  let p₂ := p₁.eliminateEqualities 100
-  let p₃ := p₂.eliminateInequalities 100
-  p₃.to
-
-def runOmega_map (p : Problem) : p → (runOmega p) :=
-  let p₀ := Impl.Problem.of p
-  let p₁ := p₀.tidy
-  let p₂ := p₁.eliminateEqualities 100
-  let p₃ := p₂.eliminateInequalities 100
-  Impl.Problem.map_to p₃ ∘ p₂.eliminateInequalities_map 100 ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
-
-def unsat_of_impossible {p : Problem} (h : (runOmega p).possible = false) : p.unsat :=
-  (runOmega p).unsat_of_impossible h ∘ runOmega_map p
-
 def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
 
 theorem Int.ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
@@ -324,9 +296,9 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
   let m' ← m.processFacts
   guard m'.facts.isEmpty
   let p := m'.problem
-  let sat := m'.sat
   trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
-  if (runOmega p).possible then
+  let p' := p.run
+  if p'.possible then
     match ← popSub with
     | none => throwError "omega did not find a contradiction" -- TODO later, show a witness?
     | some (a, b) =>
@@ -334,19 +306,24 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
       let (⟨gpos, hpos⟩, ⟨gneg, hneg⟩) ← g.byCases (← mkLE b a)
       let wpos := mkApp3 (.const ``Int.ofNat_sub []) b a (.fvar hpos)
       trace[omega] "Adding facts:\n{← gpos.withContext <| inferType (.fvar hpos)}\n{← inferType wpos}"
-      let mpos := { m' with facts := [.fvar hpos, wpos] }
+      let mpos := { m' with
+        problem := p'
+        facts := [.fvar hpos, wpos] }
       savingState do omegaImpl mpos gpos
       let wneg := mkApp3 (.const ``Int.ofNat_sub_eq_zero []) b a (.fvar hneg)
       trace[omega] "Adding facts:\n{← gneg.withContext <| inferType (.fvar hneg)}\n{← inferType wneg}"
-      let mneg := { m' with facts := [.fvar hneg, wneg] }
+      let mneg := { m' with
+        problem := p'
+        facts := [.fvar hneg, wneg] }
       omegaImpl mneg gneg
-  else do
-    let s ← mkAppM ``Problem.possible #[← mkAppM ``runOmega #[toExpr p]]
-    let ty ← mkAppM ``Eq #[s, .const ``Bool.false []]
-    let r := (← mkFreshExprMVar ty).mvarId!
-    r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
-    -- r.assign (← mkSorry ty false)
-    g.assign <| (← mkAppM ``unsat_of_impossible #[.mvar r]).app (← mkAppM ``Problem.of #[← sat])
+  else
+    match p.proveFalse? with
+    | none => throwError "omega found a contradiction, but didn't produce a proof of False"
+    | some prf =>
+      let p ← instantiateMVars (← prf)
+      trace[omega] "omega found a contradiction, proving {← inferType p}"
+      trace[omega] "{p}"
+      g.assign p
 
 /--
 Given a collection of facts, try prove `False` using the omega algorithm,
