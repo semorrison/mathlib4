@@ -317,7 +317,7 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
         facts := [.fvar hneg, wneg] }
       omegaImpl mneg gneg
   else
-    match p.proveFalse? with
+    match p'.proveFalse? with
     | none => throwError "omega found a contradiction, but didn't produce a proof of False"
     | some prf =>
       let p ← instantiateMVars (← prf)

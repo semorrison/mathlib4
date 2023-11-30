@@ -408,6 +408,7 @@ theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign :=
       simp_all
     · simp_all [leadingSign_cons]
 
+-- TODO: gross
 def trim (xs : IntList) : IntList :=
   (xs.reverse.dropWhile (· == 0)).reverse
 
