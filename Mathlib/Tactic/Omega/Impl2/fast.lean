@@ -13,6 +13,7 @@ set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 open Std (HashMap RBSet RBMap AssocList)
+open Lean (HashSet)
 
 namespace Int
 
@@ -26,6 +27,7 @@ end Int
 
 namespace List
 
+/-- Variant of `List.insert` using `BEq` instead of `DecidableEq`. -/
 @[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
   if l.elem a then l else a :: l
 
@@ -43,6 +45,22 @@ namespace Std.AssocList
 def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
   | .nil => .cons a b .nil
   | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
+
+def partitionMapRev (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
+  go {} {} l
+where
+  go : AssocList α γ → AssocList α δ → AssocList α β → AssocList α γ × AssocList α δ
+  | xs, ys, .nil => (xs, ys)
+  | xs, ys, .cons a b t => match f a b with
+    | .inl x => go (cons a x xs) ys t
+    | .inr y => go xs (cons a y ys) t
+
+-- def partitionMap (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
+--   match l.partitionMapRev f with
+--   | (xs, ys) => (xs.reverse, ys.reverse)
+
+def partitionRev (f : α → β → Bool) (l : AssocList α β) : AssocList α β × AssocList α β :=
+  l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
 
 end Std.AssocList
 
@@ -120,6 +138,63 @@ theorem neg_sat : {c : Constraint} → {v : Int} → sat c v → sat (c.neg) (-v
   | .between x y, _, h => by simp_all [sat, neg]; exact ⟨Int.neg_le_neg h.2, Int.neg_le_neg h.1⟩
   | .exact x, _, h => by simp_all [sat, neg]
   | .trivial, _, _ => by trivial
+
+def scale (k : Int) (c : Constraint) : Constraint :=
+  if k = 0 then
+    if c matches .impossible then .impossible else .exact 0
+  else if 0 < k then
+    match c with
+    | .impossible => .impossible
+    | .lowerBound x => .lowerBound (k * x)
+    | .upperBound y => .upperBound (k * y)
+    | .between x y => .between (k * x) (k * y)
+    | .exact x => .exact (k * x)
+    | .trivial => .trivial
+  else
+    match c with
+    | .impossible => .impossible
+    | .lowerBound x => .upperBound (k * x)
+    | .upperBound y => .lowerBound (k * y)
+    | .between x y => .between (k * y) (k * x)
+    | .exact x => .exact (k * x)
+    | .trivial => .trivial
+
+theorem scale_sat {c : Constraint } (w : c.sat t) : (scale k c).sat (k * t) := sorry
+
+def add : Constraint → Constraint → Constraint
+  | .impossible, _ => .impossible
+  | .lowerBound _, .impossible => .impossible
+  | .lowerBound x, .lowerBound x' => .lowerBound (x + x')
+  | .lowerBound _, .upperBound _ => .trivial
+  | .lowerBound x, .between x' _ => .lowerBound (x + x')
+  | .lowerBound x, .exact x' => .lowerBound (x + x')
+  | .lowerBound _, .trivial => .trivial
+  | .upperBound _, .impossible => .impossible
+  | .upperBound _, .lowerBound _ => .trivial
+  | .upperBound y, .upperBound y' => .upperBound (y + y')
+  | .upperBound y, .between _ y' => .upperBound (y + y')
+  | .upperBound y, .exact y' => .upperBound (y + y')
+  | .upperBound _, .trivial => .trivial
+  | .between _ _, .impossible => .impossible
+  | .between x _, .lowerBound x' => .lowerBound (x + x')
+  | .between _ y, .upperBound y' => .upperBound (y + y')
+  | .between x y, .between x' y' => .between (x + x') (y + y')
+  | .between x y, .exact x' => .between (x + x') (y + x')
+  | .between _ _, .trivial => .trivial
+  | .exact _, .impossible => .impossible
+  | .exact x, .lowerBound x' => .lowerBound (x + x')
+  | .exact x, .upperBound y' => .upperBound (x + y')
+  | .exact x, .between x' y' => .between (x + x') (x + y')
+  | .exact x, .exact x' => .exact (x + x')
+  | .exact _, .trivial => .trivial
+  | .trivial, _ => .trivial
+
+theorem add_sat (w₁ : c₁.sat x₁) (w₂ : c₂.sat x₂) : (add c₁ c₂).sat (x₁ + x₂) := sorry
+
+def combo (a : Int) (x : Constraint) (b : Int) (y : Constraint) : Constraint :=
+  add (scale a x) (scale b y)
+
+def combo_sat (w₁ : c₁.sat x₁) (w₂ : c₂.sat x₂) : (combo a c₁ b c₂).sat (a * x₁ + b * x₂) := sorry
 
 def interval (x y : Int) : Constraint :=
   if y < x then
@@ -404,7 +479,27 @@ structure Problem where
 
   proveFalse? : Option Proof? := none
 
-  equalities : List Coefficients := ∅
+  equalities : List Coefficients
+
+  -- /--
+  -- The number of constraints which give a lower bound of the i-th variable.
+
+  -- Specifically, this is the number of lower bound constraints
+  -- (including `exact` and `between` bounds) with a positive coefficient for the i-th variable,
+  -- plus the number of upper bound constraints with a negative coefficient.
+  -- -/
+  -- lowerBoundCounts : Array Nat
+  -- /--
+  -- The number of constraints which give an upper bound of the i-th variable.
+  -- -/
+  -- upperBoundCounts : Array Nat
+  -- /--
+  -- Whether eliminating the i-th variable would be an exact reduction.
+
+  -- Specifically, this is true if all lower bounds for the i-th variable have coefficient 1,
+  -- *or* if all upper bounds have coefficient -1.
+  -- -/
+  -- exactFourierMotzkin : Array Bool
   -- equalities_spec : ∀ i, equalities.contains i ↔ constraints.find? i matches some (.exact _)
 
   -- lowerBounds : Array (HashSet Nat)
@@ -470,10 +565,10 @@ def of_eq (coeffs : List Int) (const : Int) : Inequality :=
 theorem of_sat {coeffs cst v} : (of coeffs cst).sat v = cst.sat (IntList.dot coeffs v) :=
   sorry
 
-theorem of_le_sat {coeffs const v} : (of_le coeffs const).sat v = (0 ≤ (IntList.dot coeffs v) + const) :=
+theorem of_le_sat {coeffs const v} : (of_le coeffs const).sat v = (0 ≤ const + (IntList.dot coeffs v)) :=
   sorry
 
-theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = ((IntList.dot coeffs v) + const = 0) :=
+theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = (const + (IntList.dot coeffs v) = 0) :=
   sorry
 
 -- open Lean in
@@ -515,18 +610,48 @@ end Inequality
 
 namespace Problem
 
-instance : Inhabited Problem := ⟨{}⟩
+instance : Inhabited Problem where
+  default :=
+  { equalities := ∅,
+    -- lowerBoundCounts := ∅,
+    -- upperBoundCounts := ∅,
+    -- exactFourierMotzkin := ∅
+    }
+instance : EmptyCollection Problem where emptyCollection := default
 
 -- Membership instance to AssocList?
 def sat (p : Problem) (v : List Int) : Prop :=
   ∀ z ∈ p.constraints.toList, (fun ⟨coeffs, cst, _⟩ => cst.sat (coeffs.eval v)) z
 
 open Lean in
-/-- Takes a proof that `.impossible.sat t` for some `t`, and constructs a proof of `False`. -/
-def proveFalse (coeffs : List Int) (prf : Proof?) : Proof? := do
-  let prf ← prf
-  let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) (← atomsList)
-  return mkApp2 (.const ``Constraint.impossible_not_sat []) t prf
+/--
+Takes a proof that `.impossible.sat t` for some `t`,
+and constructs an `Problem` containing a proof of `False`.
+-/
+def proveFalse (coeffs : List Int) (prf : Proof?) : Problem :=
+  { possible := false
+    proveFalse? := some do
+      let prf ← prf
+      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) (← atomsList)
+      return mkApp2 (.const ``Constraint.impossible_not_sat []) t prf
+    equalities := ∅
+    -- lowerBoundCounts := ∅
+    -- upperBoundCounts := ∅
+    -- exactFourierMotzkin := ∅
+    }
+
+def insertConstraint (p : Problem) (c : Coefficients) (t : Constraint) (prf : Proof?) : Problem :=
+  { possible := p.possible
+    constraints := p.constraints.insert c ⟨t, prf⟩
+    equalities :=
+    if t matches .exact _ then
+      p.equalities.insert' c
+    else
+      p.equalities
+    -- lowerBoundCounts := sorry
+    -- upperBoundCounts := sorry
+    -- exactFourierMotzkin := sorry
+    }
 
 def addCondition (p : Problem) (ineq : Inequality) (prf : Proof?) : Problem :=
   if p.possible then
@@ -535,32 +660,13 @@ def addCondition (p : Problem) (ineq : Inequality) (prf : Proof?) : Problem :=
     | .trivial =>
       match ineq.cst with
       | .trivial => p
-      | .impossible => { possible := false, proveFalse? := proveFalse ineq.coeffs.coeffs prf }
-      | cst =>
-        let constraints := p.constraints.insert ineq.coeffs (cst, prf)
-        { constraints
-          possible := p.possible
-          equalities :=
-          if cst matches .exact _ then
-            p.equalities.insert' ineq.coeffs
-          else
-            p.equalities}
+      | .impossible => proveFalse ineq.coeffs.coeffs prf
+      | cst => p.insertConstraint ineq.coeffs cst prf
     | _ =>
     match cst'.combine ineq.cst with
     | .trivial => p
-    | .impossible => { possible := false, proveFalse? := proveFalse ineq.coeffs.coeffs (combine_proofs prf' prf) }
-    | cst'' =>
-      let constraints := p.constraints.insert ineq.coeffs (cst'', combine_proofs prf' prf)
-      { constraints
-        possible := p.possible
-        -- possible_spec := sorry
-        equalities :=
-        if cst'' matches .exact _ then
-          p.equalities.insert' ineq.coeffs
-        else
-          p.equalities
-        -- equalities_spec := sorry
-        }
+    | .impossible => proveFalse ineq.coeffs.coeffs (combine_proofs prf' prf)
+    | cst'' => p.insertConstraint ineq.coeffs cst'' (combine_proofs prf' prf)
   else
     p
 
@@ -584,7 +690,7 @@ def addEqualities (p : Problem) (ineqs : List (List Int × Int × Option Proof?)
   ineqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addEquality coeffs const prf?
 
 
-example : (Problem.addInequalities {}
+example : (Problem.addInequalities ∅
     [([1, 1], -1, none), ([-1, -1], -1, none)] |>.possible) = false := rfl
 
 example : (Problem.addInequalities {}
@@ -605,6 +711,8 @@ def selectEquality (p : Problem) : Option Coefficients :=
   | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
 def add_smul (c₁ c₂ : List Int) (k : Int) : List Int := c₁ + k * c₂  -- turn this into a single operation
+def combo (a : Int) (x : List Int) (b : Int) (y : List Int) := a * x + b * y -- turn this into a single operation
+
 
 theorem add_smul_sat {c₁ c₂ : List Int} {k : Int} {v : List Int} {cst : Constraint} {r : Int}
     (h₁ : cst.sat (IntList.dot c₁ v)) (h₂ : (Constraint.exact r).sat (IntList.dot c₂ v)) :
@@ -636,12 +744,15 @@ def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
         p'.addCondition { coeffs, cst } prf'
       | ci =>
         let k := -1 * sign * ci
-        p'.addCondition (.of
+        p'.addCondition (.of -- FIXME can we combine addCondition and of?
           (add_smul coeffs.coeffs c.coeffs k)
           (cst.translate (k * r))) (of_add_smul_proof coeffs.coeffs c.coeffs k cst r prf' prf)
   | _ => unreachable!
 
-def freshVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.coeffs.length
+-- TODO probably should just cache the active variables, or this number
+def maxVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.coeffs.length
+-- we could use mex here:
+def freshVar (p : Problem) : Nat := p.maxVar
 
 def bmod_coeffs (m : Nat) (coeffs : List Int) (j : Nat) : List Int :=
   IntList.set (coeffs.map fun x => Int.bmod x m) j (-m)
@@ -697,5 +808,63 @@ def solveEqualities (p : Problem) (fuel : Nat := 100) : Problem :=
   match p.selectEquality with
   | some c => (p.solveEquality c).solveEqualities f
   | none => p
+
+structure FourierMotzkinData where
+  irrelevant : List (Coefficients × Constraint × Proof?) := []
+  lowerBounds : List (Coefficients × (Constraint × Proof?) × Int) := []
+  upperBounds : List (Coefficients × (Constraint × Proof?) × Int) := []
+  lowerExact : Bool := true
+  upperExact : Bool := true
+
+def fourierMotzkin (p : Problem) : Problem := Id.run do
+  let n := p.maxVar
+  -- First, decide which variable to eliminate.
+  -- We consider each variable in turn, collecting the lower and upper bounds,
+  -- and determining whether the elimination would be exact
+  -- (variable has )
+  let mut data : Array FourierMotzkinData := Array.mk (List.replicate n {})
+  for (coeffs, cst, prf?) in p.constraints do
+    for (i, x) in coeffs.coeffs.enum do
+      if x = 0 then
+        data := data.modify i fun d => { d with irrelevant := (coeffs, cst, prf?) :: d.irrelevant }
+      else if x < 0 then
+        sorry
+      else
+        sorry
+  sorry
+
+structure FourierMotzkinData where
+  problem : Problem
+  lowerBounds : List (Coefficients × (Constraint × Proof?) × Int)
+  upperBounds : List (Coefficients × (Constraint × Proof?) × Int)
+
+def prepareFourierMotzkinData (i : Nat) (p : Problem) : FourierMotzkinData :=
+  match p with
+  | { constraints, possible, proveFalse?, equalities, lowerBounds, upperBounds } =>
+    let (lower, lowerBounds) := lowerBounds.swapAt! i ∅
+    let (upper, upperBounds) := upperBounds.swapAt! i ∅
+    sorry
+
+def fourierMotzkinVariable (i : Nat) (p : Problem) : Problem := Id.run do
+  let (relevant, irrelevant) := p.constraints.partitionMapRev fun c t =>
+    let x := IntList.get c.coeffs i
+    if x = 0 then
+      .inr t
+    else
+      .inl (t, x)
+  let mut r :=
+    { constraints := irrelevant
+      equalities := sorry }
+  for ⟨x, ⟨xc, xp⟩, b⟩ in relevant do
+    if b ≤ 0 then continue
+    for ⟨y, ⟨yc, yp⟩, a⟩ in relevant do
+      let a := IntList.get y.coeffs i
+      if 0 ≤ a then continue
+      r := r.addCondition (.of
+        (combo a x.coeffs b y.coeffs) (Constraint.combo a xc b yc))
+        sorry
+  return r
+
+def fourierMotzkin (p : Problem) : Problem := sorry
 
 def run (p : Problem) : Problem := p.solveEqualities 100
