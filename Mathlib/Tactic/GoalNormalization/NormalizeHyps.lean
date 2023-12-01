@@ -5,6 +5,7 @@ Authors: Scott Morrison
 -/
 import Mathlib.Tactic.GoalNormalization.NormalizeNames
 import Mathlib.Tactic.GoalNormalization.ReorderHyps
+
 namespace Mathlib.Tactic
 
 open Lean Elab.Tactic Meta

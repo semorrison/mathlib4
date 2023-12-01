@@ -1,4 +1,5 @@
 import Mathlib.Tactic.GoalNormalization.NormalizeHyps
+import Std.Tactic.GuardMsgs
 
 set_option linter.unusedVariables false
 set_option pp.sanitizeNames false
