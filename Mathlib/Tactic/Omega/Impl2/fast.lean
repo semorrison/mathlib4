@@ -134,6 +134,8 @@ def trivial : Constraint := ⟨none, none⟩
 def impossible : Constraint := ⟨some 1, some 0⟩
 def exact (r : Int) : Constraint := ⟨some r, some r⟩
 
+@[simp] theorem exact_sat (r : Int) (t : Int) : (Constraint.exact r).sat t = decide (r = t) := sorry
+
 def isImpossible : Constraint → Bool
   | ⟨some x, some y⟩ => y < x
   | _ => false
@@ -214,7 +216,7 @@ instance : BEq Coefficients where
 instance : ToString Coefficients where
   toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
 
-def eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
+abbrev eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
 
 instance : Hashable Coefficients := ⟨hash⟩
 
@@ -423,7 +425,7 @@ structure Inequality where
 
 namespace Inequality
 
-def sat (i : Inequality) (v : List Int) : Prop :=
+abbrev sat (i : Inequality) (v : List Int) : Prop :=
   i.cst.sat (i.coeffs.eval v)
 
 def normalize (i : Inequality) : Inequality :=
@@ -484,7 +486,7 @@ open Lean
 
 def normalize_proof {i : Inequality} (p : Proof?) : Proof? := do
   let p ← p
-  let v ← mkFreshExprMVar (some (mkApp (.const ``List []) (.const ``Int [])))
+  let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
   -- Hmm, I don't like that we have `Inequality` expressions. Can it even be found by unification?
   let i ← mkFreshExprMVar (some (.const ``Inequality [])) -- We could fill tis in from `inferType p`
   mkEqMPR' (mkApp2 (.const ``Inequality.normalize_sat []) v i) p
@@ -531,7 +533,23 @@ def proveFalse (cst : Constraint) (coeffs : List Int) (prf : Proof?) : Problem :
   { possible := false
     proveFalse? := some do
       let prf ← prf
-      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) (← atomsList)
+
+      let ty ← inferType prf
+      let ty ← whnf ty
+      IO.println s!"{← ppExpr ty}"
+      let v ← match ty.getAppFnArgs with
+      | (``Eq, #[(.const ``Bool []), lhs, _]) =>
+        match lhs.getAppFnArgs with
+        | (``Constraint.sat, #[_, dot]) => do
+          IO.println s!"{dot}"
+          match dot.getAppFnArgs with
+          | (``IntList.dot, #[_, v]) => do pure v
+          | (``Coefficients.eval, #[_, v]) => do pure v
+          | _ => throwError "doesn't look like IntList.dot _ v: {dot}"
+        | _ => throwError "doesn't look like Constraint.sat _ _: {lhs}"
+      | _ => throwError "doesn't look like _ = _: {ty}"
+      -- let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
+      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) v --(← atomsList)
       let cst := toExpr cst
       let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) cst) (.const ``true []))
       return mkApp4 (.const ``Constraint.not_sat_of_isImpossible []) cst impossible t prf
@@ -679,8 +697,15 @@ def maxVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => m
 -- we could use mex here:
 def freshVar (p : Problem) : Nat := p.maxVar
 
+def IntList.bmod (xs : List Int) (m : Nat) : List Int :=
+  xs.map fun x => Int.bmod x m
+
+theorem IntList.dvd_sub_bmod_dot (xs ys : List Int) (m : Nat) :
+    (m : Int) ∣ (IntList.dot (xs - IntList.bmod xs m) ys) := sorry
+
 def bmod_coeffs (m : Nat) (coeffs : List Int) (j : Nat) : List Int :=
-  IntList.set (coeffs.map fun x => Int.bmod x m) j (-m)
+  IntList.set (IntList.bmod coeffs m) j (-m)
+  -- coeffs +
 
 def bmod_cst (m : Nat) (r : Int) : Constraint := .exact (Int.bmod r m)
 
@@ -689,19 +714,43 @@ def bmod (m : Nat) (c : Coefficients) (j : Nat) (r : Int) : Inequality :=
     { coeffs := bmod_coeffs m c.coeffs j }
     cst := bmod_cst m r }
 
+-- IntList.get v j will be zero here, but it makes the proofs easier.
 def bmod_transform (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int) : List Int :=
-  IntList.set v j sorry
+  IntList.set v j (IntList.get v j + (IntList.dot (coeffs - bmod_coeffs m coeffs j) v )/m  + - (r - Int.bmod r m)/m)
+
+-- bmod r m = ()
 
 theorem bmod_sat (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int) :
     (bmod_cst m r).sat (IntList.dot (bmod_coeffs m coeffs j) (bmod_transform m coeffs j r v)) =
-      (Constraint.exact r).sat (IntList.dot coeffs v) :=
+      (Constraint.exact r).sat (IntList.dot coeffs v) := by
+  simp? [bmod_cst, bmod_coeffs, bmod_transform, Constraint.exact_sat]
   sorry
+
+theorem bmod_sat_of (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int)
+    (w : (Constraint.exact r).sat (IntList.dot coeffs v)) :
+    (bmod_cst m r).sat (IntList.dot (bmod_coeffs m coeffs j) (bmod_transform m coeffs j r v)) := by
+  simp_all [bmod_sat]
+
 
 open Lean in
 def bmod_proof (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (p : Proof?) : Proof? := do
   let p ← p
-  let v ← mkFreshExprMVar (some (mkApp (.const ``List []) (.const ``Int [])))
-  mkEqMPR' (mkApp5 (.const ``bmod_sat []) (toExpr m) (toExpr coeffs) (toExpr j) (toExpr r) v) p
+  let ty ← inferType p
+  let ty ← whnf ty
+  IO.println s!"{← ppExpr ty}"
+  let v ← match ty.getAppFnArgs with
+  | (``Eq, #[(.const ``Bool []), lhs, _]) =>
+    match lhs.getAppFnArgs with
+    | (``Constraint.sat, #[_, dot]) => do
+      IO.println s!"{dot}"
+      match dot.getAppFnArgs with
+      | (``IntList.dot, #[_, v]) => do pure v
+      | (``Coefficients.eval, #[_, v]) => do pure v
+      | _ => throwError "doesn't look like IntList.dot _ v: {dot}"
+    | _ => throwError "doesn't look like Constraint.sat _ _: {lhs}"
+  | _ => throwError "doesn't look like _ = _: {ty}"
+  -- let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
+  return mkApp6 (.const ``bmod_sat_of []) (toExpr m) (toExpr coeffs) (toExpr j) (toExpr r) v p
 
 /--
 We deal with a hard equality by introducing a new easy equality.
