@@ -180,6 +180,8 @@ def div (c : Constraint) (k : Nat) : Constraint where
 
 theorem div_sat (c : Constraint) (k : Nat) (t : Int) (h : (c.div k).sat t) : c.sat (t * k) := sorry
 
+abbrev sat' (c : Constraint) (x y : List Int) := c.sat (IntList.dot x y)
+
 end Constraint
 
 -- FIXME get rid of this: no kernel computation
@@ -198,7 +200,7 @@ structure Coefficients where
   minNatAbs : Nat := coeffs.minNatAbs
   -- minNatAbs_spec
 
-  maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
+  -- maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
   -- maxNatAbs_spec
 deriving Repr
 
@@ -371,8 +373,84 @@ def sorry_proof (cst : Constraint) : Proof? := do
   let ty := mkApp2 (.const ``Constraint.sat []) (toExpr cst) (← mkFreshExprMVar (some (.const ``Int [])))
   mkSorry ty false
 
+def normalizeCoeffs (s : Constraint) (coeffs : List Int) : List Int := sorry
+def normalizeConstraint (s : Constraint) (coeffs : List Int) : Constraint := sorry
+
+theorem normalize_sat {s x v} (w : s.sat' x v) :
+    (normalizeConstraint s x).sat' (normalizeCoeffs s x) v := sorry
+
+def IntList.combo (a : Int) (x : List Int) (b : Int) (y : List Int) : List Int := sorry
+
+theorem combo_sat (s t : Constraint)
+    (a : Int) (x : List Int) (b : Int) (y : List Int) (v : List Int)
+    (wx : s.sat' x v) (wy : t.sat' y v) : (Constraint.combo a s b t).sat' (IntList.combo a x b y) v :=
+  sorry
+
+def IntList.bmod (x : List Int) (m : Nat) : List Int := x.map (Int.bmod · m)
+
+theorem IntList.bmod_length (m) : (IntList.bmod x m).length = x.length := List.length_map _ _
+
+def bmod_coeffs (m : Nat) (i : Nat) (x : List Int) : List Int :=
+  IntList.set (IntList.bmod x m) i m
+
+theorem foo (m : Nat) (a b : List Int) :
+    (m : Int) ∣ (Int.bmod (IntList.dot a b) m) - IntList.dot (IntList.bmod a m) b :=
+  sorry
+
+theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
+    (h : x.length ≤ i)  -- during proof reconstruction this will be by decide
+    (p : IntList.get v i = (Int.bmod (IntList.dot x v) m - IntList.dot (IntList.bmod x m) v) / m) -- and this will be by rfl
+    (w : (Constraint.exact r).sat' x v) :
+    (Constraint.exact (Int.bmod r m)).sat' (bmod_coeffs m i x) v := by
+  simp at w
+  simp [bmod_coeffs, p]
+  rw [← IntList.bmod_length m] at h
+  rw [IntList.get_of_length_le h]
+  rw [Int.sub_zero]
+  rw [Int.mul_ediv_cancel' (foo _ _ _)]
+  rw [w]
+  rw [← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
+
+#exit
+
+inductive Justification : Constraint → List Int → Type
+-- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
+| assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
+| normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
+| combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
+| bmod (m : Nat) (r : Int) (j : Justification (.exact r) x) : Justification (Constraint.bmod m r) (bmod_coeffs m i x)
+
+namespace Justification
+
+open Lean
+
+def normalizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+  mkApp4 (.const ``normalize_sat []) (toExpr s) (toExpr x) v prf
+
+def comboProof (s t : Constraint) (a : Int) (x : List Int) (b : Int) (y : List Int)
+    (v : Expr) (px py : Expr) : Expr :=
+  mkApp9 (.const ``combo_sat []) (toExpr s) (toExpr t) (toExpr a) (toExpr x) (toExpr b) (toExpr y)
+    v px py
+
+def bmodProof (m : Nat) (r : Int) (x : List Int) (v : Expr) (p : Expr) : Expr :=
+  sorry
+
+def proof (v : Expr) (assumptions : Array Expr) : Justification s c → OmegaM Expr
+| assumption s c i => pure assumptions[i]!
+| @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
+| @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
+| bmod m r x => sorry
+
+end Justification
+
+structure Fact where
+  coeffs : List Int
+  constraint : Constraint
+  justification : Justification coeffs constraint
+
 structure Problem where
-  constraints : AssocList Coefficients (Constraint × Proof?) := ∅
+  assumptions : Array (OmegaM Expr)
+  constraints : AssocList Coefficients Fact := ∅
 
   possible : Bool := true
   -- possible_spec : ¬ ∃ c, contraints.find? c matches some (.impossible)
@@ -382,31 +460,6 @@ structure Problem where
 
   equalities : List Coefficients
 
-  -- /--
-  -- The number of constraints which give a lower bound of the i-th variable.
-
-  -- Specifically, this is the number of lower bound constraints
-  -- (including `exact` and `between` bounds) with a positive coefficient for the i-th variable,
-  -- plus the number of upper bound constraints with a negative coefficient.
-  -- -/
-  -- lowerBoundCounts : Array Nat
-  -- /--
-  -- The number of constraints which give an upper bound of the i-th variable.
-  -- -/
-  -- upperBoundCounts : Array Nat
-  -- /--
-  -- Whether eliminating the i-th variable would be an exact reduction.
-
-  -- Specifically, this is true if all lower bounds for the i-th variable have coefficient 1,
-  -- *or* if all upper bounds have coefficient -1.
-  -- -/
-  -- exactFourierMotzkin : Array Bool
-  -- equalities_spec : ∀ i, equalities.contains i ↔ constraints.find? i matches some (.exact _)
-
-  -- lowerBounds : Array (HashSet Nat)
-  -- lowerBounds_spec :
-  -- upperBounds : Array (HashSet Nat)
-
 
 instance : ToString Problem where
   toString p :=
@@ -415,7 +468,7 @@ instance : ToString Problem where
         "trivial"
       else
         "\n".intercalate <|
-          (p.constraints.toList.map fun ⟨coeffs, ⟨cst, _⟩⟩ => s!"{coeffs} ∈ {cst}")
+          (p.constraints.toList.map fun ⟨coeffs, ⟨_, cst, _⟩⟩ => s!"{coeffs} ∈ {cst}")
     else
       "impossible"
 
@@ -533,23 +586,7 @@ def proveFalse (cst : Constraint) (coeffs : List Int) (prf : Proof?) : Problem :
   { possible := false
     proveFalse? := some do
       let prf ← prf
-
-      let ty ← inferType prf
-      let ty ← whnf ty
-      IO.println s!"{← ppExpr ty}"
-      let v ← match ty.getAppFnArgs with
-      | (``Eq, #[(.const ``Bool []), lhs, _]) =>
-        match lhs.getAppFnArgs with
-        | (``Constraint.sat, #[_, dot]) => do
-          IO.println s!"{dot}"
-          match dot.getAppFnArgs with
-          | (``IntList.dot, #[_, v]) => do pure v
-          | (``Coefficients.eval, #[_, v]) => do pure v
-          | _ => throwError "doesn't look like IntList.dot _ v: {dot}"
-        | _ => throwError "doesn't look like Constraint.sat _ _: {lhs}"
-      | _ => throwError "doesn't look like _ = _: {ty}"
-      -- let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
-      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) v --(← atomsList)
+      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) (← atomsList)
       let cst := toExpr cst
       let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) cst) (.const ``true []))
       return mkApp4 (.const ``Constraint.not_sat_of_isImpossible []) cst impossible t prf

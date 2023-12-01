@@ -201,6 +201,9 @@ theorem sum_smul (i : Int) (xs : IntList) : (i * xs).sum = i * (xs.sum) := by
 
 def dot (xs ys : IntList) : Int := (xs * ys).sum
 
+example : IntList.dot [a, b, c] [x, y, z] = IntList.dot [a, b, c, d] [x, y, z] := rfl
+example : IntList.dot [a, b, c] [x, y, z] = IntList.dot [a, b, c] [x, y, z, w] := rfl
+
 @[simp] theorem dot_nil_left : dot ([] : IntList) ys = 0 := rfl
 @[simp] theorem dot_nil_right : dot xs ([] : IntList) = 0 := by simp [dot]
 @[simp] theorem dot_cons₂ : dot (x::xs) (y::ys) = x * y + dot xs ys := rfl
