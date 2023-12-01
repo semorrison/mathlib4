@@ -3233,6 +3233,9 @@ import Mathlib.Tactic.GCongr
 import Mathlib.Tactic.GCongr.Core
 import Mathlib.Tactic.GCongr.ForwardAttr
 import Mathlib.Tactic.GeneralizeProofs
+import Mathlib.Tactic.GoalNormalization.NormalizeHyps
+import Mathlib.Tactic.GoalNormalization.NormalizeNames
+import Mathlib.Tactic.GoalNormalization.ReorderHyps
 import Mathlib.Tactic.Group
 import Mathlib.Tactic.GuardGoalNums
 import Mathlib.Tactic.GuardHypNums
