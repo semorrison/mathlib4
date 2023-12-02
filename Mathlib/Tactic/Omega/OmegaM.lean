@@ -36,9 +36,10 @@ abbrev OmegaM := StateRefT Cache OmegaM'
 /-- Run a computation in the `OmegaM` monad. -/
 def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 
+def atoms : OmegaM (List Expr) := return (← getThe State).atoms.toList
+
 /-- Return the `Expr` representing the list of atoms. -/
-def atomsList : OmegaM Expr := do
-  mkListLit (.const ``Int []) (← getThe State).atoms.toList
+def atomsList : OmegaM Expr := do mkListLit (.const ``Int []) (← atoms)
 
 /--
 If a natural number subtraction `((a - b : Nat) : Int)` has been encountered,

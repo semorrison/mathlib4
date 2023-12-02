@@ -174,6 +174,7 @@ def combine (x y : Constraint) : Constraint where
 theorem combine_sat : (c : Constraint) → (c' : Constraint) → (t : Int) →
      (c.combine c').sat t = (c.sat t ∧ c'.sat t) := sorry
 
+
 def div (c : Constraint) (k : Nat) : Constraint where
   lowerBound := c.lowerBound.map fun x => (- ((- x) / k))
   upperBound := c.upperBound.map fun y => y / k
@@ -181,6 +182,10 @@ def div (c : Constraint) (k : Nat) : Constraint where
 theorem div_sat (c : Constraint) (k : Nat) (t : Int) (h : (c.div k).sat t) : c.sat (t * k) := sorry
 
 abbrev sat' (c : Constraint) (x y : List Int) := c.sat (IntList.dot x y)
+
+theorem combine_sat' {s t : Constraint} {x y} (ws : s.sat' x y) (wt : t.sat' x y) : (s.combine t).sat' x y := sorry
+
+theorem not_sat'_of_isImpossible (h : isImpossible c) {x y} : ¬ c.sat' x y := sorry
 
 end Constraint
 
@@ -222,6 +227,7 @@ abbrev eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
 
 instance : Hashable Coefficients := ⟨hash⟩
 
+-- FIXME not:
 -- It is essential that the kernel can compute our hash function.
 example : hash ({ coeffs := [1, 2] } : Coefficients) = 22983 := rfl
 
@@ -282,104 +288,129 @@ open Lean (Expr)
 open Lean.Meta
 /--
 A delayed proof that a constraint is satisfied at the atoms.
-
-The `Proof?` associated to a `(c, s) : Coefficients × Constraint` pair
-should be an `Expr` containing loose bvars,
-which when instantiated at the atoms gives a proof that `s.sat (IntList.dot c.coeffs atoms)`.
 -/
-def Proof? : Type := OmegaM Expr
+abbrev Proof : Type := OmegaM Expr
 
-instance : Inhabited Proof? where
-  default := do failure
+-- instance : Inhabited Proof? where
+--   default := do failure
 
-section
-open Lean Meta
-private def throwAppBuilderException {α} (op : Name) (msg : MessageData) : MetaM α :=
-  throwError "AppBuilder for '{op}', {msg}"
+-- section
+-- open Lean Meta
+-- private def throwAppBuilderException {α} (op : Name) (msg : MessageData) : MetaM α :=
+--   throwError "AppBuilder for '{op}', {msg}"
 
-private def mkAppMFinal (methodName : Name) (f : Expr) (args : Array Expr) (instMVars : Array MVarId) : MetaM Expr := do
-  instMVars.forM fun mvarId => do
-    let mvarDecl ← mvarId.getDecl
-    let mvarVal  ← synthInstance mvarDecl.type
-    mvarId.assign mvarVal
-  let result ← instantiateMVars (mkAppN f args)
-  -- if (← hasAssignableMVar result) then throwAppBuilderException methodName ("result contains metavariables" ++ indentExpr result)
-  return result
+-- private def mkAppMFinal (methodName : Name) (f : Expr) (args : Array Expr) (instMVars : Array MVarId) : MetaM Expr := do
+--   instMVars.forM fun mvarId => do
+--     let mvarDecl ← mvarId.getDecl
+--     let mvarVal  ← synthInstance mvarDecl.type
+--     mvarId.assign mvarVal
+--   let result ← instantiateMVars (mkAppN f args)
+--   -- if (← hasAssignableMVar result) then throwAppBuilderException methodName ("result contains metavariables" ++ indentExpr result)
+--   return result
 
-private partial def mkAppMArgs (f : Expr) (fType : Expr) (xs : Array Expr) : MetaM Expr :=
-  let rec loop (type : Expr) (i : Nat) (j : Nat) (args : Array Expr) (instMVars : Array MVarId) : MetaM Expr := do
-    if i >= xs.size then
-      mkAppMFinal `mkAppM f args instMVars
-    else match type with
-      | Expr.forallE n d b bi =>
-        let d  := d.instantiateRevRange j args.size args
-        match bi with
-        | BinderInfo.implicit     =>
-          let mvar ← mkFreshExprMVar d MetavarKind.natural n
-          loop b i j (args.push mvar) instMVars
-        | BinderInfo.strictImplicit     =>
-          let mvar ← mkFreshExprMVar d MetavarKind.natural n
-          loop b i j (args.push mvar) instMVars
-        | BinderInfo.instImplicit =>
-          let mvar ← mkFreshExprMVar d MetavarKind.synthetic n
-          loop b i j (args.push mvar) (instMVars.push mvar.mvarId!)
-        | _ =>
-          let x := xs[i]!
-          let xType ← inferType x
-          if (← isDefEq d xType) then
-            loop b (i+1) j (args.push x) instMVars
-          else
-            throwAppTypeMismatch (mkAppN f args) x
-      | type =>
-        let type := type.instantiateRevRange j args.size args
-        let type ← whnfD type
-        if type.isForall then
-          loop type i args.size args instMVars
-        else
-          throwAppBuilderException `mkAppM m!"too many explicit arguments provided to{indentExpr f}\narguments{indentD xs}"
-  loop fType 0 0 #[] #[]
+-- private partial def mkAppMArgs (f : Expr) (fType : Expr) (xs : Array Expr) : MetaM Expr :=
+--   let rec loop (type : Expr) (i : Nat) (j : Nat) (args : Array Expr) (instMVars : Array MVarId) : MetaM Expr := do
+--     if i >= xs.size then
+--       mkAppMFinal `mkAppM f args instMVars
+--     else match type with
+--       | Expr.forallE n d b bi =>
+--         let d  := d.instantiateRevRange j args.size args
+--         match bi with
+--         | BinderInfo.implicit     =>
+--           let mvar ← mkFreshExprMVar d MetavarKind.natural n
+--           loop b i j (args.push mvar) instMVars
+--         | BinderInfo.strictImplicit     =>
+--           let mvar ← mkFreshExprMVar d MetavarKind.natural n
+--           loop b i j (args.push mvar) instMVars
+--         | BinderInfo.instImplicit =>
+--           let mvar ← mkFreshExprMVar d MetavarKind.synthetic n
+--           loop b i j (args.push mvar) (instMVars.push mvar.mvarId!)
+--         | _ =>
+--           let x := xs[i]!
+--           let xType ← inferType x
+--           if (← isDefEq d xType) then
+--             loop b (i+1) j (args.push x) instMVars
+--           else
+--             throwAppTypeMismatch (mkAppN f args) x
+--       | type =>
+--         let type := type.instantiateRevRange j args.size args
+--         let type ← whnfD type
+--         if type.isForall then
+--           loop type i args.size args instMVars
+--         else
+--           throwAppBuilderException `mkAppM m!"too many explicit arguments provided to{indentExpr f}\narguments{indentD xs}"
+--   loop fType 0 0 #[] #[]
 
-private def mkFun (constName : Name) : MetaM (Expr × Expr) := do
-  let cinfo ← getConstInfo constName
-  let us ← cinfo.levelParams.mapM fun _ => mkFreshLevelMVar
-  let f := mkConst constName us
-  let fType ← instantiateTypeLevelParams cinfo us
-  return (f, fType)
+-- private def mkFun (constName : Name) : MetaM (Expr × Expr) := do
+--   let cinfo ← getConstInfo constName
+--   let us ← cinfo.levelParams.mapM fun _ => mkFreshLevelMVar
+--   let f := mkConst constName us
+--   let fType ← instantiateTypeLevelParams cinfo us
+--   return (f, fType)
 
-def mkAppM' (constName : Name) (xs : Array Expr) : MetaM Expr := do
-    let (f, fType) ← mkFun constName
-    mkAppMArgs f fType xs
-end
+-- def mkAppM' (constName : Name) (xs : Array Expr) : MetaM Expr := do
+--     let (f, fType) ← mkFun constName
+--     mkAppMArgs f fType xs
+-- end
 
-def mkEqMPR' (eqProof pr : Expr) : MetaM Expr :=
-  mkAppM' ``Eq.mpr #[eqProof, pr]
+-- def mkEqMPR' (eqProof pr : Expr) : MetaM Expr :=
+--   mkAppM' ``Eq.mpr #[eqProof, pr]
 
-open Qq Lean in
-def combine_proofs (p₁ p₂ : Proof?) : Proof? := do
-  let p₁ ← p₁ -- s₁.sat (IntList.dot c a)
-  let p₂ ← p₂ -- s₂.sat (IntList.dot c a)
-  let c₁ ← mkFreshExprMVar (some (.const ``Constraint [])) -- We could fill these in from `inferType p₁`
-  let c₂ ← mkFreshExprMVar (some (.const ``Constraint []))
-  let t ← mkFreshExprMVar (some (.const ``Int []))
-  mkEqMPR' (mkApp3 (.const ``Constraint.combine_sat []) c₁ c₂ t) (← mkAppM' ``And.intro #[p₁, p₂])
+-- open Qq Lean in
+-- def combine_proofs (p₁ p₂ : Proof?) : Proof? := do
+--   let p₁ ← p₁ -- s₁.sat (IntList.dot c a)
+--   let p₂ ← p₂ -- s₂.sat (IntList.dot c a)
+--   let c₁ ← mkFreshExprMVar (some (.const ``Constraint [])) -- We could fill these in from `inferType p₁`
+--   let c₂ ← mkFreshExprMVar (some (.const ``Constraint []))
+--   let t ← mkFreshExprMVar (some (.const ``Int []))
+--   mkEqMPR' (mkApp3 (.const ``Constraint.combine_sat []) c₁ c₂ t) (← mkAppM' ``And.intro #[p₁, p₂])
 
 -- open Lean in
 -- def trivial_proof : Proof? := do
 --   let ty := mkApp2 (.const ``Constraint.sat []) (.const ``Constraint.trivial []) (← mkFreshExprMVar (some (.const ``Int [])))
 --   mkExpectedTypeHint (.const ``True.intro []) ty
 
-open Lean in
-def sorry_proof (cst : Constraint) : Proof? := do
-  let ty := mkApp2 (.const ``Constraint.sat []) (toExpr cst) (← mkFreshExprMVar (some (.const ``Int [])))
-  mkSorry ty false
+-- open Lean in
+-- def sorry_proof (cst : Constraint) : Proof? := do
+--   let ty := mkApp2 (.const ``Constraint.sat []) (toExpr cst) (← mkFreshExprMVar (some (.const ``Int [])))
+--   mkSorry ty false
 
-def normalizeCoeffs (s : Constraint) (coeffs : List Int) : List Int := sorry
-def normalizeConstraint (s : Constraint) (coeffs : List Int) : Constraint := sorry
+def normalize : Constraint × List Int → Constraint × List Int
+  | ⟨s, x⟩ =>
+    let gcd := IntList.gcd x -- TODO should we be caching this?
+    if gcd = 0 then
+      if s.sat 0 then
+        (.trivial, x)
+      else
+        (.impossible, x)
+    else if gcd = 1 then
+      (s, x)
+    else
+      (s.div gcd, IntList.sdiv x gcd)
+
+abbrev normalizeConstraint (s : Constraint) (x : List Int) : Constraint := (normalize (s, x)).1
+abbrev normalizeCoeffs (s : Constraint) (x : List Int) : List Int := (normalize (s, x)).2
 
 theorem normalize_sat {s x v} (w : s.sat' x v) :
     (normalizeConstraint s x).sat' (normalizeCoeffs s x) v := sorry
 
-def IntList.combo (a : Int) (x : List Int) (b : Int) (y : List Int) : List Int := sorry
+def positivize : Constraint × List Int → Constraint × List Int
+  | ⟨s, x⟩ =>
+    let x := IntList.trim x -- TODO why?
+    if 0 ≤ (x.find? (! · == 0) |>.getD 0) then
+      (s, x)
+    else
+      (s.neg, IntList.smul x (-1) )
+
+abbrev positivizeConstraint (s : Constraint) (x : List Int) : Constraint := (positivize (s, x)).1
+abbrev positivizeCoeffs (s : Constraint) (x : List Int) : List Int := (positivize (s, x)).2
+
+theorem positivize_sat {s x v} (w : s.sat' x v) :
+    (positivizeConstraint s x).sat' (positivizeCoeffs s x) v := sorry
+
+-- TODO make this a single operation
+def IntList.combo (a : Int) (x : List Int) (b : Int) (y : List Int) : List Int :=
+  IntList.add (IntList.smul x a) (IntList.smul y b)
 
 theorem combo_sat (s t : Constraint)
     (a : Int) (x : List Int) (b : Int) (y : List Int) (v : List Int)
@@ -393,32 +424,33 @@ theorem IntList.bmod_length (m) : (IntList.bmod x m).length = x.length := List.l
 def bmod_coeffs (m : Nat) (i : Nat) (x : List Int) : List Int :=
   IntList.set (IntList.bmod x m) i m
 
-theorem foo (m : Nat) (a b : List Int) :
-    (m : Int) ∣ (Int.bmod (IntList.dot a b) m) - IntList.dot (IntList.bmod a m) b :=
+abbrev bmod_sub_term (m : Nat) (a b : List Int) : Int :=
+    (Int.bmod (IntList.dot a b) m) - IntList.dot (IntList.bmod a m) b
+
+theorem bmod_sat_aux (m : Nat) (a b : List Int) : (m : Int) ∣ bmod_sub_term m a b :=
   sorry
 
+abbrev bmod_div_term (m : Nat) (a b : List Int) : Int := bmod_sub_term m a b / m
+
 theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
-    (h : x.length ≤ i)  -- during proof reconstruction this will be by decide
-    (p : IntList.get v i = (Int.bmod (IntList.dot x v) m - IntList.dot (IntList.bmod x m) v) / m) -- and this will be by rfl
+    (h : x.length ≤ i)  -- during proof reconstruction this will be by `decide`
+    (p : IntList.get v i = bmod_div_term m x v) -- and this will be by `rfl`
     (w : (Constraint.exact r).sat' x v) :
     (Constraint.exact (Int.bmod r m)).sat' (bmod_coeffs m i x) v := by
   simp at w
-  simp [bmod_coeffs, p]
+  simp only [p, bmod_coeffs, Constraint.exact_sat, IntList.dot_set_left, decide_eq_true_eq]
   rw [← IntList.bmod_length m] at h
-  rw [IntList.get_of_length_le h]
-  rw [Int.sub_zero]
-  rw [Int.mul_ediv_cancel' (foo _ _ _)]
-  rw [w]
-  rw [← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
-
-#exit
+  rw [IntList.get_of_length_le h, Int.sub_zero, Int.mul_ediv_cancel' (bmod_sat_aux _ _ _), w,
+    ← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
 
 inductive Justification : Constraint → List Int → Type
 -- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
 | assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
 | normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
+| positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
+| combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
 | combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
-| bmod (m : Nat) (r : Int) (j : Justification (.exact r) x) : Justification (Constraint.bmod m r) (bmod_coeffs m i x)
+| bmod (m : Nat) (r : Int) (i : Nat) {x} (j : Justification (.exact r) x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
 
 namespace Justification
 
@@ -427,39 +459,66 @@ open Lean
 def normalizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
   mkApp4 (.const ``normalize_sat []) (toExpr s) (toExpr x) v prf
 
+def positivizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+  mkApp4 (.const ``positivize_sat []) (toExpr s) (toExpr x) v prf
+
+def combineProof (s t : Constraint) (x : List Int) (v : Expr) (ps pt : Expr) : Expr :=
+  mkApp6 (.const ``Constraint.combine_sat' []) (toExpr s) (toExpr t) (toExpr x) v ps pt
+
 def comboProof (s t : Constraint) (a : Int) (x : List Int) (b : Int) (y : List Int)
     (v : Expr) (px py : Expr) : Expr :=
   mkApp9 (.const ``combo_sat []) (toExpr s) (toExpr t) (toExpr a) (toExpr x) (toExpr b) (toExpr y)
     v px py
 
-def bmodProof (m : Nat) (r : Int) (x : List Int) (v : Expr) (p : Expr) : Expr :=
-  sorry
+/-- Construct the term with type hint `(Eq.refl a : a = b)`-/
+def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
+  mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
-def proof (v : Expr) (assumptions : Array Expr) : Justification s c → OmegaM Expr
-| assumption s c i => pure assumptions[i]!
+open Qq in
+def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr) : MetaM Expr := do
+  let m := toExpr m
+  let r := toExpr r
+  let i := toExpr i
+  let x := toExpr x
+  let h ← mkDecideProof q(List.length $x ≤ $i)
+  let p ← mkEqReflWithExpectedType (mkApp2 (.const ``IntList.get []) v i) (mkApp3 (.const ``bmod_div_term []) m x v)
+  return mkApp8 (.const ``bmod_sat []) m r i x v h p w
+
+/-- Constructs a proof that `s.sat' c v = true` -/
+def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
+| assumption s c i => assumptions[i]!
 | @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
+| @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
+| @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
 | @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
-| bmod m r x => sorry
+| @bmod m r i x j => do bmodProof m r i x v (← proof v assumptions j)
 
 end Justification
 
 structure Fact where
   coeffs : List Int
   constraint : Constraint
-  justification : Justification coeffs constraint
+  justification : Justification constraint coeffs
+
+namespace Fact
+
+def positivize (f : Fact) : Fact := { justification := f.justification.positivize }
+def normalize (f : Fact) : Fact := { justification := f.justification.normalize }
+def combo (a : Int) (f : Fact) (b : Int) (g : Fact) : Fact :=
+  { justification := .combo a f.justification b g.justification }
+
+end Fact
 
 structure Problem where
-  assumptions : Array (OmegaM Expr)
-  constraints : AssocList Coefficients Fact := ∅
+  assumptions : Array Proof := ∅
+  constraints : AssocList (List Int) Fact := ∅
 
   possible : Bool := true
-  -- possible_spec : ¬ ∃ c, contraints.find? c matches some (.impossible)
 
-  proveFalse? : Option Proof? := none
+  proveFalse? : Option Proof := none
   proveFalse?_spec : possible || proveFalse?.isSome := by rfl
 
-  equalities : List Coefficients
-
+  equalities : List (List Int) := ∅
 
 instance : ToString Problem where
   toString p :=
@@ -472,56 +531,57 @@ instance : ToString Problem where
     else
       "impossible"
 
-structure Inequality where
-  coeffs : Coefficients
-  cst : Constraint
 
-namespace Inequality
+-- structure Inequality where
+--   coeffs : Coefficients
+--   cst : Constraint
 
-abbrev sat (i : Inequality) (v : List Int) : Prop :=
-  i.cst.sat (i.coeffs.eval v)
+-- namespace Inequality
 
-def normalize (i : Inequality) : Inequality :=
-  if i.coeffs.gcd = 0 then
-    if i.cst.sat 0 then
-      { i with cst := .trivial }
-    else
-      { i with cst := .impossible }
-  else if i.coeffs.gcd = 1 then
-    i
-  else
-    { coeffs := i.coeffs.div_gcd
-      cst := i.cst.div i.coeffs.gcd }
+-- abbrev sat (i : Inequality) (v : List Int) : Prop :=
+--   i.cst.sat (i.coeffs.eval v)
 
-theorem normalize_sat {i : Inequality} : i.normalize.sat v = i.sat v :=
-  sorry
+-- def normalize (i : Inequality) : Inequality :=
+--   if i.coeffs.gcd = 0 then
+--     if i.cst.sat 0 then
+--       { i with cst := .trivial }
+--     else
+--       { i with cst := .impossible }
+--   else if i.coeffs.gcd = 1 then
+--     i
+--   else
+--     { coeffs := i.coeffs.div_gcd
+--       cst := i.cst.div i.coeffs.gcd }
 
-def of (coeffs : List Int) (cst : Constraint) : Inequality :=
-  let coeffs := IntList.trim coeffs
-  normalize <|
-  if 0 ≤ (coeffs.find? (! · == 0) |>.getD 0) then
-    { coeffs := { coeffs }
-      cst := cst }
-  else
-    { coeffs := { coeffs := IntList.smul coeffs (-1) }
-      cst := cst.neg }
+-- theorem normalize_sat {i : Inequality} : i.normalize.sat v = i.sat v :=
+--   sorry
 
-/-- Convert `const + ∑ coeffs[i] * xᵢ ≥ 0` into an `Inequality`. -/
-def of_le (coeffs : List Int) (const : Int) : Inequality :=
-  of coeffs ⟨some (-const), none⟩
+-- def of (coeffs : List Int) (cst : Constraint) : Inequality :=
+--   let coeffs := IntList.trim coeffs
+--   normalize <|
+--   if 0 ≤ (coeffs.find? (! · == 0) |>.getD 0) then
+--     { coeffs := { coeffs }
+--       cst := cst }
+--   else
+--     { coeffs := { coeffs := IntList.smul coeffs (-1) }
+--       cst := cst.neg }
 
-/-- Convert `const + ∑ coeffs[i] * xᵢ = 0` into an `Inequality`. -/
-def of_eq (coeffs : List Int) (const : Int) : Inequality :=
-  of coeffs ⟨some (-const), some (-const)⟩
+-- /-- Convert `const + ∑ coeffs[i] * xᵢ ≥ 0` into an `Inequality`. -/
+-- def of_le (coeffs : List Int) (const : Int) : Inequality :=
+--   of coeffs ⟨some (-const), none⟩
 
-theorem of_sat {coeffs cst v} : (of coeffs cst).sat v = cst.sat (IntList.dot coeffs v) :=
-  sorry
+-- /-- Convert `const + ∑ coeffs[i] * xᵢ = 0` into an `Inequality`. -/
+-- def of_eq (coeffs : List Int) (const : Int) : Inequality :=
+--   of coeffs ⟨some (-const), some (-const)⟩
 
-theorem of_le_sat {coeffs const v} : (of_le coeffs const).sat v = (0 ≤ const + (IntList.dot coeffs v)) :=
-  sorry
+-- theorem of_sat {coeffs cst v} : (of coeffs cst).sat v = cst.sat (IntList.dot coeffs v) :=
+--   sorry
 
-theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = (const + (IntList.dot coeffs v) = 0) :=
-  sorry
+-- theorem of_le_sat {coeffs const v} : (of_le coeffs const).sat v = (0 ≤ const + (IntList.dot coeffs v)) :=
+--   sorry
+
+-- theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = (const + (IntList.dot coeffs v) = 0) :=
+--   sorry
 
 -- open Lean in
 -- def typecheck (i : Inequality) (p : Proof?) (v : Array Expr) : MetaM Unit := do
@@ -534,138 +594,146 @@ theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = (const + (IntL
 --       (← mkListLit (.const ``Int []) v.toList))
 --   -- and check defeq
 --   guard (← Meta.isDefEq t t')
-section
-open Lean
+-- section
+-- open Lean
 
-def normalize_proof {i : Inequality} (p : Proof?) : Proof? := do
-  let p ← p
-  let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
-  -- Hmm, I don't like that we have `Inequality` expressions. Can it even be found by unification?
-  let i ← mkFreshExprMVar (some (.const ``Inequality [])) -- We could fill tis in from `inferType p`
-  mkEqMPR' (mkApp2 (.const ``Inequality.normalize_sat []) v i) p
+-- def normalize_proof {i : Inequality} (p : Proof?) : Proof? := do
+--   let p ← p
+--   let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
+--   -- Hmm, I don't like that we have `Inequality` expressions. Can it even be found by unification?
+--   let i ← mkFreshExprMVar (some (.const ``Inequality [])) -- We could fill tis in from `inferType p`
+--   mkEqMPR' (mkApp2 (.const ``Inequality.normalize_sat []) v i) p
 
-def of_proof (coeffs : List Int) (cst : Constraint) (p : Proof?) : Proof? := do
-  let p ← p
-  mkEqMPR' (mkApp3 (.const ``Inequality.of_sat []) (toExpr coeffs) (toExpr cst) (← atomsList)) p
+-- def of_proof (coeffs : List Int) (cst : Constraint) (p : Proof?) : Proof? := do
+--   let p ← p
+--   mkEqMPR' (mkApp3 (.const ``Inequality.of_sat []) (toExpr coeffs) (toExpr cst) (← atomsList)) p
 
-def of_le_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
-  let p ← p
-  mkEqMPR' (mkApp3 (.const ``Inequality.of_le_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
+-- def of_le_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
+--   let p ← p
+--   mkEqMPR' (mkApp3 (.const ``Inequality.of_le_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
 
-def of_eq_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
-  let p ← p
-  mkEqMPR' (mkApp3 (.const ``Inequality.of_eq_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
+-- def of_eq_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
+--   let p ← p
+--   mkEqMPR' (mkApp3 (.const ``Inequality.of_eq_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
 
-end
+-- end
 
-end Inequality
+-- end Inequality
 
 namespace Problem
 
-instance : Inhabited Problem where
-  default :=
-  { equalities := ∅,
-    possible := true
-    proveFalse?_spec := rfl
-    -- lowerBoundCounts := ∅,
-    -- upperBoundCounts := ∅,
-    -- exactFourierMotzkin := ∅
-    }
-instance : EmptyCollection Problem where emptyCollection := default
+-- instance : Inhabited Problem where
+--   default :=
+--   { assumptions := ∅
+--     equalities := ∅
+--     possible := true
+--     proveFalse?_spec := rfl
+--     }
+-- instance : EmptyCollection Problem where emptyCollection := default
 
--- Membership instance to AssocList?
-def sat (p : Problem) (v : List Int) : Prop :=
-  ∀ z ∈ p.constraints.toList, (fun ⟨coeffs, cst, _⟩ => cst.sat (coeffs.eval v)) z
+-- -- Membership instance to AssocList?
+-- def sat (p : Problem) (v : List Int) : Prop :=
+--   ∀ z ∈ p.constraints.toList, (fun ⟨coeffs, cst, _⟩ => cst.sat (coeffs.eval v)) z
 
 open Lean in
 /--
-Takes a proof that `cst.sat (coeffs.dot atoms)` for some `cst` such that `cst.isImpossible`,
-and constructs a `Problem` containing a proof of `False`.
+Takes a proof that `s.sat' x v` for some `s` such that `s.isImpossible`,
+and constructs a proof of `False`.
 -/
-def proveFalse (cst : Constraint) (coeffs : List Int) (prf : Proof?) : Problem :=
-  { possible := false
-    proveFalse? := some do
-      let prf ← prf
-      let t := mkApp2 (.const ``IntList.dot []) (toExpr coeffs) (← atomsList)
-      let cst := toExpr cst
-      let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) cst) (.const ``true []))
-      return mkApp4 (.const ``Constraint.not_sat_of_isImpossible []) cst impossible t prf
-    equalities := ∅
-    -- lowerBoundCounts := ∅
-    -- upperBoundCounts := ∅
-    -- exactFourierMotzkin := ∅
-    }
+def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof := do
+  let atoms ← atoms
+  let v ← mkListLit (.const ``Int [])
+    (atoms ++ (← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))))
+  let prf ← j.proof v assumptions
+  let x := toExpr x
+  let s := toExpr s
+  let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
+  return mkApp5 (.const ``Constraint.not_sat'_of_isImpossible []) s impossible x v prf
 
 /--
 Insert a constraint into the problem,
 without checking if there is already a constraint for these coefficients.
 -/
-def insertConstraint (p : Problem) (c : Coefficients) (t : Constraint) (prf : Proof?) : Problem :=
-  if t.isImpossible then
-    proveFalse t c.coeffs prf
-  else
-    { possible := p.possible
-      constraints := p.constraints.insert c ⟨t, prf⟩
-      proveFalse?_spec := p.proveFalse?_spec
-      equalities :=
-      if t.isExact then
-        p.equalities.insert' c
-      else
-        p.equalities
-      -- lowerBoundCounts := sorry
-      -- upperBoundCounts := sorry
-      -- exactFourierMotzkin := sorry
-      }
+def insertConstraint (p : Problem) : Fact → Problem
+  | f@⟨x, s, j⟩ =>
+    if s.isImpossible then
+      { p with
+        possible := false
+        proveFalse? := some (proveFalse j p.assumptions)
+        proveFalse?_spec := rfl }
+    else
+      { p with
+        constraints := p.constraints.insert x f
+        proveFalse?_spec := p.proveFalse?_spec
+        equalities :=
+        if f.constraint.isExact then
+          p.equalities.insert' x
+        else
+          p.equalities }
 
--- TODO stop using `Inequality`
-def addConstraint (p : Problem) (ineq : Inequality) (prf : Proof?) : Problem :=
-  if p.possible then
-    match p.constraints.find? ineq.coeffs with
-    | none =>
-      match ineq.cst with
-      | .trivial => p
-      | cst => p.insertConstraint ineq.coeffs cst prf
-    | some (cst', prf') =>
-      match cst'.combine ineq.cst with
-      | .trivial => p
-      | cst'' =>  p.insertConstraint ineq.coeffs cst'' (combine_proofs prf' prf)
-  else
-    p
+def addConstraint (p : Problem) : Fact → Problem
+  | f@⟨x, s, j⟩ =>
+    if p.possible then
+      match p.constraints.find? x with
+      | none =>
+        match s with
+        | .trivial => p
+        | _ => p.insertConstraint f
+      | some ⟨x', t, k⟩ =>
+        if h : x = x' then
+          p.insertConstraint ⟨x, s.combine t, j.combine (h ▸ k)⟩
+        else
+          p -- unreachable
+    else
+      p
 
-theorem addConstraint_sat : (addConstraint p ineq prf).sat v = p.sat v ∧ ineq.sat v :=
-  sorry
+-- theorem addConstraint_sat : (addConstraint p ineq prf).sat v = p.sat v ∧ ineq.sat v :=
+--   sorry
 
-def addInequality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof?) : Problem :=
-    let i := (.of_le coeffs const)
+def addInequality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
-    p.addConstraint i (Inequality.of_le_proof coeffs const prf)
-
-def addEquality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof?) : Problem :=
-    let i := (.of_eq coeffs const)
+    let i := p.assumptions.size
+    let p' := { p with assumptions := p.assumptions.push prf }
+    let f : Fact :=
+    { coeffs
+      constraint := { lowerBound := const, upperBound := none }
+      justification := .assumption _ _ i }
+    p'.addConstraint f.positivize.normalize
+def addEquality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
-    p.addConstraint i (Inequality.of_eq_proof coeffs const prf)
+    let i := p.assumptions.size
+    let p' := { p with assumptions := p.assumptions.push prf }
+    let f : Fact :=
+    { coeffs
+      constraint := { lowerBound := const, upperBound := const }
+      justification := .assumption _ _ i }
+    p'.addConstraint f.positivize.normalize
 
-def addInequalities (p : Problem) (ineqs : List (List Int × Int × Option Proof?)) : Problem :=
+def addInequalities (p : Problem) (ineqs : List (List Int × Int × Option Proof)) : Problem :=
   ineqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addInequality coeffs const prf?
 
-def addEqualities (p : Problem) (ineqs : List (List Int × Int × Option Proof?)) : Problem :=
-  ineqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addEquality coeffs const prf?
+def addEqualities (p : Problem) (eqs : List (List Int × Int × Option Proof)) : Problem :=
+  eqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addEquality coeffs const prf?
 
+/-- info: [1, 1] ∈ [-1, 1] -/
+#guard_msgs in
+#eval Problem.addInequalities {} [([1, 1], -1, none), ([-1, -1], -1, none)]
 
-example : (Problem.addInequalities ∅
-    [([1, 1], -1, none), ([-1, -1], -1, none)] |>.possible) = false := rfl
+/-- info: [1] ∈ {1} -/
+#guard_msgs in
+#eval Problem.addInequalities {} [([2], 2, none), ([-2], -2, none)]
 
-example : (Problem.addInequalities {}
-    [([2], 2, none), ([-2], -2, none)] |>.possible) = true := rfl
+/-- info: impossible -/
+#guard_msgs in
+#eval Problem.addInequalities {} [([2], 1, none), ([-2], -1, none)]
 
-example : (Problem.addInequalities {}
-    [([2], 1, none), ([-2], -1, none)] |>.possible) = false := rfl
+/-- info: [1] ∈ {1} -/
+#guard_msgs in
+#eval Problem.addEqualities {} [([2], 2, none)]
 
-example : (Problem.addEqualities {}
-    [([2], 2, none)] |>.possible) = true := rfl
-
-example : (Problem.addEqualities {}
-    [([2], 1, none)] |>.possible) = false := rfl
+/-- info: impossible -/
+#guard_msgs in
+#eval Problem.addEqualities {} [([2], 1, none)]
 
 def selectEquality (p : Problem) : Option Coefficients :=
   p.equalities.foldl (init := none) fun

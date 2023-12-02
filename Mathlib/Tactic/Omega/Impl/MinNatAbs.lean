@@ -120,3 +120,5 @@ theorem minNatAbs_eq_nonzero_iff (xs : List Int) (w : z ≠ 0) :
   simp [minNatAbs, nonzeroMinimum_eq_nonzero_iff w]
 
 @[simp] theorem minNatAbs_nil : ([] : List Int).minNatAbs = 0 := rfl
+
+def maxNatAbs (xs : List Int) : Nat := xs.map Int.natAbs |>.maximum? |>.getD 0
