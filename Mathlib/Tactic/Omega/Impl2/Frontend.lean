@@ -205,10 +205,11 @@ def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo x
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
+  trace[omega] "Adding proof of {lc} = 0"
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addEquality lc.coeffs lc.const
+    problem := p.problem.addEquality lc.const lc.coeffs
       (some do mkEqTrans (← mkEqSymm (← prf)) h) }
 
 /--
@@ -218,10 +219,11 @@ def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo y
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
+  trace[omega] "Adding proof of {lc} ≥ 0"
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addInequality lc.coeffs lc.const
+    problem := p.problem.addInequality lc.const lc.coeffs
       (some do mkAppM ``le_of_le_of_eq #[h, (← prf)]) }
 
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
@@ -287,8 +289,6 @@ partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
 
 end MetaProblem
 
-def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
-
 theorem Int.ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
   Int.ofNat_eq_zero.mpr (Nat.sub_eq_zero_of_le (Nat.le_of_lt (Nat.not_le.mp h)))
 
@@ -320,6 +320,7 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
     match p'.proveFalse? with
     | none => throwError "omega found a contradiction, but didn't produce a proof of False"
     | some prf =>
+      trace[omega] "Justification:\n{p'.explanation?.get!}"
       let p ← instantiateMVars (← prf)
       trace[omega] "omega found a contradiction, proving {← inferType p}"
       trace[omega] "{p}"

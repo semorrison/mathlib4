@@ -94,7 +94,7 @@ def UpperBound.sat (b : UpperBound) (t : Int) := b.all fun y => t ≤ y
 structure Constraint where
   lowerBound : LowerBound
   upperBound : UpperBound
-deriving BEq, Repr, Lean.ToExpr
+deriving BEq, DecidableEq, Repr, Lean.ToExpr
 
 namespace Constraint
 
@@ -450,9 +450,24 @@ inductive Justification : Constraint → List Int → Type
 | positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
 | combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
 | combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
-| bmod (m : Nat) (r : Int) (i : Nat) {x} (j : Justification (.exact r) x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
+  -- This only makes sense when `s = .exact r`, but there is no point in enforcing that here:
+| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
 
+
+def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "
 namespace Justification
+
+-- TODO deduplicate??
+
+def toString : Justification s x → String
+| assumption _ _ i => s!"{x} ∈ {s}: assumption {i}"
+| @normalize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
+| @positivize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
+| combine j k => s!"{x} ∈ {s}: combination of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
+| combo a j b k => s!"{x} ∈ {s}: {a} * x + {b} * y combo of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
+| bmod m _ i j => s!"{x} ∈ {s}: bmod with m={m} and i={i} of:\n" ++ j.toString.bullet
+
+instance : ToString (Justification s x) where toString := toString
 
 open Lean
 
@@ -474,15 +489,31 @@ def comboProof (s t : Constraint) (a : Int) (x : List Int) (b : Int) (y : List I
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
   mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
+
+def takeListLit : Nat → Level → Expr → Expr → Expr
+  | 0, u, ty, _ => mkApp (.const ``List.nil [u]) ty
+  | (k + 1), u, ty, e =>
+    match e.getAppFnArgs with
+    | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
+    | _ => mkApp (.const ``List.nil [u]) ty
+
+
 open Qq in
 def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr) : MetaM Expr := do
+  let v' := takeListLit x.length .zero (.const ``Int []) v
   let m := toExpr m
   let r := toExpr r
   let i := toExpr i
   let x := toExpr x
   let h ← mkDecideProof q(List.length $x ≤ $i)
-  let p ← mkEqReflWithExpectedType (mkApp2 (.const ``IntList.get []) v i) (mkApp3 (.const ``bmod_div_term []) m x v)
+  -- TODO Clean up
+  let lhs := mkApp2 (.const ``IntList.get []) v i
+  let rhs := mkApp3 (.const ``bmod_div_term []) m x v'
+  _ ← isDefEq lhs rhs
+  let p ← mkEqReflWithExpectedType lhs rhs
   return mkApp8 (.const ``bmod_sat []) m r i x v h p w
+
+-- TODO deduplicate: don't prove the same thing twice in different branches
 
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
@@ -491,7 +522,7 @@ def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
 | @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
 | @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
 | @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
-| @bmod m r i x j => do bmodProof m r i x v (← proof v assumptions j)
+| @bmod m r i x s j => do bmodProof m r i x v (← proof v assumptions j)
 
 end Justification
 
@@ -517,6 +548,8 @@ structure Problem where
 
   proveFalse? : Option Proof := none
   proveFalse?_spec : possible || proveFalse?.isSome := by rfl
+
+  explanation? : Option String := none
 
   equalities : List (List Int) := ∅
 
@@ -660,6 +693,7 @@ def insertConstraint (p : Problem) : Fact → Problem
       { p with
         possible := false
         proveFalse? := some (proveFalse j p.assumptions)
+        explanation? := some j.toString
         proveFalse?_spec := rfl }
     else
       { p with
@@ -690,172 +724,107 @@ def addConstraint (p : Problem) : Fact → Problem
 -- theorem addConstraint_sat : (addConstraint p ineq prf).sat v = p.sat v ∧ ineq.sat v :=
 --   sorry
 
-def addInequality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof) : Problem :=
+theorem addInequality_sat (w : c + IntList.dot x y ≥ 0) :
+    ({ lowerBound := some (-c), upperBound := none } : Constraint).sat' x y := sorry
+
+open Lean in
+def addInequality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
+  return mkApp4 (.const ``addInequality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
+
+theorem addEquality_sat (w : c + IntList.dot x y = 0) :
+    ({ lowerBound := some (-c), upperBound := some (-c) } : Constraint).sat' x y := sorry
+
+open Lean in
+def addEquality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
+  return mkApp4 (.const ``addEquality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
+
+-- prf? : const + IntList.dot coeffs atoms ≥ 0
+-- But we need to transform this to `IntList.dot coeffs atoms ≥ -const` i.e.
+def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
     let i := p.assumptions.size
-    let p' := { p with assumptions := p.assumptions.push prf }
+    let p' := { p with assumptions := p.assumptions.push (addInequality_proof const coeffs prf) }
     let f : Fact :=
     { coeffs
-      constraint := { lowerBound := const, upperBound := none }
-      justification := .assumption _ _ i }
-    p'.addConstraint f.positivize.normalize
-def addEquality (p : Problem) (coeffs : List Int) (const : Int) (prf? : Option Proof) : Problem :=
-    let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
-    let i := p.assumptions.size
-    let p' := { p with assumptions := p.assumptions.push prf }
-    let f : Fact :=
-    { coeffs
-      constraint := { lowerBound := const, upperBound := const }
+      constraint := { lowerBound := some (-const), upperBound := none }
       justification := .assumption _ _ i }
     p'.addConstraint f.positivize.normalize
 
-def addInequalities (p : Problem) (ineqs : List (List Int × Int × Option Proof)) : Problem :=
-  ineqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addInequality coeffs const prf?
+def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
+    let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
+    let i := p.assumptions.size
+    let p' := { p with assumptions := p.assumptions.push (addEquality_proof const coeffs prf) }
+    let f : Fact :=
+    { coeffs
+      constraint := { lowerBound := some (-const), upperBound := some (-const) }
+      justification := .assumption _ _ i }
+    p'.addConstraint f.positivize.normalize
 
-def addEqualities (p : Problem) (eqs : List (List Int × Int × Option Proof)) : Problem :=
-  eqs.foldl (init := p) fun p ⟨coeffs, const, prf?⟩ => p.addEquality coeffs const prf?
+def addInequalities (p : Problem) (ineqs : List (Int × List Int × Option Proof)) : Problem :=
+  ineqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addInequality const coeffs prf?
+
+def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) : Problem :=
+  eqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addEquality const coeffs prf?
+
+/-- info: impossible -/
+#guard_msgs in
+#eval Problem.addInequalities {} [(-2, [], none)]
 
 /-- info: [1, 1] ∈ [-1, 1] -/
 #guard_msgs in
-#eval Problem.addInequalities {} [([1, 1], -1, none), ([-1, -1], -1, none)]
+#eval Problem.addInequalities {} [(1, [1, 1], none), (1, [-1, -1], none)]
 
 /-- info: [1] ∈ {1} -/
 #guard_msgs in
-#eval Problem.addInequalities {} [([2], 2, none), ([-2], -2, none)]
+#eval Problem.addInequalities {} [(-2, [2], none), (2, [-2], none)]
 
 /-- info: impossible -/
 #guard_msgs in
-#eval Problem.addInequalities {} [([2], 1, none), ([-2], -1, none)]
+#eval Problem.addInequalities {} [(-1, [2], none), (1, [-2], none)]
 
 /-- info: [1] ∈ {1} -/
 #guard_msgs in
-#eval Problem.addEqualities {} [([2], 2, none)]
+#eval Problem.addEqualities {} [(-2, [2], none)]
 
 /-- info: impossible -/
 #guard_msgs in
-#eval Problem.addEqualities {} [([2], 1, none)]
+#eval Problem.addEqualities {} [(-1, [2], none)]
 
-def selectEquality (p : Problem) : Option Coefficients :=
+def selectEquality (p : Problem) : Option (List Int) :=
   p.equalities.foldl (init := none) fun
   | none, c => c
   | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
-def add_smul (c₁ c₂ : List Int) (k : Int) : List Int := c₁ + k * c₂  -- turn this into a single operation
-def combo (a : Int) (x : List Int) (b : Int) (y : List Int) := a * x + b * y -- turn this into a single operation
-
-theorem add_smul_sat {c₁ c₂ : List Int} {k : Int} {v : List Int} {cst : Constraint} {r : Int}
-    (h₁ : cst.sat (IntList.dot c₁ v)) (h₂ : Constraint.sat ⟨some r, some r⟩ (IntList.dot c₂ v)) :
-    (cst.translate (k * r)).sat (IntList.dot (add_smul c₁ c₂ k) v) :=
-  sorry
-
-open Lean in
-def add_smul_proof (c₁ c₂ : List Int) (k : Int) (cst : Constraint) (r : Int)
-    (prf₁ prf₂ : Proof?) : Proof? := do
-  let prf₁ ← prf₁
-  let prf₂ ← prf₂
-  let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
-  return mkApp8 (.const ``add_smul_sat []) (toExpr c₁) (toExpr c₂) (toExpr k) v (toExpr cst) (toExpr r) prf₁ prf₂
-
-open Lean in
-def of_add_smul_proof (c₁ c₂ : List Int) (k : Int) (cst : Constraint) (r : Int)
-    (prf₁ prf₂ : Proof?) : Proof? := do
-  let p := add_smul_proof c₁ c₂ k cst r prf₁ prf₂ -- this is the proof `(cst.translate (k * r)).sat (IntList.dot (add_smul c₁ c₂ k) v)`
-  Inequality.of_proof (add_smul c₁ c₂ k) (cst.translate (k * r)) p
-
-theorem combo_sat (a : Int) (x : List Int) (b : Int) (y : List Int) (s t : Constraint) (v : List Int)
-    (hs : s.sat (IntList.dot x v)) (ht : t.sat (IntList.dot y v)) :
-    (Constraint.combo a s b t).sat (IntList.dot (combo a x b y) v) :=
-  sorry
-
-open Lean in
-def combo_proof (a : Int) (x : List Int) (b : Int) (y : List Int) (s t : Constraint)
-    (sp tp : Proof?) : Proof? := do
-  let sp ← sp
-  let tp ← tp
-  let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
-  return mkApp9 (.const ``combo_sat []) (toExpr a) (toExpr x) (toExpr b) (toExpr y) (toExpr s) (toExpr t) v sp tp
-
-open Lean in
-def of_combo_proof (a : Int) (x : List Int) (b : Int) (y : List Int) (s t : Constraint)
-    (sp tp : Proof?) : Proof? := do
-  let p := combo_proof a x b y s t sp tp -- this is the proof `(Constraint.combo a s b t).sat (IntList.dot (combo a x b y) v)`
-  Inequality.of_proof (combo a x b y) (Constraint.combo a s b t) p
-
-def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
-  let i := c.coeffs.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
-  let sign := c.coeffs.get? i |>.getD 0 |> Int.sign
+def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
+  let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
+  let sign := c.get? i |>.getD 0 |> Int.sign
   match p.constraints.find? c with
-  | some (⟨some r, _⟩, prf) =>
-    p.constraints.foldl (init := {}) fun p' coeffs ⟨cst, prf'⟩ =>
-      match coeffs.coeffs.get? i |>.getD 0 with
+  | some f =>
+    -- TODO Lame that we are copying around assumptions here:
+    p.constraints.foldl (init := { assumptions := p.assumptions }) fun p' coeffs g =>
+      match coeffs.get? i |>.getD 0 with
       | 0 =>
-        p'.addConstraint { coeffs, cst } prf'
+        p'.addConstraint g
       | ci =>
         let k := -1 * sign * ci
-        p'.addConstraint (.of -- FIXME can we combine addCondition and of?
-          (add_smul coeffs.coeffs c.coeffs k)
-          (cst.translate (k * r))) (of_add_smul_proof coeffs.coeffs c.coeffs k cst r prf' prf)
-  | _ => unreachable!
+        p'.addConstraint (Fact.combo k f 1 g).positivize.normalize
+  | _ => p -- unreachable
+
+/-- info: trivial -/
+#guard_msgs in
+#eval Problem.addEqualities {} [(-2, [2], none)] |>.solveEasyEquality [1]
+
+/-- info: [0, 1, 2] ∈ {-10} -/
+#guard_msgs in
+#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality [1,2,3]
 
 -- TODO probably should just cache the active variables, or this number
-def maxVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.coeffs.length
+def maxVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.length
 -- we could use mex here:
 def freshVar (p : Problem) : Nat := p.maxVar
 
 def IntList.bmod (xs : List Int) (m : Nat) : List Int :=
   xs.map fun x => Int.bmod x m
-
-theorem IntList.dvd_sub_bmod_dot (xs ys : List Int) (m : Nat) :
-    (m : Int) ∣ (IntList.dot (xs - IntList.bmod xs m) ys) := sorry
-
-def bmod_coeffs (m : Nat) (coeffs : List Int) (j : Nat) : List Int :=
-  IntList.set (IntList.bmod coeffs m) j (-m)
-  -- coeffs +
-
-def bmod_cst (m : Nat) (r : Int) : Constraint := .exact (Int.bmod r m)
-
-def bmod (m : Nat) (c : Coefficients) (j : Nat) (r : Int) : Inequality :=
-  { coeffs :=
-    { coeffs := bmod_coeffs m c.coeffs j }
-    cst := bmod_cst m r }
-
--- IntList.get v j will be zero here, but it makes the proofs easier.
-def bmod_transform (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int) : List Int :=
-  IntList.set v j (IntList.get v j + (IntList.dot (coeffs - bmod_coeffs m coeffs j) v )/m  + - (r - Int.bmod r m)/m)
-
--- bmod r m = ()
-
-theorem bmod_sat (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int) :
-    (bmod_cst m r).sat (IntList.dot (bmod_coeffs m coeffs j) (bmod_transform m coeffs j r v)) =
-      (Constraint.exact r).sat (IntList.dot coeffs v) := by
-  simp? [bmod_cst, bmod_coeffs, bmod_transform, Constraint.exact_sat]
-  sorry
-
-theorem bmod_sat_of (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (v : List Int)
-    (w : (Constraint.exact r).sat (IntList.dot coeffs v)) :
-    (bmod_cst m r).sat (IntList.dot (bmod_coeffs m coeffs j) (bmod_transform m coeffs j r v)) := by
-  simp_all [bmod_sat]
-
-
-open Lean in
-def bmod_proof (m : Nat) (coeffs : List Int) (j : Nat) (r : Int) (p : Proof?) : Proof? := do
-  let p ← p
-  let ty ← inferType p
-  let ty ← whnf ty
-  IO.println s!"{← ppExpr ty}"
-  let v ← match ty.getAppFnArgs with
-  | (``Eq, #[(.const ``Bool []), lhs, _]) =>
-    match lhs.getAppFnArgs with
-    | (``Constraint.sat, #[_, dot]) => do
-      IO.println s!"{dot}"
-      match dot.getAppFnArgs with
-      | (``IntList.dot, #[_, v]) => do pure v
-      | (``Coefficients.eval, #[_, v]) => do pure v
-      | _ => throwError "doesn't look like IntList.dot _ v: {dot}"
-    | _ => throwError "doesn't look like Constraint.sat _ _: {lhs}"
-  | _ => throwError "doesn't look like _ = _: {ty}"
-  -- let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
-  return mkApp6 (.const ``bmod_sat_of []) (toExpr m) (toExpr coeffs) (toExpr j) (toExpr r) v p
 
 /--
 We deal with a hard equality by introducing a new easy equality.
@@ -863,17 +832,16 @@ We deal with a hard equality by introducing a new easy equality.
 After solving the easy equality,
 the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
 -/
-def dealWithHardEquality (p : Problem) (c : Coefficients) : Problem :=
+def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
   let m := c.minNatAbs + 1
-  let j := p.freshVar
+  let i := p.freshVar
   match p.constraints.find? c with
-  | some (⟨some r, _⟩, prf) =>
-    p.addConstraint
-      (bmod m c j r)
-      (bmod_proof m c.coeffs j r prf)
-  | _ => unreachable!
+  | some ⟨_, ⟨some r, _⟩, j⟩ =>
+    p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
+  | _ =>
+    p -- unreachable
 
-def solveEquality (p : Problem) (c : Coefficients) : Problem :=
+def solveEquality (p : Problem) (c : List Int) : Problem :=
   if c.minNatAbs = 1 then
     p.solveEasyEquality c
   else
@@ -884,10 +852,39 @@ partial def solveEqualities (p : Problem) : Problem :=
   | some c => (p.solveEquality c).solveEqualities
   | none => p
 
+/-- info: [0, 0, 1] ∈ [-22, ∞) -/
+#guard_msgs in
+#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)]
+  |>.addInequalities [(0, [1,0,0], none)]
+  |>.solveEqualities
+
+
+def ex1 : Problem := Problem.addEqualities {}
+    [(17, [7, 12, 31], none), (7, [3, 5, 24], none)]
+
+def ex1_1 : Problem := ex1.addInequalities [(-1000, [1], none)]
+def ex1_2 : Problem := ex1.addInequalities [(-1000, [0,1], none)]
+def ex1_3 : Problem := ex1.addInequalities [(8, [0,0,1], none)]
+def ex1_all : Problem := ex1.addInequalities [(-1000, [1], none), (-1000, [0,1], none), (8, [0,0,1], none)]
+
+/-- info: [0, 0, 1] ∈ (-∞, -8] -/
+#guard_msgs in
+#eval ex1_1.solveEqualities
+/-- info: [0, 0, 1] ∈ [14, ∞) -/
+#guard_msgs in
+#eval ex1_2.solveEqualities
+/-- info: [0, 0, 1] ∈ [-8, ∞) -/
+#guard_msgs in
+#eval ex1_3.solveEqualities
+/-- info: impossible -/
+#guard_msgs in
+#eval ex1_all.solveEqualities
+
+
 structure FourierMotzkinData where
-  irrelevant : List (Coefficients × Constraint × Proof?) := []
-  lowerBounds : List (Coefficients × (Constraint × Proof?) × Int) := []
-  upperBounds : List (Coefficients × (Constraint × Proof?) × Int) := []
+  irrelevant : List Fact := []
+  lowerBounds : List (Fact × Int) := []
+  upperBounds : List (Fact × Int) := []
   lowerExact : Bool := true
   upperExact : Bool := true
 deriving Inhabited
@@ -901,22 +898,22 @@ def fourierMotzkinData (p : Problem) : Array FourierMotzkinData := Id.run do
   -- TODO Does it make sense to precompute some or all of this?
   let n := p.maxVar
   let mut data : Array FourierMotzkinData := Array.mk (List.replicate p.maxVar {})
-  for (coeffs, cst, prf?) in p.constraints do
+  for (_, f@⟨xs, s, _⟩) in p.constraints do
     for i in [0:n] do
-      let x := IntList.get coeffs.coeffs i
+      let x := IntList.get xs i
       data := data.modify i fun d =>
         if x = 0 then
-          { d with irrelevant := (coeffs, cst, prf?) :: d.irrelevant }
+          { d with irrelevant := f :: d.irrelevant }
         else Id.run do
-          let cst' := cst.scale x
+          let s' := s.scale x
           let mut d' := d
-          if cst'.lowerBound.isSome then
+          if s'.lowerBound.isSome then
             d' := { d' with
-              lowerBounds := (coeffs, ⟨cst, prf?⟩, x) :: d'.lowerBounds
+              lowerBounds := (f, x) :: d'.lowerBounds
               lowerExact := d'.lowerExact && x.natAbs = 1 }
-          if cst'.upperBound.isSome then
+          if s'.upperBound.isSome then
             d' := { d' with
-              upperBounds := (coeffs, ⟨cst, prf?⟩, x) :: d'.upperBounds
+              upperBounds := (f, x) :: d'.upperBounds
               upperExact := d'.upperExact && x.natAbs = 1 }
           return d'
   return data
@@ -946,14 +943,12 @@ def fourierMotzkin (p : Problem) : Problem := Id.run do
   let data := p.fourierMotzkinData
   -- Now perform the elimination.
   let ⟨irrelevant, lower, upper, _, _⟩ := fourierMotzkinSelect data
-  let mut r : Problem := ∅
-  for (c, cst, prf) in irrelevant do
-    r := r.insertConstraint c cst prf
-  for ⟨x, ⟨xc, xp⟩, b⟩ in lower do
-    for ⟨y, ⟨yc, yp⟩, a⟩ in upper do
-      r := r.addConstraint (.of
-        (combo a x.coeffs (-b) y.coeffs) (Constraint.combo a xc (-b) yc))
-        (of_combo_proof a x.coeffs (-b) y.coeffs xc yc xp yp)
+  let mut r : Problem := { assumptions := p.assumptions }
+  for f in irrelevant do
+    r := r.insertConstraint f
+  for ⟨f, b⟩ in lower do
+    for ⟨g, a⟩ in upper do
+      r := r.addConstraint (Fact.combo a f (-b) g).positivize.normalize
   return r
 
 partial def run (p : Problem) : Problem :=
@@ -969,23 +964,21 @@ partial def run (p : Problem) : Problem :=
   else
     p
 
-#eval Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)]
-#eval Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)] |>.solveEqualities
-#eval Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)] |>.fourierMotzkinData.size
-#eval (Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)]).fourierMotzkinData[0]!.irrelevant.length
-#eval (Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)]).fourierMotzkinData[0]!.lowerBounds.length
-#eval (Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)]).fourierMotzkinData[0]!.upperBounds.length
-#eval Problem.addInequalities {} [([1], 1, none), ([-1], 1, none)] |>.fourierMotzkin
-
+/-- info: [1] ∈ [-1, 1] -/
+#guard_msgs in
+#eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)]
+/-- info: trivial -/
+#guard_msgs in
+#eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)] |>.fourierMotzkin
 
 -- example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)]
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.solveEqualities
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData.size
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[0]!.irrelevant.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[0]!.lowerBounds.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[0]!.upperBounds.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[1]!.irrelevant.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[1]!.lowerBounds.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkinData[1]!.upperBounds.length
-#eval Problem.addInequalities {} [([1, 1], -11, none), ([-1], 4, none), ([0, -1], 4, none)] |>.fourierMotzkin
+/--
+info: [1, 1] ∈ [11, ∞)
+[1] ∈ (-∞, 4]
+[0, 1] ∈ (-∞, 4]
+-/
+#guard_msgs in
+#eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)]
+/-- info: impossible -/
+#guard_msgs in
+#eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)] |>.fourierMotzkin
