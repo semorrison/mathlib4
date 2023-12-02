@@ -36,10 +36,8 @@ example {x y : Int} (_ : 2 * x + 4 * y = 5) : False := by omega
 example {x y : Nat} (_ : 2 * x + 4 * y = 5) : False := by omega
 
 example {x y : Int} (_ : 6 * x + 7 * y = 5) : True := by (fail_if_success omega); trivial
--- set_option pp.all true
-example {x y : Nat} (_ : 6 * x + 7 * y = 5) : False := by omega
 
-#exit
+example {x y : Nat} (_ : 6 * x + 7 * y = 5) : False := by omega
 
 example {x : Nat} (_ : x < 0) : False := by omega
 
