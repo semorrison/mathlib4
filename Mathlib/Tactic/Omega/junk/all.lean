@@ -1,3 +1,3 @@
-import Mathlib
+-- import Mathlib
 
-set_option autoImplicit true
+-- set_option autoImplicit true

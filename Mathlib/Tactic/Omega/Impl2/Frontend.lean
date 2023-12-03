@@ -300,20 +300,20 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
   let p' := p.run
   if p'.possible then
     match ← popSub with
-    | none => throwError "omega did not find a contradiction" -- TODO later, show a witness?
+    | none => throwError "omega did not find a contradiction:\n{p'}" -- TODO later, show a witness?
     | some (a, b) =>
       trace[omega] "Case splitting on {b} ≤ {a}"
       let (⟨gpos, hpos⟩, ⟨gneg, hneg⟩) ← g.byCases (← mkLE b a)
       let wpos := mkApp3 (.const ``Int.ofNat_sub []) b a (.fvar hpos)
       trace[omega] "Adding facts:\n{← gpos.withContext <| inferType (.fvar hpos)}\n{← inferType wpos}"
       let mpos := { m' with
-        problem := p'
+        problem := p -- FIXME this is completely restarted! can we save the substitutions?
         facts := [.fvar hpos, wpos] }
       savingState do omegaImpl mpos gpos
       let wneg := mkApp3 (.const ``Int.ofNat_sub_eq_zero []) b a (.fvar hneg)
       trace[omega] "Adding facts:\n{← gneg.withContext <| inferType (.fvar hneg)}\n{← inferType wneg}"
       let mneg := { m' with
-        problem := p'
+        problem := p
         facts := [.fvar hneg, wneg] }
       omegaImpl mneg gneg
   else

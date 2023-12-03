@@ -848,9 +848,11 @@ def solveEquality (p : Problem) (c : List Int) : Problem :=
     p.dealWithHardEquality c
 
 partial def solveEqualities (p : Problem) : Problem :=
-  match p.selectEquality with
-  | some c => (p.solveEquality c).solveEqualities
-  | none => p
+  if p.possible then
+    match p.selectEquality with
+    | some c => (p.solveEquality c).solveEqualities
+    | none => p
+  else p
 
 /-- info: [0, 0, 1] ∈ [-22, ∞) -/
 #guard_msgs in
@@ -889,6 +891,8 @@ structure FourierMotzkinData where
   upperExact : Bool := true
 deriving Inhabited
 
+def FourierMotzkinData.isEmpty (d : FourierMotzkinData) : Bool :=
+  d.lowerBounds.isEmpty && d.upperBounds.isEmpty
 def FourierMotzkinData.size (d : FourierMotzkinData) : Nat := d.lowerBounds.length * d.upperBounds.length
 def FourierMotzkinData.exact (d : FourierMotzkinData) : Bool := d.lowerExact || d.upperExact
 
@@ -922,6 +926,7 @@ def fourierMotzkinData (p : Problem) : Array FourierMotzkinData := Id.run do
 -- We want an exact elimination if possible,
 -- and otherwise the one with the fewest new constraints.
 def fourierMotzkinSelect (data : Array FourierMotzkinData) : FourierMotzkinData := Id.run do
+  let data := data.filter fun d => ¬ d.isEmpty
   let mut bestIdx := 0
   let mut bestSize := data[0]!.size
   let mut bestExact := data[0]!.exact
@@ -982,3 +987,15 @@ info: [1, 1] ∈ [11, ∞)
 /-- info: impossible -/
 #guard_msgs in
 #eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)] |>.fourierMotzkin
+
+-- def P := Problem.addEqualities {} [(0, [1], none), (0, [1, -1, 1], none)]
+--   |>.addInequalities [(-1, [0, 1, -1], none), (0, [0, 1], none), (0, [0, 0, 1], none)]
+
+-- #eval P
+-- #eval P.selectEquality
+-- #eval P.solveEquality P.selectEquality.get!
+-- #eval P.solveEquality P.selectEquality.get! |>.selectEquality
+-- #eval P.solveEqualities
+
+-- example {a b c : Int} (_ : a = 0) (_ : b - c ≥ 1) (_ : b ≥ 0) (_ : c ≥ 0)
+--   (_ : a - b + c = 0) : False := by omega
