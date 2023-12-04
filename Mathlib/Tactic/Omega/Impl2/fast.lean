@@ -87,12 +87,14 @@ namespace Option
 @[simp] theorem all_none : Option.all p none = true := rfl
 @[simp] theorem all_some : Option.all p (some x) = p x := rfl
 
+@[simp]
 def min [Min α] : Option α → Option α → Option α
   | some x, some y => some (Min.min x y)
   | some x, none => some x
   | none, some y => some y
   | none, none => none
 
+@[simp]
 def max [Max α] : Option α → Option α → Option α
   | some x, some y => some (Max.max x y)
   | some x, none => some x
@@ -187,7 +189,7 @@ def scale (k : Int) (c : Constraint) : Constraint :=
   else
     c.flip.map (k * ·)
 
-theorem scale_sat {c : Constraint } (w : c.sat t) : (scale k c).sat (k * t) := by
+theorem scale_sat {c : Constraint} (k) (w : c.sat t) : (scale k c).sat (k * t) := by
   simp [scale]
   split
   · split
@@ -213,23 +215,42 @@ theorem scale_sat {c : Constraint } (w : c.sat t) : (scale k c).sat (k * t) := b
 
 
 def add (x y : Constraint) : Constraint where
-  lowerBound := do let a ← x.lowerBound; let b ← y.lowerBound; pure (a + b)
-  upperBound := do let a ← x.upperBound; let b ← y.upperBound; pure (a + b)
+  lowerBound := x.lowerBound.bind fun a => y.lowerBound.map fun b => a + b
+  upperBound := x.upperBound.bind fun a => y.upperBound.map fun b => a + b
 
-theorem add_sat (w₁ : c₁.sat x₁) (w₂ : c₂.sat x₂) : (add c₁ c₂).sat (x₁ + x₂) := sorry
+theorem add_sat (w₁ : c₁.sat x₁) (w₂ : c₂.sat x₂) : (add c₁ c₂).sat (x₁ + x₂) := by
+  rcases c₁ with ⟨_ | l₁, _ | u₁⟩ <;> rcases c₂ with ⟨_ | l₂, _ | u₂⟩
+    <;> simp [sat, LowerBound.sat, UpperBound.sat, add] at *
+  · exact Int.add_le_add w₁ w₂
+  · exact Int.add_le_add w₁ w₂.2
+  · exact Int.add_le_add w₁ w₂
+  · exact Int.add_le_add w₁ w₂.1
+  · exact Int.add_le_add w₁.2 w₂
+  · exact Int.add_le_add w₁.1 w₂
+  · constructor
+    · exact Int.add_le_add w₁.1 w₂.1
+    · exact Int.add_le_add w₁.2 w₂.2
 
 def combo (a : Int) (x : Constraint) (b : Int) (y : Constraint) : Constraint :=
   add (scale a x) (scale b y)
 
-def combo_sat (w₁ : c₁.sat x₁) (w₂ : c₂.sat x₂) : (combo a c₁ b c₂).sat (a * x₁ + b * x₂) := sorry
+def combo_sat (a) (w₁ : c₁.sat x₁) (b) (w₂ : c₂.sat x₂) : (combo a c₁ b c₂).sat (a * x₁ + b * x₂) :=
+  add_sat (scale_sat a w₁) (scale_sat b w₂)
 
 def combine (x y : Constraint) : Constraint where
   lowerBound := Option.max x.lowerBound y.lowerBound
   upperBound := Option.min x.upperBound y.upperBound
 
 theorem combine_sat : (c : Constraint) → (c' : Constraint) → (t : Int) →
-     (c.combine c').sat t = (c.sat t ∧ c'.sat t) := sorry
-
+    (c.combine c').sat t = (c.sat t ∧ c'.sat t) := by
+  rintro ⟨_ | l₁, _ | u₁⟩ <;> rintro ⟨_ | l₂, _ | u₂⟩ t
+    <;> simp [sat, LowerBound.sat, UpperBound.sat, combine, Int.le_min, Int.max_le] at *
+  · rw [And.comm]
+  · rw [← and_assoc, And.comm (a := l₂ ≤ t), and_assoc]
+  · rw [and_assoc]
+  · rw [and_assoc]
+  · rw [and_assoc, and_assoc, And.comm (a := l₂ ≤ t)]
+  · rw [and_assoc, ← and_assoc (a := l₂ ≤ t), And.comm (a := l₂ ≤ t), and_assoc, and_assoc]
 
 def div (c : Constraint) (k : Nat) : Constraint where
   lowerBound := c.lowerBound.map fun x => (- ((- x) / k))
@@ -250,12 +271,20 @@ theorem div_sat (c : Constraint) (t : Int) (k : Nat) (h : (k : Int) ∣ t) (w : 
   rcases c with ⟨_ | l, _ | u⟩
   · simp_all [sat, div]
   · simp_all [sat, div]
+    apply Int.le_of_sub_nonneg
+    replace w := Int.sub_nonneg_of_le w
+    rw [← Int.sub_ediv_of_dvd _ h]
+    rw [Int.le_iff_ge]
+    rw [Int.div_nonneg_iff_of_pos] -- This seems to be all we have available!
+    suffices p : t / k * k ≤ u / k * k by
+      apply Int.mul_le_of
+    have := Int.ediv_le
     sorry
   · simp_all [sat, div]
     sorry
   · simp_all [sat, div]
     sorry
-
+#exit
 abbrev sat' (c : Constraint) (x y : List Int) := c.sat (IntList.dot x y)
 
 theorem combine_sat' {s t : Constraint} {x y} (ws : s.sat' x y) (wt : t.sat' x y) :
@@ -545,11 +574,13 @@ theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeff
   · rcases IntList.trim?_eq_some ht with rfl
     exact normalize_sat (positivize_sat (trim_sat w))
 
-theorem combo_sat (s t : Constraint)
+theorem combo_sat' (s t : Constraint)
     (a : Int) (x : List Int) (b : Int) (y : List Int) (v : List Int)
     (wx : s.sat' x v) (wy : t.sat' y v) :
-    (Constraint.combo a s b t).sat' (IntList.combo a x b y) v :=
-  sorry
+    (Constraint.combo a s b t).sat' (IntList.combo a x b y) v := by
+  rw [Constraint.sat', IntList.combo_eq_smul_add_smul, IntList.dot_distrib_left,
+    IntList.dot_smul_left, IntList.dot_smul_left]
+  exact Constraint.combo_sat a wx b wy
 
 abbrev IntList.bmod (x : List Int) (m : Nat) : List Int := x.map (Int.bmod · m)
 
@@ -632,7 +663,7 @@ def combineProof (s t : Constraint) (x : List Int) (v : Expr) (ps pt : Expr) : E
 
 def comboProof (s t : Constraint) (a : Int) (x : List Int) (b : Int) (y : List Int)
     (v : Expr) (px py : Expr) : Expr :=
-  mkApp9 (.const ``combo_sat []) (toExpr s) (toExpr t) (toExpr a) (toExpr x) (toExpr b) (toExpr y)
+  mkApp9 (.const ``combo_sat' []) (toExpr s) (toExpr t) (toExpr a) (toExpr x) (toExpr b) (toExpr y)
     v px py
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
@@ -884,11 +915,31 @@ open Lean in
 def addInequality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
   return mkApp4 (.const ``addInequality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
 
+theorem Int.add_le_iff_le_sub (a b c : Int) : a + b ≤ c ↔ a ≤ c - b := by
+  conv =>
+    lhs
+    rw [← Int.add_zero c, ← Int.sub_self (-b), Int.sub_eq_add_neg, ← Int.add_assoc, Int.neg_neg,
+      Int.add_le_add_iff_right]
+
+theorem Int.le_add_iff_sub_le (a b c : Int) : a ≤ b + c ↔ a - c ≤ b := by
+  conv =>
+    lhs
+    rw [← Int.neg_neg c, ← Int.sub_eq_add_neg, ← add_le_iff_le_sub]
+
+theorem Int.add_le_zero_iff_le_neg (a b : Int) : a + b ≤ 0 ↔ a ≤ - b := by
+  rw [add_le_iff_le_sub, Int.zero_sub]
+theorem Int.add_le_zero_iff_le_neg' (a b : Int) : a + b ≤ 0 ↔ b ≤ -a := by
+  rw [Int.add_comm, Int.add_le_zero_iff_le_neg]
+theorem Int.add_nonnneg_iff_neg_le (a b : Int) : 0 ≤ a + b ↔ -b ≤ a := by
+  rw [le_add_iff_sub_le, Int.zero_sub]
+theorem Int.add_nonnneg_iff_neg_le' (a b : Int) : 0 ≤ a + b ↔ -a ≤ b := by
+  rw [Int.add_comm, Int.add_nonnneg_iff_neg_le]
+
 theorem addEquality_sat (w : c + IntList.dot x y = 0) :
     ({ lowerBound := some (-c), upperBound := some (-c) } : Constraint).sat' x y := by
   simp [Constraint.sat', Constraint.sat]
-  sorry
-
+  rw [Int.eq_iff_le_and_ge] at w
+  rwa [Int.add_le_zero_iff_le_neg', Int.add_nonnneg_iff_neg_le', and_comm] at w
 
 open Lean in
 def addEquality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do

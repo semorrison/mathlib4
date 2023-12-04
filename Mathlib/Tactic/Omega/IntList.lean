@@ -67,6 +67,11 @@ theorem add_def (xs ys : IntList) :
   simp only [add_def, get, List.zipWithAll_get?, List.get?_eq_none]
   cases xs.get? i <;> cases ys.get? i <;> simp
 
+@[simp] theorem add_nil (xs : IntList) : xs + [] = xs := by simp [add_def]
+@[simp] theorem nil_add (xs : IntList) : [] + xs = xs := by simp [add_def]
+@[simp] theorem cons_add_cons (x) (xs : IntList) (y) (ys : IntList) :
+    (x :: xs) + (y :: ys) = (x + y) :: (xs + ys) := by simp [add_def]
+
 def mul (xs ys : IntList) : IntList := List.zipWith (· * ·) xs ys
 
 instance : Mul IntList := ⟨mul⟩
@@ -129,6 +134,16 @@ theorem combo_def (xs ys : IntList) :
 @[simp] theorem combo_get (xs ys : IntList) (i : Nat) : (combo a xs b ys).get i = a * xs.get i + b * ys.get i := by
   simp only [combo_def, get, List.zipWithAll_get?, List.get?_eq_none]
   cases xs.get? i <;> cases ys.get? i <;> simp
+
+theorem combo_eq_smul_add_smul (a : Int) (xs : IntList) (b : Int) (ys : IntList) :
+    combo a xs b ys = a * xs + b * ys := by
+  dsimp [combo]
+  induction xs generalizing ys with
+  | nil => simp; rfl
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp; rfl
+    | cons y ys => simp_all
 
 theorem mul_comm (xs ys : IntList) : xs * ys = ys * xs := by
   induction xs generalizing ys with
