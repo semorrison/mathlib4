@@ -119,6 +119,17 @@ theorem smul_def (xs : IntList) (i : Int) : i * xs = xs.map fun x => i * x := rf
 @[simp] theorem smul_nil {i : Int} : i * ([] : IntList) = [] := rfl
 @[simp] theorem smul_cons {i : Int} : i * (x::xs : IntList) = i * x :: i * xs := rfl
 
+def combo (a : Int) (xs : IntList) (b : Int) (ys : IntList) : IntList :=
+  List.zipWithAll (fun x y => a * x.getD 0 + b * y.getD 0) xs ys
+
+theorem combo_def (xs ys : IntList) :
+    combo a xs b ys = List.zipWithAll (fun x y => a * x.getD 0 + b * y.getD 0) xs ys :=
+  rfl
+
+@[simp] theorem combo_get (xs ys : IntList) (i : Nat) : (combo a xs b ys).get i = a * xs.get i + b * ys.get i := by
+  simp only [combo_def, get, List.zipWithAll_get?, List.get?_eq_none]
+  cases xs.get? i <;> cases ys.get? i <;> simp
+
 theorem mul_comm (xs ys : IntList) : xs * ys = ys * xs := by
   induction xs generalizing ys with
   | nil => simp
@@ -365,6 +376,21 @@ attribute [simp] Int.zero_dvd
 theorem gcd_dvd_dot_left (xs ys : IntList) : (xs.gcd : Int) ∣ dot xs ys :=
   Int.dvd_of_emod_eq_zero (dot_mod_gcd_left xs ys)
 
+@[simp]
+theorem dot_eq_zero_of_left_eq_zero {xs ys : IntList} (h : ∀ x ∈ xs, x = 0) : dot xs ys = 0 := by
+  induction xs generalizing ys with
+  | nil => rfl
+  | cons x xs ih =>
+    cases ys with
+    | nil => rfl
+    | cons y ys =>
+      rw [dot_cons₂, h x (List.mem_cons_self _ _), ih (fun x m => h x (List.mem_cons_of_mem _ m)),
+        Int.zero_mul, Int.add_zero]
+
+theorem dot_eq_zero_of_gcd_left_eq_zero {xs ys : IntList} (h : xs.gcd = 0) : dot xs ys = 0 := by
+  simp at h
+  simp_all
+
 attribute [simp] Int.zero_ediv
 
 theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
@@ -411,18 +437,76 @@ theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign :=
       simp_all
     · simp_all [leadingSign_cons]
 
--- TODO: gross
-def trim (xs : IntList) : IntList :=
-  (xs.reverse.dropWhile (· == 0)).reverse
+-- def trim? (xs : IntList) : Option IntList :=
+--   go #[] 0 xs
+-- where
+--   go : Array Int → Nat → IntList → Option IntList
+--   | _, 0, [] => none
+--   | acc, _ + 1, [] => acc.toList
+--   | acc, n, 0 :: xs => go acc (n+1) xs
+--   | acc, 0, x :: xs => go (acc.push x) 0 xs
+--   | acc, (n+1), x :: xs => go (acc.push 0) n (x :: xs)
+
+-- def trim (xs : IntList) : IntList := xs.trim?.getD xs
+
+-- theorem trim?_isSome {xs : IntList} : xs.trim?.isSome = (xs.getLast? = some 0) := by
+--   dsimp [trim?]
+--   suffices h : ∀ acc n, (trim?.go acc n xs).isSome = (0 < n && xs = [] || xs.getLast? = some 0) by
+--     specialize h #[] 0
+--     simp_all
+--   intro acc n
+--   induction xs with
+--   | nil => cases n <;> simp [trim?.go]
+--   | cons h t ih =>
+--     induction n with
+--     | zero => sorry
+--     | succ n ih => sorry
+
+/--
+Trim trailing zeroes from a `List Int`, returning `none` if none were removed.
+-/
+-- We could implement this without any `List.reverse`s, but at the expense of either:
+-- * an `Array.toList` and scanning for zeroes from the left, or
+-- * a `List.toArray` and an `Array.toList`.
+-- It's unclear either would be appreciably faster.
+def trim? (xs : IntList) : Option IntList :=
+  match xs.reverse with
+  | [] => none
+  | 0 :: xs => (xs.dropWhile (· == 0)).reverse
+  | _ :: _ => none
+
+theorem trim?_isSome {xs : IntList} : xs.trim?.isSome = (xs.getLast? = some 0) := by
+  dsimp [trim?]
+  split <;> rename_i h h'
+  · simp_all
+  · replace h' := congrArg List.reverse h'
+    simp at h'
+    simp [h']
+  · replace h' := congrArg List.reverse h'
+    simp at h'
+    simpa [h'] using h
+
+/-- Trailing trailing zeroes from a `List Int`. -/
+def trim (xs : IntList) : IntList := xs.trim?.getD xs
+
+theorem trim?_eq_some {xs : IntList} (w : xs.trim? = some t) : xs.trim = t := by simp [trim, w]
+
+theorem trim_spec {xs : IntList} : xs.trim = (xs.reverse.dropWhile (· == 0)).reverse := by
+  dsimp [trim, trim?]
+  split <;> rename_i h h'
+  · simp_all
+  · simp_all [List.dropWhile_cons]
+  · simp_all [List.dropWhile_cons]
+    rw [if_neg h, ← h', List.reverse_reverse]
 
 @[simp] theorem trim_nil : trim [] = [] := rfl
 
 @[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
-  simp [trim, List.dropWhile]
+  simp [trim_spec, List.dropWhile]
 
 theorem trim_cons :
     trim (x :: xs) = if x = 0 then if trim xs = [] then [] else 0 :: trim xs else x :: trim xs := by
-  simp only [trim, List.reverse_cons]
+  simp only [trim_spec, List.reverse_cons]
   generalize xs.reverse = xs'
   simp only [List.dropWhile_append, List.reverse_eq_nil_iff]
   split <;> rename_i h
@@ -431,7 +515,7 @@ theorem trim_cons :
   · split <;> simp_all
 
 @[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
-  simp only [trim, neg_def, List.reverse_map]
+  simp only [trim_spec, neg_def, List.reverse_map]
   generalize xs.reverse = xs'
   induction xs' with
   | nil => simp
@@ -439,6 +523,13 @@ theorem trim_cons :
     simp only [List.map_cons, List.dropWhile_cons, Int.neg_eq_zero, beq_iff_eq]
     split <;>
     simp_all [List.reverse_map]
+
+theorem dot_trim_left {xs ys : IntList} : dot xs.trim ys = dot xs ys := by
+  induction xs generalizing ys with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [trim_cons]
+    split <;> cases ys <;> (try split) <;> simp_all; apply ih
 
 def sign : IntList → Int
   | [] => 0

@@ -17,6 +17,8 @@ example : Int.bmod 4 8 = -4 := rfl
 
 theorem Int.ofNat_two : ((2 : Nat) : Int) = 2 := rfl
 
+@[simp] theorem Int.bmod_emod : (Int.bmod x m) % m = x % m := sorry
+
 @[simp] theorem Int.bmod_zero : Int.bmod 0 m = 0 := by
   dsimp [Int.bmod]
   simp only [Int.zero_emod, Int.zero_sub, ite_eq_left_iff, Int.neg_eq_zero]
