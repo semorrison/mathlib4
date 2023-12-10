@@ -491,12 +491,18 @@ theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
 inductive Justification : Constraint → List Int → Type
 -- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
 | assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
-| normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
-| positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
+-- | normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
+-- | positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
+| tidy (j : Justification s c) : Justification (tidyConstraint s c) (tidyCoeffs s c)
 | combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
 | combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
   -- This only makes sense when `s = .exact r`, but there is no point in enforcing that here:
 | bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
+
+nonrec def Justification.tidy? (j : Justification s c) : Option (Σ s' c', Justification s' c') :=
+  match tidy? (s, c) with
+  | some _ => some ⟨_, _, tidy j⟩
+  | none => none
 
 def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "
 
@@ -506,8 +512,9 @@ namespace Justification
 
 def toString : Justification s x → String
 | assumption _ _ i => s!"{x} ∈ {s}: assumption {i}"
-| @normalize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
-| @positivize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
+-- | @normalize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
+-- | @positivize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
+| @tidy s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: tidying up:\n" ++ j.toString.bullet
 | combine j k => s!"{x} ∈ {s}: combination of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | combo a j b k => s!"{x} ∈ {s}: {a} * x + {b} * y combo of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | bmod m _ i j => s!"{x} ∈ {s}: bmod with m={m} and i={i} of:\n" ++ j.toString.bullet
@@ -521,6 +528,9 @@ def normalizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Exp
 
 def positivizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
   mkApp4 (.const ``positivize_sat []) (toExpr s) (toExpr x) v prf
+
+def tidyProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+  mkApp4 (.const ``tidy_sat []) (toExpr s) (toExpr x) v prf
 
 def combineProof (s t : Constraint) (x : List Int) (v : Expr) (ps pt : Expr) : Expr :=
   mkApp6 (.const ``Constraint.combine_sat' []) (toExpr s) (toExpr t) (toExpr x) v ps pt
@@ -560,8 +570,9 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr)
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
 | assumption s c i => assumptions[i]!
-| @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
-| @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
+-- | @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
+-- | @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
+| @tidy s c j => return tidyProof s c v (← proof v assumptions j)
 | @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
 | @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
 | @bmod m r i x s j => do bmodProof m r i x v (← proof v assumptions j)
@@ -575,8 +586,13 @@ structure Fact where
 
 namespace Fact
 
-def positivize (f : Fact) : Fact := { justification := f.justification.positivize }
-def normalize (f : Fact) : Fact := { justification := f.justification.normalize }
+-- def positivize (f : Fact) : Fact := { justification := f.justification.positivize }
+-- def normalize (f : Fact) : Fact := { justification := f.justification.normalize }
+def tidy (f : Fact) : Fact :=
+  match f.justification.tidy? with
+  | some ⟨_, _, justification⟩ => { justification }
+  | none => f
+
 def combo (a : Int) (f : Fact) (b : Int) (g : Fact) : Fact :=
   { justification := .combo a f.justification b g.justification }
 
@@ -625,6 +641,7 @@ def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof
   let s := toExpr s
   let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
   return mkApp5 (.const ``Constraint.not_sat'_of_isImpossible []) s impossible x v prf
+  -- mkSorry (.const ``False []) false
 
 /--
 Insert a constraint into the problem,
@@ -715,7 +732,7 @@ def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := none }
       justification := .assumption _ _ i }
-    p'.addConstraint f.positivize.normalize
+    p'.addConstraint f.tidy
 
 def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
@@ -725,7 +742,7 @@ def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option P
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := some (-const) }
       justification := .assumption _ _ i }
-    p'.addConstraint f.positivize.normalize
+    p'.addConstraint f.tidy
 
 def addInequalities (p : Problem) (ineqs : List (Int × List Int × Option Proof)) : Problem :=
   ineqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addInequality const coeffs prf?
@@ -774,7 +791,7 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
         p'.addConstraint g
       | ci =>
         let k := -1 * sign * ci
-        p'.addConstraint (Fact.combo k f 1 g).positivize.normalize
+        p'.addConstraint (Fact.combo k f 1 g).tidy
   | _ => p -- unreachable
 
 /-- info: trivial -/
@@ -834,10 +851,10 @@ def ex1_2 : Problem := ex1.addInequalities [(-1000, [0,1], none)]
 def ex1_3 : Problem := ex1.addInequalities [(8, [0,0,1], none)]
 def ex1_all : Problem := ex1.addInequalities [(-1000, [1], none), (-1000, [0,1], none), (8, [0,0,1], none)]
 
-/-- info: [0, 0, 1, 0, 0] ∈ (-∞, -8] -/
+/-- info: [0, 0, 1] ∈ (-∞, -8] -/
 #guard_msgs in
 #eval ex1_1.solveEqualities
-/-- info: [0, 0, 1, 0, 0] ∈ [14, ∞) -/
+/-- info: [0, 0, 1] ∈ [14, ∞) -/
 #guard_msgs in
 #eval ex1_2.solveEqualities
 /-- info: [0, 0, 1] ∈ [-8, ∞) -/
@@ -918,7 +935,7 @@ def fourierMotzkin (p : Problem) : Problem := Id.run do
     r := r.insertConstraint f
   for ⟨f, b⟩ in lower do
     for ⟨g, a⟩ in upper do
-      r := r.addConstraint (Fact.combo a f (-b) g).positivize.normalize
+      r := r.addConstraint (Fact.combo a f (-b) g).tidy
   return r
 
 partial def run (p : Problem) : Problem :=
