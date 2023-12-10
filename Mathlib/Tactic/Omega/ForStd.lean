@@ -27,6 +27,8 @@ instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) wh
 
 namespace Int
 
+theorem le_iff_ge {a b : Int} : a ≤ b ↔ b ≥ a := Iff.rfl
+
 theorem mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
   calc k * (x / k)
     _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
@@ -36,6 +38,11 @@ theorem lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
   calc x
     _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
     _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
+
+protected theorem mul_le_mul_of_nonpos_left {a b c : Int}
+    (ha : a ≤ 0) (h : c ≤ b) : a * b ≤ a * c := by
+  rw [Int.mul_comm a b, Int.mul_comm a c]
+  apply Int.mul_le_mul_of_nonpos_right h ha
 
 theorem pow_two {x : Int} : x^2 = x * x := by
   change Int.pow _ _ = _

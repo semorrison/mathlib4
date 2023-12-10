@@ -199,20 +199,18 @@ theorem scale_sat {c : Constraint} (k) (w : c.sat t) : (scale k c).sat (k * t) :
     · replace h := Int.le_of_lt h
       exact Int.mul_le_mul_of_nonneg_left w h
     · rw [Int.not_lt] at h
-      sorry
+      exact Int.mul_le_mul_of_nonpos_left h w
     · replace h := Int.le_of_lt h
       exact Int.mul_le_mul_of_nonneg_left w h
     · rw [Int.not_lt] at h
-      sorry
-    · cases w
+      exact Int.mul_le_mul_of_nonpos_left h w
+    · constructor
+      · exact Int.mul_le_mul_of_nonneg_left w.1 (Int.le_of_lt h)
+      · exact Int.mul_le_mul_of_nonneg_left w.2 (Int.le_of_lt h)
+    · replace h := Int.not_lt.mp h
       constructor
-      · sorry
-      · sorry
-    · cases w
-      constructor
-      · sorry
-      · sorry
-
+      · exact Int.mul_le_mul_of_nonpos_left h w.2
+      · exact Int.mul_le_mul_of_nonpos_left h w.1
 
 def add (x y : Constraint) : Constraint where
   lowerBound := x.lowerBound.bind fun a => y.lowerBound.map fun b => a + b
@@ -256,45 +254,40 @@ def div (c : Constraint) (k : Nat) : Constraint where
   lowerBound := c.lowerBound.map fun x => (- ((- x) / k))
   upperBound := c.upperBound.map fun y => y / k
 
--- theorem div_sat (c : Constraint) (k : Nat) (t : Int) (h : (c.div k).sat t) : c.sat (t * k) := by
---   rcases c with ⟨_ | l, _ | u⟩
---   · simp_all [sat, div]
---   · simp_all [sat, div]
---     sorry
---   · simp_all [sat, div]
---     sorry
---   · simp_all [sat, div]
---     sorry
-
-theorem div_sat (c : Constraint) (t : Int) (k : Nat) (h : (k : Int) ∣ t) (w : c.sat t) :
+theorem div_sat (c : Constraint) (t : Int) (k : Nat) (n : k ≠ 0) (h : (k : Int) ∣ t) (w : c.sat t) :
     (c.div k).sat (t / k) := by
+  replace n : k > 0 := Nat.pos_of_ne_zero n
   rcases c with ⟨_ | l, _ | u⟩
   · simp_all [sat, div]
   · simp_all [sat, div]
     apply Int.le_of_sub_nonneg
-    replace w := Int.sub_nonneg_of_le w
-    rw [← Int.sub_ediv_of_dvd _ h]
-    rw [Int.le_iff_ge]
-    rw [Int.div_nonneg_iff_of_pos] -- This seems to be all we have available!
-    suffices p : t / k * k ≤ u / k * k by
-      apply Int.mul_le_of
-    have := Int.ediv_le
-    sorry
+    rw [← Int.sub_ediv_of_dvd _ h, Int.le_iff_ge, Int.div_nonneg_iff_of_pos (mod_cast n)]
+    exact Int.sub_nonneg_of_le w
   · simp_all [sat, div]
-    sorry
+    apply Int.le_of_sub_nonneg
+    rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, Int.le_iff_ge,
+      Int.div_nonneg_iff_of_pos (mod_cast n)]
+    exact Int.sub_nonneg_of_le w
   · simp_all [sat, div]
-    sorry
-#exit
+    constructor
+    · apply Int.le_of_sub_nonneg
+      rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, Int.le_iff_ge,
+        Int.div_nonneg_iff_of_pos (mod_cast n)]
+      exact Int.sub_nonneg_of_le w.1
+    · apply Int.le_of_sub_nonneg
+      rw [← Int.sub_ediv_of_dvd _ h, Int.le_iff_ge, Int.div_nonneg_iff_of_pos (mod_cast n)]
+      exact Int.sub_nonneg_of_le w.2
+
 abbrev sat' (c : Constraint) (x y : List Int) := c.sat (IntList.dot x y)
 
 theorem combine_sat' {s t : Constraint} {x y} (ws : s.sat' x y) (wt : t.sat' x y) :
     (s.combine t).sat' x y := (combine_sat _ _ _).mpr ⟨ws, wt⟩
 
-theorem div_sat' {c : Constraint} {x y} (w : c.sat (IntList.dot x y)) :
+theorem div_sat' {c : Constraint} {x y} (h : IntList.gcd x ≠ 0) (w : c.sat (IntList.dot x y)) :
     (c.div (IntList.gcd x)).sat' (IntList.sdiv x (IntList.gcd x)) y := by
   dsimp [sat']
   rw [IntList.dot_sdiv_left _ _ (Int.dvd_refl _)]
-  exact div_sat c _ (IntList.gcd x) (IntList.gcd_dvd_dot_left x y) w
+  exact div_sat c _ (IntList.gcd x) h (IntList.gcd_dvd_dot_left x y) w
 
 theorem not_sat'_of_isImpossible (h : isImpossible c) {x y} : ¬ c.sat' x y :=
   not_sat_of_isImpossible h
@@ -505,14 +498,14 @@ theorem normalize?_eq_some (w : normalize? (s, x) = some (s', x')) :
 theorem normalize_sat {s x v} (w : s.sat' x v) :
     (normalizeConstraint s x).sat' (normalizeCoeffs s x) v := by
   dsimp [normalizeConstraint, normalizeCoeffs, normalize, normalize?]
-  split
+  split <;> rename_i h
   · split
     · simp
     · dsimp [Constraint.sat'] at w
       simp_all
   · split
     · exact w
-    · exact Constraint.div_sat' w
+    · exact Constraint.div_sat' h w
 
 def positivize? : Constraint × List Int → Option (Constraint × List Int)
   | ⟨s, x⟩ =>
