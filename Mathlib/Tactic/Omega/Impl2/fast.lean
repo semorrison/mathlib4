@@ -716,7 +716,7 @@ end Fact
 
 structure Problem where
   assumptions : Array Proof := ∅
-  constraints : AssocList (List Int) Fact := ∅
+  constraints : HashMap (List Int) Fact := ∅
 
   possible : Bool := true
 
@@ -738,109 +738,7 @@ instance : ToString Problem where
     else
       "impossible"
 
-
--- structure Inequality where
---   coeffs : Coefficients
---   cst : Constraint
-
--- namespace Inequality
-
--- abbrev sat (i : Inequality) (v : List Int) : Prop :=
---   i.cst.sat (i.coeffs.eval v)
-
--- def normalize (i : Inequality) : Inequality :=
---   if i.coeffs.gcd = 0 then
---     if i.cst.sat 0 then
---       { i with cst := .trivial }
---     else
---       { i with cst := .impossible }
---   else if i.coeffs.gcd = 1 then
---     i
---   else
---     { coeffs := i.coeffs.div_gcd
---       cst := i.cst.div i.coeffs.gcd }
-
--- theorem normalize_sat {i : Inequality} : i.normalize.sat v = i.sat v :=
---   sorry
-
--- def of (coeffs : List Int) (cst : Constraint) : Inequality :=
---   let coeffs := IntList.trim coeffs
---   normalize <|
---   if 0 ≤ (coeffs.find? (! · == 0) |>.getD 0) then
---     { coeffs := { coeffs }
---       cst := cst }
---   else
---     { coeffs := { coeffs := IntList.smul coeffs (-1) }
---       cst := cst.neg }
-
--- /-- Convert `const + ∑ coeffs[i] * xᵢ ≥ 0` into an `Inequality`. -/
--- def of_le (coeffs : List Int) (const : Int) : Inequality :=
---   of coeffs ⟨some (-const), none⟩
-
--- /-- Convert `const + ∑ coeffs[i] * xᵢ = 0` into an `Inequality`. -/
--- def of_eq (coeffs : List Int) (const : Int) : Inequality :=
---   of coeffs ⟨some (-const), some (-const)⟩
-
--- theorem of_sat {coeffs cst v} : (of coeffs cst).sat v = cst.sat (IntList.dot coeffs v) :=
---   sorry
-
--- theorem of_le_sat {coeffs const v} : (of_le coeffs const).sat v = (0 ≤ const + (IntList.dot coeffs v)) :=
---   sorry
-
--- theorem of_eq_sat {coeffs const v} : (of_eq coeffs const).sat v = (const + (IntList.dot coeffs v) = 0) :=
---   sorry
-
--- open Lean in
--- def typecheck (i : Inequality) (p : Proof?) (v : Array Expr) : MetaM Unit := do
---   let p ← p
---   let p := p.instantiate v
---   let t ← inferType p
---   -- Construct the Expr for `i.cst.sat (IntList.dot i.coeffs.coeffs v)`
---   let t' := mkApp2 (.const ``Constraint.sat []) (toExpr i.cst)
---     (mkApp2 (.const ``IntList.dot []) (toExpr i.coeffs.coeffs)
---       (← mkListLit (.const ``Int []) v.toList))
---   -- and check defeq
---   guard (← Meta.isDefEq t t')
--- section
--- open Lean
-
--- def normalize_proof {i : Inequality} (p : Proof?) : Proof? := do
---   let p ← p
---   let v ← mkFreshExprMVar (some (mkApp (.const ``List [.zero]) (.const ``Int [])))
---   -- Hmm, I don't like that we have `Inequality` expressions. Can it even be found by unification?
---   let i ← mkFreshExprMVar (some (.const ``Inequality [])) -- We could fill tis in from `inferType p`
---   mkEqMPR' (mkApp2 (.const ``Inequality.normalize_sat []) v i) p
-
--- def of_proof (coeffs : List Int) (cst : Constraint) (p : Proof?) : Proof? := do
---   let p ← p
---   mkEqMPR' (mkApp3 (.const ``Inequality.of_sat []) (toExpr coeffs) (toExpr cst) (← atomsList)) p
-
--- def of_le_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
---   let p ← p
---   mkEqMPR' (mkApp3 (.const ``Inequality.of_le_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
-
--- def of_eq_proof (coeffs : List Int) (const : Int) (p : Proof?) : Proof? := do
---   let p ← p
---   mkEqMPR' (mkApp3 (.const ``Inequality.of_eq_sat []) (toExpr coeffs) (toExpr const) (← atomsList)) p
-
--- end
-
--- end Inequality
-
 namespace Problem
-
--- instance : Inhabited Problem where
---   default :=
---   { assumptions := ∅
---     equalities := ∅
---     possible := true
---     proveFalse?_spec := rfl
---     }
--- instance : EmptyCollection Problem where emptyCollection := default
-
--- -- Membership instance to AssocList?
--- def sat (p : Problem) (v : List Int) : Prop :=
---   ∀ z ∈ p.constraints.toList, (fun ⟨coeffs, cst, _⟩ => cst.sat (coeffs.eval v)) z
 
 open Lean in
 /--
@@ -894,9 +792,6 @@ def addConstraint (p : Problem) : Fact → Problem
           p -- unreachable
     else
       p
-
--- theorem addConstraint_sat : (addConstraint p ineq prf).sat v = p.sat v ∧ ineq.sat v :=
---   sorry
 
 theorem addInequality_sat (w : c + IntList.dot x y ≥ 0) :
     ({ lowerBound := some (-c), upperBound := none } : Constraint).sat' x y := by
@@ -1001,7 +896,7 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
   match p.constraints.find? c with
   | some f =>
     -- TODO Lame that we are copying around assumptions here:
-    p.constraints.foldl (init := { assumptions := p.assumptions }) fun p' coeffs g =>
+    p.constraints.fold (init := { assumptions := p.assumptions }) fun p' coeffs g =>
       match coeffs.get? i |>.getD 0 with
       | 0 =>
         p'.addConstraint g
@@ -1019,7 +914,7 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
 #eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality [1,2,3]
 
 -- TODO probably should just cache the active variables, or this number
-def maxVar (p : Problem) : Nat := p.constraints.foldl (init := 0) fun l c _ => max l c.length
+def maxVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.length
 -- we could use mex here:
 def freshVar (p : Problem) : Nat := p.maxVar
 
@@ -1100,7 +995,7 @@ def fourierMotzkinData (p : Problem) : Array FourierMotzkinData := Id.run do
   let n := p.maxVar
   -- What is `Array.replicate` called?
   let mut data : Array FourierMotzkinData := Array.mk (List.replicate p.maxVar {})
-  for (_, f@⟨xs, s, _⟩) in p.constraints do
+  for (_, f@⟨xs, s, _⟩) in p.constraints.toList do -- We could make a forIn instance for HashMap
     for i in [0:n] do
       let x := IntList.get xs i
       data := data.modify i fun d =>
@@ -1174,17 +1069,17 @@ partial def run (p : Problem) : Problem :=
 #guard_msgs in
 #eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)] |>.fourierMotzkin
 
--- example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
-/--
-info: [1, 1] ∈ [11, ∞)
-[1] ∈ (-∞, 4]
-[0, 1] ∈ (-∞, 4]
--/
-#guard_msgs in
-#eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)]
-/-- info: impossible -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)] |>.fourierMotzkin
+-- -- example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
+-- /--
+-- info: [1, 1] ∈ [11, ∞)
+-- [1] ∈ (-∞, 4]
+-- [0, 1] ∈ (-∞, 4]
+-- -/
+-- #guard_msgs in
+-- #eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)]
+-- /-- info: impossible -/
+-- #guard_msgs in
+-- #eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)] |>.fourierMotzkin
 
 -- def P := Problem.addEqualities {} [(0, [1], none), (0, [1, -1, 1], none)]
 --   |>.addInequalities [(-1, [0, 1, -1], none), (0, [0, 1], none), (0, [0, 0, 1], none)]
