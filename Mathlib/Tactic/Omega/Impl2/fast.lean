@@ -294,56 +294,46 @@ theorem not_sat'_of_isImpossible (h : isImpossible c) {x y} : ¬ c.sat' x y :=
 
 end Constraint
 
--- TODO it is a pretty unconvincing speedup to use this instead of just rehashing each time.
-structure Coefficients where
-  coeffs : List Int
-  -- spec: first nonzero entry is nonnegative, and no trailing zeroes?
-  gcd : Nat := IntList.gcd coeffs
-  gcd_spec : gcd = IntList.gcd coeffs := by rfl
+-- structure Coefficients where
+--   coeffs : List Int
+--   -- spec: first nonzero entry is nonnegative, and no trailing zeroes?
+--   gcd : Nat := IntList.gcd coeffs
+--   -- gcd_spec
 
-  hash : UInt64 := Hashable.hash coeffs
+--   -- TODO cache the hash
+--   hash : UInt64 := Hashable.hash coeffs
 
-  -- minNatAbs : Nat := coeffs.minNatAbs
-  -- minNatAbs_spec
+--   minNatAbs : Nat := coeffs.minNatAbs
+--   -- minNatAbs_spec
 
-  -- maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
-  -- maxNatAbs_spec
-deriving Repr
+--   -- maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
+--   -- maxNatAbs_spec
+-- deriving Repr
 
-namespace Coefficients
+-- namespace Coefficients
 
-attribute [simp] gcd_spec
+-- instance : Ord Coefficients where
+--   compare x y := compareOfLessAndEq x.coeffs y.coeffs
 
-instance : Ord Coefficients where
-  compare x y := compareOfLessAndEq x.coeffs y.coeffs
+-- instance : BEq Coefficients where
+--   beq x y := x.hash == y.hash && x.coeffs == y.coeffs
 
-instance : BEq Coefficients where
-  beq x y := x.hash == y.hash && x.coeffs == y.coeffs
+-- -- TODO remove the `DecidableEq` instance, which compares determined fields,
+-- -- in favour of a `LawfulBEq` instance.
 
-instance : LawfulBEq Coefficients := sorry
+-- instance : ToString Coefficients where
+--   toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
 
-instance : ToString Coefficients where
-  toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
+-- abbrev eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
 
-instance : Hashable Coefficients := ⟨hash⟩
+-- instance : Hashable Coefficients := ⟨hash⟩
 
-@[simps]
-def neg (c : Coefficients) : Coefficients :=
-  { coeffs := IntList.smul c.coeffs (-1)
-    gcd := c.gcd
-    gcd_spec := sorry
-    -- minNatAbs := c.minNatAbs
-    }
+-- def div_gcd (c : Coefficients) : Coefficients :=
+--   { coeffs := IntList.sdiv c.coeffs c.gcd |>.trim
+--     gcd := 1
+--     minNatAbs := c.minNatAbs / c.gcd }
 
-@[simps]
-def div_gcd (c : Coefficients) : Coefficients :=
-  { coeffs := IntList.sdiv c.coeffs c.gcd
-    gcd := 1
-    gcd_spec := sorry
-    -- minNatAbs := c.minNatAbs / c.gcd
-    }
-
-end Coefficients
+-- end Coefficients
 
 
 open Lean (Expr)
@@ -353,31 +343,31 @@ A delayed proof that a constraint is satisfied at the atoms.
 -/
 abbrev Proof : Type := OmegaM Expr
 
-def normalize? : Constraint × Coefficients → Option (Constraint × Coefficients)
+def normalize? : Constraint × List Int → Option (Constraint × List Int)
   | ⟨s, x⟩ =>
-    -- let gcd := IntList.gcd x -- TODO should we be caching this?
-    if x.gcd = 0 then
+    let gcd := IntList.gcd x -- TODO should we be caching this?
+    if gcd = 0 then
       if s.sat 0 then
         some (.trivial, x)
       else
         some (.impossible, x)
-    else if x.gcd = 1 then
+    else if gcd = 1 then
       none
     else
-      some (s.div x.gcd, x.div_gcd)
+      some (s.div gcd, IntList.sdiv x gcd)
 
-def normalize (p : Constraint × Coefficients) : Constraint × Coefficients :=
+def normalize (p : Constraint × List Int) : Constraint × List Int :=
   normalize? p |>.getD p
 
-abbrev normalizeConstraint (s : Constraint) (x : Coefficients) : Constraint := (normalize (s, x)).1
-abbrev normalizeCoeffs (s : Constraint) (x : Coefficients) : Coefficients := (normalize (s, x)).2
+abbrev normalizeConstraint (s : Constraint) (x : List Int) : Constraint := (normalize (s, x)).1
+abbrev normalizeCoeffs (s : Constraint) (x : List Int) : List Int := (normalize (s, x)).2
 
 theorem normalize?_eq_some (w : normalize? (s, x) = some (s', x')) :
     normalizeConstraint s x = s' ∧ normalizeCoeffs s x = x' := by
   simp_all [normalizeConstraint, normalizeCoeffs, normalize]
 
 theorem normalize_sat {s x v} (w : s.sat' x v) :
-    (normalizeConstraint s { coeffs := x }).sat' (normalizeCoeffs s { coeffs := x}).coeffs v := by
+    (normalizeConstraint s x).sat' (normalizeCoeffs s x) v := by
   dsimp [normalizeConstraint, normalizeCoeffs, normalize, normalize?]
   split <;> rename_i h
   · split
@@ -386,29 +376,27 @@ theorem normalize_sat {s x v} (w : s.sat' x v) :
       simp_all
   · split
     · exact w
-    · --simp only [Coefficients.gcd_spec] at h
-      --simp only [Coefficients.gcd_spec, Option.getD_some, Coefficients.div_gcd_coeffs]
-      exact Constraint.div_sat' h w
+    · exact Constraint.div_sat' h w
 
-def positivize? : Constraint × Coefficients → Option (Constraint × Coefficients)
+def positivize? : Constraint × List Int → Option (Constraint × List Int)
   | ⟨s, x⟩ =>
-    if 0 ≤ (x.coeffs.find? (! · == 0) |>.getD 0) then
+    if 0 ≤ (x.find? (! · == 0) |>.getD 0) then
       none
     else
-      some (s.neg, x.neg)
+      (s.neg, IntList.smul x (-1) )
 
-def positivize (p : Constraint × Coefficients) : Constraint × Coefficients :=
+def positivize (p : Constraint × List Int) : Constraint × List Int :=
   positivize? p |>.getD p
 
-abbrev positivizeConstraint (s : Constraint) (x : Coefficients) : Constraint := (positivize (s, x)).1
-abbrev positivizeCoeffs (s : Constraint) (x : Coefficients) : Coefficients := (positivize (s, x)).2
+abbrev positivizeConstraint (s : Constraint) (x : List Int) : Constraint := (positivize (s, x)).1
+abbrev positivizeCoeffs (s : Constraint) (x : List Int) : List Int := (positivize (s, x)).2
 
 theorem positivize?_eq_some (w : positivize? (s, x) = some (s', x')) :
     positivizeConstraint s x = s' ∧ positivizeCoeffs s x = x' := by
   simp_all [positivizeConstraint, positivizeCoeffs, positivize]
 
 theorem positivize_sat {s x v} (w : s.sat' x v) :
-    (positivizeConstraint s { coeffs := x }).sat' (positivizeCoeffs s { coeffs := x }).coeffs v := by
+    (positivizeConstraint s x).sat' (positivizeCoeffs s x) v := by
   dsimp [positivizeConstraint, positivizeCoeffs, positivize, positivize?]
   split
   · exact w
@@ -421,37 +409,34 @@ theorem trim_sat {s : Constraint} {x v} (w : s.sat' x v) : s.sat' (IntList.trim 
   rw [IntList.dot_trim_left]
   exact w
 
-def tidy? : Constraint × Coefficients → Option (Constraint × Coefficients)
+def tidy? : Constraint × List Int → Option (Constraint × List Int)
   | ⟨s, x⟩ =>
-    match IntList.trim? x.coeffs with
+    match IntList.trim? x with
     | none => match positivize? (s, x) with
       | none => match normalize? (s, x) with
         | none => none
         | some (s', x') => some (s', x')
       | some (s', x') => normalize (s', x')
-    | some x' => normalize (positivize (s, { coeffs := x' }))
+    | some x' => normalize (positivize (s, x'))
 
-def tidy (p : Constraint × Coefficients) : Constraint × Coefficients :=
+def tidy (p : Constraint × List Int) : Constraint × List Int :=
   tidy? p |>.getD p
 
-abbrev tidyConstraint (s : Constraint) (x : Coefficients) : Constraint := (tidy (s, x)).1
-abbrev tidyCoeffs (s : Constraint) (x : Coefficients) : Coefficients := (tidy (s, x)).2
+abbrev tidyConstraint (s : Constraint) (x : List Int) : Constraint := (tidy (s, x)).1
+abbrev tidyCoeffs (s : Constraint) (x : List Int) : List Int := (tidy (s, x)).2
 
--- -- set_option maxHeartbeats 1000000 in
--- theorem tidy_sat {s x v} (w : s.sat' x v) :
---     (tidyConstraint s { coeffs := x }).sat' (tidyCoeffs s { coeffs := x }).coeffs v := by
---   dsimp [tidyConstraint, tidyCoeffs, tidy, tidy?]
---   split <;> rename_i ht
---   · split <;> rename_i hp
---     · split <;> rename_i hn
---       · simp_all
---       · rcases normalize?_eq_some hn with ⟨rfl, rfl⟩
---         exact normalize_sat w
---     · rcases positivize?_eq_some hp with ⟨rfl, rfl⟩
---       -- have := positivize_sat w
---       exact normalize_sat (positivize_sat w)
---   · rcases IntList.trim?_eq_some ht with rfl
---     exact normalize_sat (positivize_sat (trim_sat w))
+theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeffs s x) v := by
+  dsimp [tidyConstraint, tidyCoeffs, tidy, tidy?]
+  split <;> rename_i ht
+  · split <;> rename_i hp
+    · split <;> rename_i hn
+      · simp_all
+      · rcases normalize?_eq_some hn with ⟨rfl, rfl⟩
+        exact normalize_sat w
+    · rcases positivize?_eq_some hp with ⟨rfl, rfl⟩
+      exact normalize_sat (positivize_sat w)
+  · rcases IntList.trim?_eq_some ht with rfl
+    exact normalize_sat (positivize_sat (trim_sat w))
 
 theorem combo_sat' (s t : Constraint)
     (a : Int) (x : List Int) (b : Int) (y : List Int) (v : List Int)
@@ -503,15 +488,15 @@ theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
   rw [IntList.get_of_length_le h, Int.sub_zero, Int.mul_ediv_cancel' (bmod_sat_aux _ _ _), w,
     ← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
 
-inductive Justification : Constraint → Coefficients → Type
+inductive Justification : Constraint → List Int → Type
 -- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
-| assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s { coeffs }
+| assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
 | normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
 | positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
 | combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
-| combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) { coeffs := IntList.combo a x.coeffs b y.coeffs }
+| combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
   -- This only makes sense when `s = .exact r`, but there is no point in enforcing that here:
-| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) : Justification (.exact (Int.bmod r m)) { coeffs := bmod_coeffs m i x.coeffs }
+| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
 
 def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "
 
@@ -521,8 +506,8 @@ namespace Justification
 
 def toString : Justification s x → String
 | assumption _ _ i => s!"{x} ∈ {s}: assumption {i}"
-| @normalize s' x' j => if s = s' ∧ x == x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
-| @positivize s' x' j => if s = s' ∧ x == x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
+| @normalize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
+| @positivize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
 | combine j k => s!"{x} ∈ {s}: combination of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | combo a j b k => s!"{x} ∈ {s}: {a} * x + {b} * y combo of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | bmod m _ i j => s!"{x} ∈ {s}: bmod with m={m} and i={i} of:\n" ++ j.toString.bullet
@@ -575,16 +560,16 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr)
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
 | assumption s c i => assumptions[i]!
-| @normalize s c j => return normalizeProof s c.coeffs v (← proof v assumptions j)
-| @positivize s c j => return positivizeProof s c.coeffs v (← proof v assumptions j)
-| @combine s t c j k => return combineProof s t c.coeffs v (← proof v assumptions j) (← proof v assumptions k)
-| @combo s t x y a j b k => return comboProof s t a x.coeffs b y.coeffs v (← proof v assumptions j) (← proof v assumptions k)
-| @bmod m r i x s j => do bmodProof m r i x.coeffs v (← proof v assumptions j)
+| @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
+| @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
+| @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
+| @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
+| @bmod m r i x s j => do bmodProof m r i x v (← proof v assumptions j)
 
 end Justification
 
 structure Fact where
-  coeffs : Coefficients
+  coeffs : List Int
   constraint : Constraint
   justification : Justification constraint coeffs
 
@@ -602,7 +587,7 @@ structure Problem where
 
   numVars : Nat := 0
   -- TODO cache hashes:
-  constraints : HashMap Coefficients Fact := ∅
+  constraints : HashMap (List Int) Fact := ∅
 
   possible : Bool := true
 
@@ -611,7 +596,7 @@ structure Problem where
 
   explanation? : Option String := none
 
-  equalities : HashSet Coefficients := ∅
+  equalities : HashSet (List Int) := ∅
 
 instance : ToString Problem where
   toString p :=
@@ -634,9 +619,9 @@ and constructs a proof of `False`.
 def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof := do
   let atoms ← atoms
   let v ← mkListLit (.const ``Int [])
-    (atoms ++ (← (List.range (x.coeffs.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))))
+    (atoms ++ (← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))))
   let prf ← j.proof v assumptions
-  let x := toExpr x.coeffs
+  let x := toExpr x
   let s := toExpr s
   let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
   return mkApp5 (.const ``Constraint.not_sat'_of_isImpossible []) s impossible x v prf
@@ -655,7 +640,7 @@ def insertConstraint (p : Problem) : Fact → Problem
         proveFalse?_spec := rfl }
     else
       { p with
-        numVars := max p.numVars x.coeffs.length
+        numVars := max p.numVars (IntList.trim x).length
         constraints := p.constraints.insert x f
         proveFalse?_spec := p.proveFalse?_spec
         equalities :=
@@ -673,8 +658,8 @@ def addConstraint (p : Problem) : Fact → Problem
         | .trivial => p
         | _ => p.insertConstraint f
       | some ⟨x', t, k⟩ =>
-        if h : x == x' then
-          p.insertConstraint ⟨x, s.combine t, j.combine ((eq_of_beq h) ▸ k)⟩
+        if h : x = x' then
+          p.insertConstraint ⟨x, s.combine t, j.combine (h ▸ k)⟩
         else
           p -- unreachable
     else
@@ -727,7 +712,7 @@ def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option
     let i := p.assumptions.size
     let p' := { p with assumptions := p.assumptions.push (addInequality_proof const coeffs prf) }
     let f : Fact :=
-    { coeffs := { coeffs }
+    { coeffs
       constraint := { lowerBound := some (-const), upperBound := none }
       justification := .assumption _ _ i }
     p'.addConstraint f.positivize.normalize
@@ -737,7 +722,7 @@ def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option P
     let i := p.assumptions.size
     let p' := { p with assumptions := p.assumptions.push (addEquality_proof const coeffs prf) }
     let f : Fact :=
-    { coeffs := { coeffs }
+    { coeffs
       constraint := { lowerBound := some (-const), upperBound := some (-const) }
       justification := .assumption _ _ i }
     p'.addConstraint f.positivize.normalize
@@ -752,11 +737,11 @@ def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) :
 #guard_msgs in
 #eval Problem.addInequalities {} [(-2, [], none)]
 
-/-- info: 1 * x1 + 1 * x2 ∈ [-1, 1] -/
+/-- info: [1, 1] ∈ [-1, 1] -/
 #guard_msgs in
 #eval Problem.addInequalities {} [(1, [1, 1], none), (1, [-1, -1], none)]
 
-/-- info: 1 * x1 ∈ {1} -/
+/-- info: [1] ∈ {1} -/
 #guard_msgs in
 #eval Problem.addInequalities {} [(-2, [2], none), (2, [-2], none)]
 
@@ -764,7 +749,7 @@ def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) :
 #guard_msgs in
 #eval Problem.addInequalities {} [(-1, [2], none), (1, [-2], none)]
 
-/-- info: 1 * x1 ∈ {1} -/
+/-- info: [1] ∈ {1} -/
 #guard_msgs in
 #eval Problem.addEqualities {} [(-2, [2], none)]
 
@@ -772,29 +757,19 @@ def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) :
 #guard_msgs in
 #eval Problem.addEqualities {} [(-1, [2], none)]
 
-def selectEquality (p : Problem) : Option Coefficients :=
-  (·.1) <$>  p.equalities.fold (init := none) fun
-  | none, c => some (c, c.coeffs.minNatAbs, c.coeffs.maxNatAbs)
-  | some (r, rmin, rmax), c =>
-    if 2 ≤ rmin then
-      let cmin := c.coeffs.minNatAbs
-      let cmax := c.coeffs.maxNatAbs
-      if cmin < rmin || cmin = rmin && cmax < rmax then
-        (c, cmin, cmax)
-      else
-        (r, rmin, rmax)
-    else
-      (r, rmin, rmax)
+def selectEquality (p : Problem) : Option (List Int) :=
+  p.equalities.fold (init := none) fun
+  | none, c => c
+  | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
-
-def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
-  let i := c.coeffs.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
-  let sign := c.coeffs.get? i |>.getD 0 |> Int.sign
+def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
+  let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
+  let sign := c.get? i |>.getD 0 |> Int.sign
   match p.constraints.find? c with
   | some f =>
     -- TODO Lame that we are copying around assumptions here:
     p.constraints.fold (init := { assumptions := p.assumptions }) fun p' coeffs g =>
-      match coeffs.coeffs.get? i |>.getD 0 with
+      match coeffs.get? i |>.getD 0 with
       | 0 =>
         p'.addConstraint g
       | ci =>
@@ -804,11 +779,11 @@ def solveEasyEquality (p : Problem) (c : Coefficients) : Problem :=
 
 /-- info: trivial -/
 #guard_msgs in
-#eval Problem.addEqualities {} [(-2, [2], none)] |>.solveEasyEquality { coeffs := [1] }
+#eval Problem.addEqualities {} [(-2, [2], none)] |>.solveEasyEquality [1]
 
-/-- info: 0 * x1 + 1 * x2 + 2 * x3 ∈ {-10} -/
+/-- info: [0, 1, 2] ∈ {-10} -/
 #guard_msgs in
-#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality { coeffs := [1,2,3] }
+#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality [1,2,3]
 
 -- TODO probably should just cache the active variables, or this number
 -- def maxVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.length
@@ -822,8 +797,8 @@ We deal with a hard equality by introducing a new easy equality.
 After solving the easy equality,
 the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
 -/
-def dealWithHardEquality (p : Problem) (c : Coefficients) : Problem :=
-  let m := c.coeffs.minNatAbs + 1
+def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
+  let m := c.minNatAbs + 1
   let (i, p) := p.freshVar
   match p.constraints.find? c with
   | some ⟨_, ⟨some r, _⟩, j⟩ =>
@@ -831,8 +806,8 @@ def dealWithHardEquality (p : Problem) (c : Coefficients) : Problem :=
   | _ =>
     p -- unreachable
 
-def solveEquality (p : Problem) (c : Coefficients) : Problem :=
-  if c.coeffs.minNatAbs = 1 then
+def solveEquality (p : Problem) (c : List Int) : Problem :=
+  if c.minNatAbs = 1 then
     p.solveEasyEquality c
   else
     p.dealWithHardEquality c
@@ -844,7 +819,7 @@ partial def solveEqualities (p : Problem) : Problem :=
     | none => p
   else p
 
-/-- info: 0 * x1 + 0 * x2 + 1 * x3 ∈ [-22, ∞) -/
+/-- info: [0, 0, 1] ∈ [-22, ∞) -/
 #guard_msgs in
 #eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)]
   |>.addInequalities [(0, [1,0,0], none)]
@@ -859,13 +834,13 @@ def ex1_2 : Problem := ex1.addInequalities [(-1000, [0,1], none)]
 def ex1_3 : Problem := ex1.addInequalities [(8, [0,0,1], none)]
 def ex1_all : Problem := ex1.addInequalities [(-1000, [1], none), (-1000, [0,1], none), (8, [0,0,1], none)]
 
-/-- info: 0 * x1 + 0 * x2 + 1 * x3 + 0 * x4 + 0 * x5 ∈ (-∞, -8] -/
+/-- info: [0, 0, 1, 0, 0] ∈ (-∞, -8] -/
 #guard_msgs in
 #eval ex1_1.solveEqualities
-/-- info: 0 * x1 + 0 * x2 + 1 * x3 + 0 * x4 + 0 * x5 ∈ [14, ∞) -/
+/-- info: [0, 0, 1, 0, 0] ∈ [14, ∞) -/
 #guard_msgs in
 #eval ex1_2.solveEqualities
-/-- info: 0 * x1 + 0 * x2 + 1 * x3 ∈ [-8, ∞) -/
+/-- info: [0, 0, 1] ∈ [-8, ∞) -/
 #guard_msgs in
 #eval ex1_3.solveEqualities
 /-- info: impossible -/
@@ -894,7 +869,7 @@ def fourierMotzkinData (p : Problem) : Array FourierMotzkinData := Id.run do
   let mut data : Array FourierMotzkinData := Array.mkArray p.numVars {}
   for (_, f@⟨xs, s, _⟩) in p.constraints.toList do -- We could make a forIn instance for HashMap
     for i in [0:n] do
-      let x := IntList.get xs.coeffs i
+      let x := IntList.get xs i
       data := data.modify i fun d =>
         if x = 0 then
           { d with irrelevant := f :: d.irrelevant }
@@ -959,7 +934,7 @@ partial def run (p : Problem) : Problem :=
   else
     p
 
-/-- info: 1 * x1 ∈ [-1, 1] -/
+/-- info: [1] ∈ [-1, 1] -/
 #guard_msgs in
 #eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)]
 /-- info: trivial -/
