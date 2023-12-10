@@ -6,7 +6,7 @@ example : True := by
   fail_if_success omega
   trivial
 
-set_option trace.omega true
+-- set_option trace.omega true
 
 example (_ : (1 : Int) < (0 : Int)) : False := by omega
 
