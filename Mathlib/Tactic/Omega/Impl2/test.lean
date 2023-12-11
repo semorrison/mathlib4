@@ -161,6 +161,19 @@ example {n : Nat} (_ : n > 0) : (2*n - 1) % 2 = 1 := by
 example (x : Int) (_ : x > 0 ∧ x < -1) : False := by omega
 example (x : Int) (_ : x > 7) : x < 0 ∨ x > 3 := by omega
 
+-- TODO: if the goal is an equality, allow the case split.
+example (a b c d e : Int)
+    (ha : 2 * a + b + c + d + e = 4)
+    (hb : a + 2 * b + c + d + e = 5)
+    (hc : a + b + 2 * c + d + e = 6)
+    (hd : a + b + c + 2 * d + e = 7)
+    (he : a + b + c + d + 2 * e = 8) :
+    e = 3 := by
+  by_contra h
+  rw [← ne_eq, Int.ne_iff_lt_or_gt] at h
+  cases h <;>
+  omega
+
 --- Adapting tests from `linarith`.
 
 example {a b : Int} (h : a < b) (w : b < a) : False := by omega

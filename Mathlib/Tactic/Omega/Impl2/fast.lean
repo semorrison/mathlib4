@@ -1,7 +1,7 @@
 
 import Std
 import Mathlib.Tactic.Omega.IntList
-import Mathlib.Tactic.Omega.OmegaM
+import Mathlib.Tactic.Omega.Impl2.OmegaM
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
 import Mathlib.Tactic.Omega.Impl.bmod
 import Qq
@@ -44,6 +44,8 @@ theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
   · simp_all
   · rintro ⟨h₁, h₂⟩
     exact Int.le_antisymm h₁ h₂
+
+protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := sorry
 
 end Int
 
@@ -975,6 +977,16 @@ partial def run (p : Problem) : Problem :=
         run (p'.fourierMotzkin)
     else
       p'
+  else
+    p
+
+-- As for `run'`, but assuming the first round of solving equalities has already happened.
+def run' (p : Problem) : Problem :=
+  if p.possible then
+    if p.constraints.isEmpty then
+      p
+    else
+      run (p.fourierMotzkin)
   else
     p
 
