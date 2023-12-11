@@ -6,7 +6,7 @@ set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 alias ⟨and_not_not_of_not_or, _⟩ := not_or
-alias ⟨Decidable.or_not_not_of_not_add, _⟩ := Decidable.not_and_iff_or_not
+alias ⟨Decidable.or_not_not_of_not_and, _⟩ := Decidable.not_and_iff_or_not
 
 /-- A type synonym to equip a type with its lexicographic order. -/
 def Lex' (α : Type _) := α

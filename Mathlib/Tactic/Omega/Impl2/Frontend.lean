@@ -238,7 +238,7 @@ def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
     facts := newFacts.toList ++ p.facts
     problem := p.problem.addInequality lc.const lc.coeffs
       (some do mkAppM ``le_of_le_of_eq #[h, (← prf)]) }
-
+#check Classical.decidableInhabited
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
 def pushNot (h P : Expr) : Option Expr := do
   match P.getAppFnArgs with
@@ -250,7 +250,13 @@ def pushNot (h P : Expr) : Option Expr := do
   | (``GE.ge, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
   | (``GT.gt, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
   | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
+  | (``Eq, #[.const ``Nat [], x, y]) => some (mkApp3 (.const ``Nat.lt_or_gt_of_ne []) x y h)
+  | (``Eq, #[.const ``Int [], x, y]) => some (mkApp3 (.const ``Int.lt_or_gt_of_ne []) x y h)
   | (``Or, #[P₁, P₂]) => some (mkApp3 (.const ``and_not_not_of_not_or []) P₁ P₂ h)
+  | (``And, #[P₁, P₂]) =>
+    some (mkApp5 (.const ``Decidable.or_not_not_of_not_and []) P₁ P₂
+      (.app (.const ``Classical.propDecidable []) P₁)
+      (.app (.const ``Classical.propDecidable []) P₂) h)
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
 

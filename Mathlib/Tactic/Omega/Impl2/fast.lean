@@ -47,6 +47,8 @@ theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
 
 protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := sorry
 
+protected alias ⟨lt_or_gt_of_ne, _⟩ := Int.ne_iff_lt_or_gt
+
 end Int
 
 namespace List
