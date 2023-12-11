@@ -10,21 +10,25 @@ import Mathlib.Tactic.LibrarySearch
 import Mathlib.Util.Time
 
 -- Try out different data structures (even try an Array!)
--- Cache hashes?
--- Cache GCD
+  -- HashMap / HashSet helps slightly
+  -- Still to try: RBMap and Array
+-- Cache hashes?  -- Seems not to help!
+-- Cache GCD   -- Only tried in conjunction with hashes
+
+-- Skip unused normalize/positivize steps -- DONE
+-- Cache `maxVar` -- DONE
+-- Reuse variable slots??  -- Not a good idea, means we can't reuse partially solved problems.
+
 -- Precompute FM data
 -- Precompute just enough to choose the target variable for FM
 -- Don't actually prepare the FM data until the variable has been chosen
 -- A deduplicating cache for constructing the proof
--- Skip unused normalize/positivize steps
 -- Reuse output when case splitting
 -- More general mechanism for case splitting
 -- Precompute data required for `selectEquality`
 -- Easier to type check proofs??
 -- Avoid metavariables?
--- Cache `maxVar`
 -- Use `AssocList` or `HashMap` for coefficients?
--- Reuse variable slots??
 -- Precompute target equality
 
 set_option autoImplicit true
@@ -586,8 +590,6 @@ structure Fact where
 
 namespace Fact
 
--- def positivize (f : Fact) : Fact := { justification := f.justification.positivize }
--- def normalize (f : Fact) : Fact := { justification := f.justification.normalize }
 def tidy (f : Fact) : Fact :=
   match f.justification.tidy? with
   | some ⟨_, _, justification⟩ => { justification }
@@ -602,7 +604,7 @@ structure Problem where
   assumptions : Array Proof := ∅
 
   numVars : Nat := 0
-  -- TODO cache hashes:
+
   constraints : HashMap (List Int) Fact := ∅
 
   possible : Bool := true
@@ -613,6 +615,12 @@ structure Problem where
   explanation? : Option String := none
 
   equalities : HashSet (List Int) := ∅
+
+  -- Stores equations that have already been used to eliminate variables,
+  -- along with the variable which was removed, and its coefficient (either `1` or `-1`).
+  -- The earlier elements are more recent,
+  -- so if these are being reapplied it is essential to use `List.foldr`.
+  eliminations : List (Fact × Nat × Int) := []
 
 instance : ToString Problem where
   toString p :=
@@ -682,6 +690,69 @@ def addConstraint (p : Problem) : Fact → Problem
     else
       p
 
+def selectEquality (p : Problem) : Option (List Int) :=
+  p.equalities.fold (init := none) fun
+  | none, c => c
+  | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
+
+def replayEliminations (p : Problem) (f : Fact) : Fact :=
+  p.eliminations.foldr (init := f) fun (f, i, s) g =>
+    match IntList.get g.coeffs i with
+    | 0 => g
+    | y => Fact.combo (-1 * s * y) f 1 g
+
+def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
+  let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
+  let sign := c.get? i |>.getD 0 |> Int.sign
+  match p.constraints.find? c with
+  | some f =>
+    -- TODO Lame that we are copying around assumptions here:
+    let init :=
+    { assumptions := p.assumptions
+      eliminations := (f, i, sign) :: p.eliminations }
+    p.constraints.fold (init := init) fun p' coeffs g =>
+      match IntList.get coeffs i with
+      | 0 =>
+        p'.addConstraint g
+      | ci =>
+        let k := -1 * sign * ci
+        p'.addConstraint (Fact.combo k f 1 g).tidy
+  | _ => p -- unreachable
+
+-- TODO probably should just cache the active variables, or this number
+-- def maxVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.length
+-- we could use mex here:
+def freshVar (p : Problem) : Nat × Problem :=
+  (p.numVars, { p with numVars := p.numVars + 1 })
+
+/--
+We deal with a hard equality by introducing a new easy equality.
+
+After solving the easy equality,
+the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
+-/
+def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
+  let m := c.minNatAbs + 1
+  let (i, p) := p.freshVar
+  match p.constraints.find? c with
+  | some ⟨_, ⟨some r, _⟩, j⟩ =>
+    p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
+  | _ =>
+    p -- unreachable
+
+def solveEquality (p : Problem) (c : List Int) : Problem :=
+  if c.minNatAbs = 1 then
+    p.solveEasyEquality c
+  else
+    p.dealWithHardEquality c
+
+partial def solveEqualities (p : Problem) : Problem :=
+  if p.possible then
+    match p.selectEquality with
+    | some c => (p.solveEquality c).solveEqualities
+    | none => p
+  else p
+
 theorem addInequality_sat (w : c + IntList.dot x y ≥ 0) :
     ({ lowerBound := some (-c), upperBound := none } : Constraint).sat' x y := by
   simp [Constraint.sat', Constraint.sat]
@@ -724,6 +795,8 @@ def addEquality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
 
 -- prf? : const + IntList.dot coeffs atoms ≥ 0
 -- But we need to transform this to `IntList.dot coeffs atoms ≥ -const` i.e.
+
+-- This is only ever used to add assumptions: during the elimination we call `addConstraint`.
 def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
     let i := p.assumptions.size
@@ -732,7 +805,9 @@ def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := none }
       justification := .assumption _ _ i }
-    p'.addConstraint f.tidy
+    let f := f.tidy
+    let f := p.replayEliminations f
+    p'.addConstraint f
 
 def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
@@ -742,7 +817,9 @@ def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option P
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := some (-const) }
       justification := .assumption _ _ i }
-    p'.addConstraint f.tidy
+    let f := f.tidy
+    let f := p.replayEliminations f
+    p'.addConstraint f
 
 def addInequalities (p : Problem) (ineqs : List (Int × List Int × Option Proof)) : Problem :=
   ineqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addInequality const coeffs prf?
@@ -774,25 +851,7 @@ def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) :
 #guard_msgs in
 #eval Problem.addEqualities {} [(-1, [2], none)]
 
-def selectEquality (p : Problem) : Option (List Int) :=
-  p.equalities.fold (init := none) fun
-  | none, c => c
-  | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
-def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
-  let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
-  let sign := c.get? i |>.getD 0 |> Int.sign
-  match p.constraints.find? c with
-  | some f =>
-    -- TODO Lame that we are copying around assumptions here:
-    p.constraints.fold (init := { assumptions := p.assumptions }) fun p' coeffs g =>
-      match coeffs.get? i |>.getD 0 with
-      | 0 =>
-        p'.addConstraint g
-      | ci =>
-        let k := -1 * sign * ci
-        p'.addConstraint (Fact.combo k f 1 g).tidy
-  | _ => p -- unreachable
 
 /-- info: trivial -/
 #guard_msgs in
@@ -802,39 +861,7 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
 #guard_msgs in
 #eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality [1,2,3]
 
--- TODO probably should just cache the active variables, or this number
--- def maxVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.length
--- we could use mex here:
-def freshVar (p : Problem) : Nat × Problem :=
-  (p.numVars, { p with numVars := p.numVars + 1 })
 
-/--
-We deal with a hard equality by introducing a new easy equality.
-
-After solving the easy equality,
-the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
--/
-def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
-  let m := c.minNatAbs + 1
-  let (i, p) := p.freshVar
-  match p.constraints.find? c with
-  | some ⟨_, ⟨some r, _⟩, j⟩ =>
-    p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
-  | _ =>
-    p -- unreachable
-
-def solveEquality (p : Problem) (c : List Int) : Problem :=
-  if c.minNatAbs = 1 then
-    p.solveEasyEquality c
-  else
-    p.dealWithHardEquality c
-
-partial def solveEqualities (p : Problem) : Problem :=
-  if p.possible then
-    match p.selectEquality with
-    | some c => (p.solveEquality c).solveEqualities
-    | none => p
-  else p
 
 /-- info: [0, 0, 1] ∈ [-22, ∞) -/
 #guard_msgs in
@@ -930,7 +957,7 @@ def fourierMotzkin (p : Problem) : Problem := Id.run do
   let data := p.fourierMotzkinData
   -- Now perform the elimination.
   let ⟨irrelevant, lower, upper, _, _⟩ := fourierMotzkinSelect data
-  let mut r : Problem := { assumptions := p.assumptions }
+  let mut r : Problem := { assumptions := p.assumptions, eliminations := p.eliminations }
   for f in irrelevant do
     r := r.insertConstraint f
   for ⟨f, b⟩ in lower do

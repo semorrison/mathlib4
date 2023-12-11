@@ -158,6 +158,9 @@ example {n : Nat} (_ : n > 0) : (2*n - 1) % 2 = 1 := by
   cases h <;>
   omega
 
+example (x : Int) (_ : x > 0 ∧ x < -1) : False := by omega
+example (x : Int) (_ : x > 7) : x < 0 ∨ x > 3 := by omega
+
 --- Adapting tests from `linarith`.
 
 example {a b : Int} (h : a < b) (w : b < a) : False := by omega

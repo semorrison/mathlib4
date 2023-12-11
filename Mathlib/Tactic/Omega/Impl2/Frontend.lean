@@ -237,6 +237,7 @@ def pushNot (h P : Expr) : Option Expr := do
   | (``GE.ge, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
   | (``GT.gt, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
   | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
+  | (``Or, #[P₁, P₂]) => some (mkApp3 (.const ``and_not_not_of_not_or []) P₁ P₂ h)
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
 
@@ -268,6 +269,9 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
       p.addFact (mkApp3 (.const ``Int.ofNat_lt_of_lt []) x y h)
     | (``LE.le, #[.const ``Nat [], _, x, y]) =>
       p.addFact (mkApp3 (.const ``Int.ofNat_le_of_le []) x y h)
+    | (``And, #[t₁, t₂]) => do
+        (← p.addFact (mkApp3 (.const ``And.left []) t₁ t₂ h)).addFact
+          (mkApp3 (.const ``And.right []) t₁ t₂ h)
     -- TODO Add support for `k ∣ b`?
     | _ => pure p
 
