@@ -1,7 +1,8 @@
-import Mathlib.Tactic.Omega.Frontend
+import Mathlib.Tactic.Omega.Impl2.Frontend
 
+set_option maxRecDepth 5000
 example : True := by
-  iterate 100 fail_if_success omega
+  iterate 1000 fail_if_success omega
   trivial
 
 
@@ -92,4 +93,21 @@ Mon Nov 20 21:24:18 AEDT 2023
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/noop.lean
   Time (mean ± σ):     489.4 ms ±   7.6 ms    [User: 337.8 ms, System: 143.5 ms]
   Range (min … max):   482.3 ms … 506.2 ms    10 runs
+
+Added more bells and whistles on the frontend and have lost some speed:
+
+Mon Dec 11 16:13:46 AEDT 2023
+fe17c00be5bb5e31e18f84e82400a82feab03cd3
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/noop.lean
+  Time (mean ± σ):     559.3 ms ±   6.1 ms    [User: 361.0 ms, System: 186.2 ms]
+  Range (min … max):   552.5 ms … 573.4 ms    10 runs
+
+Change from 100 to 1000 loops so we're actually measuring something.
+
+Mon Dec 11 16:15:01 AEDT 2023
+fe17c00be5bb5e31e18f84e82400a82feab03cd3
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/noop.lean
+  Time (mean ± σ):      1.746 s ±  0.011 s    [User: 1.153 s, System: 0.581 s]
+  Range (min … max):    1.733 s …  1.766 s    10 runs
+
  -/

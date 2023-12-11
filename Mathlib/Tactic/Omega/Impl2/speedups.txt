@@ -1,0 +1,21 @@
+-- Try out different data structures (even try an Array!)
+  -- HashMap / HashSet helps slightly
+  -- Still to try: RBMap and Array
+-- Cache hashes?  -- Seems not to help!
+-- Cache GCD   -- Only tried in conjunction with hashes
+
+-- Skip unused normalize/positivize steps -- DONE
+-- Cache `maxVar` -- DONE
+-- Reuse variable slots??  -- Not a good idea, means we can't reuse partially solved problems.
+
+-- Precompute FM data
+-- Precompute just enough to choose the target variable for FM
+-- Don't actually prepare the FM data until the variable has been chosen
+-- A deduplicating cache for constructing the proof
+-- Reuse output when case splitting
+-- More general mechanism for case splitting
+-- Precompute data required for `selectEquality`
+-- Easier to type check proofs??
+-- Avoid metavariables?
+-- Use `AssocList` or `HashMap` for coefficients?
+-- Precompute target equality

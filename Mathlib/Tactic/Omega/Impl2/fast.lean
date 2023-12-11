@@ -3,113 +3,16 @@ import Std
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Impl2.OmegaM
 import Mathlib.Tactic.Omega.Impl.MinNatAbs
-import Mathlib.Tactic.Omega.Impl.bmod
-import Qq
 import Mathlib.Tactic.DeriveToExpr
 import Mathlib.Tactic.LibrarySearch
-import Mathlib.Util.Time
 
--- Try out different data structures (even try an Array!)
-  -- HashMap / HashSet helps slightly
-  -- Still to try: RBMap and Array
--- Cache hashes?  -- Seems not to help!
--- Cache GCD   -- Only tried in conjunction with hashes
 
--- Skip unused normalize/positivize steps -- DONE
--- Cache `maxVar` -- DONE
--- Reuse variable slots??  -- Not a good idea, means we can't reuse partially solved problems.
-
--- Precompute FM data
--- Precompute just enough to choose the target variable for FM
--- Don't actually prepare the FM data until the variable has been chosen
--- A deduplicating cache for constructing the proof
--- Reuse output when case splitting
--- More general mechanism for case splitting
--- Precompute data required for `selectEquality`
--- Easier to type check proofs??
--- Avoid metavariables?
--- Use `AssocList` or `HashMap` for coefficients?
--- Precompute target equality
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
-
-namespace Int
-
-theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
-  constructor
-  · simp_all
-  · rintro ⟨h₁, h₂⟩
-    exact Int.le_antisymm h₁ h₂
-
-protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := sorry
-
-protected alias ⟨lt_or_gt_of_ne, _⟩ := Int.ne_iff_lt_or_gt
-
-end Int
-
-namespace List
-
-/-- Variant of `List.insert` using `BEq` instead of `DecidableEq`. -/
-@[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
-  if l.elem a then l else a :: l
-
-end List
-
-namespace Std.HashMap
-
-def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
-  m.fold (init := true) fun r a b => r && f a b
-
-end Std.HashMap
-
-namespace Std.AssocList
-
-def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
-  | .nil => .cons a b .nil
-  | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
-
-def partitionMapRev (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
-  go {} {} l
-where
-  go : AssocList α γ → AssocList α δ → AssocList α β → AssocList α γ × AssocList α δ
-  | xs, ys, .nil => (xs, ys)
-  | xs, ys, .cons a b t => match f a b with
-    | .inl x => go (cons a x xs) ys t
-    | .inr y => go xs (cons a y ys) t
-
--- def partitionMap (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
---   match l.partitionMapRev f with
---   | (xs, ys) => (xs.reverse, ys.reverse)
-
-def partitionRev (f : α → β → Bool) (l : AssocList α β) : AssocList α β × AssocList α β :=
-  l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
-
-end Std.AssocList
-
-namespace Option
-
-@[simp] theorem all_none : Option.all p none = true := rfl
-@[simp] theorem all_some : Option.all p (some x) = p x := rfl
-
-@[simp]
-def min [Min α] : Option α → Option α → Option α
-  | some x, some y => some (Min.min x y)
-  | some x, none => some x
-  | none, some y => some y
-  | none, none => none
-
-@[simp]
-def max [Max α] : Option α → Option α → Option α
-  | some x, some y => some (Max.max x y)
-  | some x, none => some x
-  | none, some y => some y
-  | none, none => none
-
-end Option
 
 namespace Omega.ProofProducing
 
@@ -302,47 +205,6 @@ theorem not_sat'_of_isImpossible (h : isImpossible c) {x y} : ¬ c.sat' x y :=
 
 end Constraint
 
--- structure Coefficients where
---   coeffs : List Int
---   -- spec: first nonzero entry is nonnegative, and no trailing zeroes?
---   gcd : Nat := IntList.gcd coeffs
---   -- gcd_spec
-
---   -- TODO cache the hash
---   hash : UInt64 := Hashable.hash coeffs
-
---   minNatAbs : Nat := coeffs.minNatAbs
---   -- minNatAbs_spec
-
---   -- maxNatAbs : Nat := coeffs.map Int.natAbs |>.maximum? |>.getD 0
---   -- maxNatAbs_spec
--- deriving Repr
-
--- namespace Coefficients
-
--- instance : Ord Coefficients where
---   compare x y := compareOfLessAndEq x.coeffs y.coeffs
-
--- instance : BEq Coefficients where
---   beq x y := x.hash == y.hash && x.coeffs == y.coeffs
-
--- -- TODO remove the `DecidableEq` instance, which compares determined fields,
--- -- in favour of a `LawfulBEq` instance.
-
--- instance : ToString Coefficients where
---   toString c := " + ".intercalate <| c.coeffs.enum.map fun ⟨i, c⟩ => s!"{c} * x{i+1}"
-
--- abbrev eval (c : Coefficients) (v : List Int) : Int := IntList.dot c.coeffs v
-
--- instance : Hashable Coefficients := ⟨hash⟩
-
--- def div_gcd (c : Coefficients) : Coefficients :=
---   { coeffs := IntList.sdiv c.coeffs c.gcd |>.trim
---     gcd := 1
---     minNatAbs := c.minNatAbs / c.gcd }
-
--- end Coefficients
-
 
 open Lean (Expr)
 open Lean.Meta
@@ -499,8 +361,6 @@ theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
 inductive Justification : Constraint → List Int → Type
 -- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
 | assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
--- | normalize (j : Justification s c) : Justification (normalizeConstraint s c) (normalizeCoeffs s c)
--- | positivize (j : Justification s c) : Justification (positivizeConstraint s c) (positivizeCoeffs s c)
 | tidy (j : Justification s c) : Justification (tidyConstraint s c) (tidyCoeffs s c)
 | combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
 | combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
@@ -512,7 +372,7 @@ nonrec def Justification.tidy? (j : Justification s c) : Option (Σ s' c', Justi
   | some _ => some ⟨_, _, tidy j⟩
   | none => none
 
-def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "
+
 
 namespace Justification
 
@@ -520,8 +380,6 @@ namespace Justification
 
 def toString : Justification s x → String
 | assumption _ _ i => s!"{x} ∈ {s}: assumption {i}"
--- | @normalize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: normalization of:\n" ++ j.toString.bullet
--- | @positivize s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: positivization of:\n" ++ j.toString.bullet
 | @tidy s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: tidying up:\n" ++ j.toString.bullet
 | combine j k => s!"{x} ∈ {s}: combination of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | combo a j b k => s!"{x} ∈ {s}: {a} * x + {b} * y combo of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
@@ -578,8 +436,6 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr)
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
 | assumption s c i => assumptions[i]!
--- | @normalize s c j => return normalizeProof s c v (← proof v assumptions j)
--- | @positivize s c j => return positivizeProof s c v (← proof v assumptions j)
 | @tidy s c j => return tidyProof s c v (← proof v assumptions j)
 | @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
 | @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
@@ -653,7 +509,6 @@ def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof
   let s := toExpr s
   let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
   return mkApp5 (.const ``Constraint.not_sat'_of_isImpossible []) s impossible x v prf
-  -- mkSorry (.const ``False []) false
 
 /--
 Insert a constraint into the problem,
@@ -723,9 +578,6 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
         p'.addConstraint (Fact.combo k f 1 g).tidy
   | _ => p -- unreachable
 
--- TODO probably should just cache the active variables, or this number
--- def maxVar (p : Problem) : Nat := p.constraints.fold (init := 0) fun l c _ => max l c.length
--- we could use mex here:
 def freshVar (p : Problem) : Nat × Problem :=
   (p.numVars, { p with numVars := p.numVars + 1 })
 
@@ -766,26 +618,6 @@ theorem addInequality_sat (w : c + IntList.dot x y ≥ 0) :
 open Lean in
 def addInequality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
   return mkApp4 (.const ``addInequality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
-
-theorem Int.add_le_iff_le_sub (a b c : Int) : a + b ≤ c ↔ a ≤ c - b := by
-  conv =>
-    lhs
-    rw [← Int.add_zero c, ← Int.sub_self (-b), Int.sub_eq_add_neg, ← Int.add_assoc, Int.neg_neg,
-      Int.add_le_add_iff_right]
-
-theorem Int.le_add_iff_sub_le (a b c : Int) : a ≤ b + c ↔ a - c ≤ b := by
-  conv =>
-    lhs
-    rw [← Int.neg_neg c, ← Int.sub_eq_add_neg, ← add_le_iff_le_sub]
-
-theorem Int.add_le_zero_iff_le_neg (a b : Int) : a + b ≤ 0 ↔ a ≤ - b := by
-  rw [add_le_iff_le_sub, Int.zero_sub]
-theorem Int.add_le_zero_iff_le_neg' (a b : Int) : a + b ≤ 0 ↔ b ≤ -a := by
-  rw [Int.add_comm, Int.add_le_zero_iff_le_neg]
-theorem Int.add_nonnneg_iff_neg_le (a b : Int) : 0 ≤ a + b ↔ -b ≤ a := by
-  rw [le_add_iff_sub_le, Int.zero_sub]
-theorem Int.add_nonnneg_iff_neg_le' (a b : Int) : 0 ≤ a + b ↔ -a ≤ b := by
-  rw [Int.add_comm, Int.add_nonnneg_iff_neg_le]
 
 theorem addEquality_sat (w : c + IntList.dot x y = 0) :
     ({ lowerBound := some (-c), upperBound := some (-c) } : Constraint).sat' x y := by
@@ -830,71 +662,6 @@ def addInequalities (p : Problem) (ineqs : List (Int × List Int × Option Proof
 
 def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) : Problem :=
   eqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addEquality const coeffs prf?
-
-/-- info: impossible -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(-2, [], none)]
-
-/-- info: [1, 1] ∈ [-1, 1] -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(1, [1, 1], none), (1, [-1, -1], none)]
-
-/-- info: [1] ∈ {1} -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(-2, [2], none), (2, [-2], none)]
-
-/-- info: impossible -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(-1, [2], none), (1, [-2], none)]
-
-/-- info: [1] ∈ {1} -/
-#guard_msgs in
-#eval Problem.addEqualities {} [(-2, [2], none)]
-
-/-- info: impossible -/
-#guard_msgs in
-#eval Problem.addEqualities {} [(-1, [2], none)]
-
-
-
-/-- info: trivial -/
-#guard_msgs in
-#eval Problem.addEqualities {} [(-2, [2], none)] |>.solveEasyEquality [1]
-
-/-- info: [0, 1, 2] ∈ {-10} -/
-#guard_msgs in
-#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)] |>.solveEasyEquality [1,2,3]
-
-
-
-/-- info: [0, 0, 1] ∈ [-22, ∞) -/
-#guard_msgs in
-#eval Problem.addEqualities {} [(-2, [1,2,3], none), (-38, [4,5,6], none)]
-  |>.addInequalities [(0, [1,0,0], none)]
-  |>.solveEqualities
-
-
-def ex1 : Problem := Problem.addEqualities {}
-    [(17, [7, 12, 31], none), (7, [3, 5, 24], none)]
-
-def ex1_1 : Problem := ex1.addInequalities [(-1000, [1], none)]
-def ex1_2 : Problem := ex1.addInequalities [(-1000, [0,1], none)]
-def ex1_3 : Problem := ex1.addInequalities [(8, [0,0,1], none)]
-def ex1_all : Problem := ex1.addInequalities [(-1000, [1], none), (-1000, [0,1], none), (8, [0,0,1], none)]
-
-/-- info: [0, 0, 1] ∈ (-∞, -8] -/
-#guard_msgs in
-#eval ex1_1.solveEqualities
-/-- info: [0, 0, 1] ∈ [14, ∞) -/
-#guard_msgs in
-#eval ex1_2.solveEqualities
-/-- info: [0, 0, 1] ∈ [-8, ∞) -/
-#guard_msgs in
-#eval ex1_3.solveEqualities
-/-- info: impossible -/
-#guard_msgs in
-#eval ex1_all.solveEqualities
-
 
 structure FourierMotzkinData where
   irrelevant : List Fact := []
@@ -991,34 +758,3 @@ def run' (p : Problem) : Problem :=
       run (p.fourierMotzkin)
   else
     p
-
-/-- info: [1] ∈ [-1, 1] -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)]
-/-- info: trivial -/
-#guard_msgs in
-#eval Problem.addInequalities {} [(1, [1], none), (1, [-1], none)] |>.fourierMotzkin
-
--- -- example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
--- /--
--- info: [1, 1] ∈ [11, ∞)
--- [1] ∈ (-∞, 4]
--- [0, 1] ∈ (-∞, 4]
--- -/
--- #guard_msgs in
--- #eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)]
--- /-- info: impossible -/
--- #guard_msgs in
--- #eval Problem.addInequalities {} [(-11, [1, 1], none), (4, [-1], none), (4, [0, -1], none)] |>.fourierMotzkin
-
--- def P := Problem.addEqualities {} [(0, [1], none), (0, [1, -1, 1], none)]
---   |>.addInequalities [(-1, [0, 1, -1], none), (0, [0, 1], none), (0, [0, 0, 1], none)]
-
--- #eval P
--- #eval P.selectEquality
--- #eval P.solveEquality P.selectEquality.get!
--- #eval P.solveEquality P.selectEquality.get! |>.selectEquality
--- #eval P.solveEqualities
-
--- example {a b c : Int} (_ : a = 0) (_ : b - c ≥ 1) (_ : b ≥ 0) (_ : c ≥ 0)
---   (_ : a - b + c = 0) : False := by omega

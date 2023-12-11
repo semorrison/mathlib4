@@ -1,11 +1,11 @@
-import Mathlib.Tactic.Omega.Frontend
+import Mathlib.Tactic.Omega.Impl2.Frontend
 
 /-
 ```
 lake build Mathlib.Tactic.Omega.Benchmarks.b20231120_coq > /dev/null && \
 date && git rev-parse HEAD && \
 hyperfine --warmup 3 "lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120_coq.lean"
-hyperfine --warmup 3 "coqc Mathlib/Tactic/Omega/comparisons/b20231120.v"
+hyperfine --warmup 3 "rm -f .lia.cache && rm -f Mathlib/Tactic/Omega/comparisons/b20231120.vo && rm -f Mathlib/Tactic/Omega/comparisons/b20231120.vo? && coqc Mathlib/Tactic/Omega/comparisons/b20231120.v"
 ```
 Thu Nov 23 17:12:20 AEDT 2023
 acdcf21bba393dbbec8d15db9129125120e311c4
@@ -17,6 +17,18 @@ Benchmark 1: coqc b20231120.v
   Range (min … max):   179.3 ms … 185.5 ms    16 runs
 
 About 8x faster! Not as bad as I feared.
+
+Tue Dec 12 00:52:43 AEDT 2023
+fe17c00be5bb5e31e18f84e82400a82feab03cd3
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120_coq.lean
+  Time (mean ± σ):     805.8 ms ±   5.2 ms    [User: 593.2 ms, System: 201.2 ms]
+  Range (min … max):   798.6 ms … 815.0 ms    10 runs
+
+Benchmark 1: rm -f .lia.cache && rm -f Mathlib/Tactic/Omega/comparisons/b20231120.vo && rm -f Mathlib/Tactic/Omega/comparisons/b20231120.vo? && coqc Mathlib/Tactic/Omega/comparisons/b20231120.v
+  Time (mean ± σ):     371.7 ms ±   5.9 ms    [User: 291.1 ms, System: 74.6 ms]
+  Range (min … max):   364.1 ms … 382.7 ms    10 runs
+
+Now about 2.5x faster? Starting Lean takes 423.7 ms, starting Coq takes 258.5 ms
 -/
 
 example : True := by

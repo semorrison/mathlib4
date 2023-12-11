@@ -28,6 +28,14 @@ instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) wh
     (if P then some x else none) = some y ↔ P ∧ x = y := by
   split <;> simp_all
 
+namespace Nat
+
+theorem emod_pos_of_not_dvd {a b : Nat} (h : ¬ a ∣ b) : 0 < b % a := by
+  rw [dvd_iff_mod_eq_zero] at h
+  exact Nat.pos_of_ne_zero h
+
+end Nat
+
 namespace Int
 
 theorem le_iff_ge {a b : Int} : a ≤ b ↔ b ≥ a := Iff.rfl
@@ -57,6 +65,53 @@ theorem mul_self_nonneg {x : Int} : 0 ≤ x * x := by
     simpa only [ofNat_eq_coe, ← Int.ofNat_mul] using Int.ofNat_nonneg _
   | .negSucc n =>
     simpa only [negSucc_mul_negSucc, ge_iff_le, ← Int.ofNat_mul] using Int.ofNat_nonneg _
+
+theorem add_le_iff_le_sub (a b c : Int) : a + b ≤ c ↔ a ≤ c - b := by
+  conv =>
+    lhs
+    rw [← Int.add_zero c, ← Int.sub_self (-b), Int.sub_eq_add_neg, ← Int.add_assoc, Int.neg_neg,
+      Int.add_le_add_iff_right]
+
+theorem le_add_iff_sub_le (a b c : Int) : a ≤ b + c ↔ a - c ≤ b := by
+  conv =>
+    lhs
+    rw [← Int.neg_neg c, ← Int.sub_eq_add_neg, ← add_le_iff_le_sub]
+
+theorem add_le_zero_iff_le_neg (a b : Int) : a + b ≤ 0 ↔ a ≤ - b := by
+  rw [add_le_iff_le_sub, Int.zero_sub]
+theorem add_le_zero_iff_le_neg' (a b : Int) : a + b ≤ 0 ↔ b ≤ -a := by
+  rw [Int.add_comm, add_le_zero_iff_le_neg]
+theorem add_nonnneg_iff_neg_le (a b : Int) : 0 ≤ a + b ↔ -b ≤ a := by
+  rw [le_add_iff_sub_le, Int.zero_sub]
+theorem add_nonnneg_iff_neg_le' (a b : Int) : 0 ≤ a + b ↔ -a ≤ b := by
+  rw [Int.add_comm, add_nonnneg_iff_neg_le]
+
+theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
+  constructor
+  · simp_all
+  · rintro ⟨h₁, h₂⟩
+    exact Int.le_antisymm h₁ h₂
+
+protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := by
+  constructor
+  · intro h
+    rcases Int.lt_trichotomy a b with lt | rfl | gt
+    · exact Or.inl lt
+    · simp_all
+    · exact Or.inr gt
+  · rintro (lt | gt)
+    exact Int.ne_of_lt lt
+    exact Int.ne_of_gt gt
+
+protected alias ⟨lt_or_gt_of_ne, _⟩ := Int.ne_iff_lt_or_gt
+
+
+
+theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
+  rw [dvd_iff_emod_eq_zero] at h
+  by_cases w : a = 0
+  · simp_all
+  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨emod_nonneg b w, Ne.symm h⟩)
 
 attribute [simp] sign_eq_zero_iff_zero
 
@@ -102,12 +157,6 @@ theorem dropWhile_append {xs ys : List α} :
     simp only [cons_append, dropWhile_cons]
     split <;> simp_all
 
-theorem filter_cons :
-    (x :: xs : List α).filter p = if p x then x :: (xs.filter p) else xs.filter p := by
-  split <;> rename_i h
-  · rw [filter_cons_of_pos _ h]
-  · rw [filter_cons_of_neg _ h]
-
 @[simp]
 theorem get?_coe {xs : List α} {i : Fin xs.length} : xs.get? i = some (xs.get i) :=
    get?_eq_some.mpr ⟨i.2, rfl⟩
@@ -135,76 +184,6 @@ theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
   · subst h
     simp [or_iff_right_of_imp List.mem_of_mem_erase]
   · simp_all
-
--- These `findIdx?` lemmas are in https://github.com/leanprover/std4/pull/293
-
-@[simp] theorem findIdx?_nil : ([] : List α).findIdx? p i = none := rfl
-@[simp] theorem findIdx?_cons :
-    (x :: xs).findIdx? p i = if p x then some i else findIdx? p xs (i + 1) := rfl
-@[simp] theorem findIdx?_succ :
-    (xs : List α).findIdx? p (i+1) = (xs.findIdx? p i).map fun i => i + 1 := by
-  induction xs generalizing i with
-  | nil => simp
-  | cons x xs ih =>
-    simp only [findIdx?_cons]
-    split <;> simp_all
-
-theorem findIdx?_eq_some_iff (xs : List α) (p : α → Bool) :
-    xs.findIdx? p = some i ↔ (xs.take (i + 1)).map p = List.replicate i false ++ [true] := by
-  induction xs generalizing i with
-  | nil => simp
-  | cons x xs ih =>
-    simp only [findIdx?_cons, Nat.zero_add, findIdx?_succ, take_succ_cons, map_cons]
-    split
-    · cases i <;> simp_all
-    · cases i <;> simp_all
-
-theorem findIdx?_of_eq_some {xs : List α} {p : α → Bool} (w : xs.findIdx? p = some i) :
-    match xs.get? i with | some a => p a | none => false := by
-  induction xs generalizing i with
-  | nil => simp_all
-  | cons x xs ih =>
-    simp_all only [findIdx?_cons, Nat.zero_add, findIdx?_succ]
-    split at w
-    · cases i <;> simp_all
-    · cases i <;> simp_all
-
-theorem findIdx?_of_eq_none {xs : List α} {p : α → Bool} (w : xs.findIdx? p = none) :
-    ∀ i, match xs.get? i with | some a => ¬ p a | none => true := by
-  intro i
-  induction xs generalizing i with
-  | nil => simp_all
-  | cons x xs ih =>
-    simp_all only [Bool.not_eq_true, findIdx?_cons, Nat.zero_add, findIdx?_succ]
-    cases i with
-    | zero =>
-      split at w <;>
-      simp_all
-    | succ i =>
-      simp only [get?_cons_succ]
-      apply ih
-      split at w <;>
-      simp_all
-
-@[simp] theorem findIdx?_append :
-    (xs ++ ys : List α).findIdx? p =
-      (xs.findIdx? p <|> (ys.findIdx? p).map fun i => i + xs.length) := by
-  induction xs with
-  | nil => simp
-  | cons x xs ih =>
-    simp only [cons_append, findIdx?_cons, Nat.zero_add, findIdx?_succ]
-    split
-    · simp
-    · simp_all only [Bool.not_eq_true, Option.map_orElse, Option.map_map, length_cons]
-      rfl
-
-@[simp] theorem findIdx?_replicate :
-    (List.replicate n a).findIdx? p = if 0 < n ∧ p a then some 0 else none := by
-  induction n with
-  | zero => simp
-  | succ n ih =>
-    simp only [replicate, findIdx?_cons, Nat.zero_add, findIdx?_succ, Nat.zero_lt_succ, true_and]
-    split <;> simp_all
 
 end List
 
@@ -236,3 +215,67 @@ protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
   rw [UInt64.min_comm]; exact UInt64.min_eq_left h
 
 end UInt64
+
+
+namespace Int
+
+
+end Int
+
+namespace List
+
+/-- Variant of `List.insert` using `BEq` instead of `DecidableEq`. -/
+@[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
+  if l.elem a then l else a :: l
+
+end List
+
+namespace Std.HashMap
+
+def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
+  m.fold (init := true) fun r a b => r && f a b
+
+end Std.HashMap
+
+namespace Std.AssocList
+
+def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
+  | .nil => .cons a b .nil
+  | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
+
+def partitionMapRev (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
+  go {} {} l
+where
+  go : AssocList α γ → AssocList α δ → AssocList α β → AssocList α γ × AssocList α δ
+  | xs, ys, .nil => (xs, ys)
+  | xs, ys, .cons a b t => match f a b with
+    | .inl x => go (cons a x xs) ys t
+    | .inr y => go xs (cons a y ys) t
+
+def partitionRev (f : α → β → Bool) (l : AssocList α β) : AssocList α β × AssocList α β :=
+  l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
+
+end Std.AssocList
+
+namespace Option
+
+@[simp] theorem all_none : Option.all p none = true := rfl
+@[simp] theorem all_some : Option.all p (some x) = p x := rfl
+
+@[simp]
+def min [Min α] : Option α → Option α → Option α
+  | some x, some y => some (Min.min x y)
+  | some x, none => some x
+  | none, some y => some y
+  | none, none => none
+
+@[simp]
+def max [Max α] : Option α → Option α → Option α
+  | some x, some y => some (Max.max x y)
+  | some x, none => some x
+  | none, some y => some y
+  | none, none => none
+
+end Option
+
+def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "

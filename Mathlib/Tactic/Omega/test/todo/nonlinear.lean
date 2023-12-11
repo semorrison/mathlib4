@@ -1,0 +1,167 @@
+
+-- This would need a nonlinear preprocessor, as nlinarith is for linarith
+-- example (u v x y A B : Int)
+-- (a : 0 < A)
+-- (a_1 : 0 <= 1 - A)
+-- (a_2 : 0 <= B - 1)
+-- (a_3 : 0 <= B - x)
+-- (a_4 : 0 <= B - y)
+-- (a_5 : 0 <= u)
+-- (a_6 : 0 <= v)
+-- (a_7 : 0 < A - u)
+-- (a_8 : 0 < A - v) :
+--  u * y + v * x + u * v < 3 * A * B :=
+--  by omega
+
+-- example (u v x y A B : Int) : (0 < A) → (A ≤ 1) → (1 ≤ B)
+-- → (x ≤ B) → (y ≤ B)
+-- → (0 ≤ u ) → (0 ≤ v )
+-- → (u < A) → (v < A)
+-- → (u * y + v * x + u * v < 3 * A * B) := by
+--   intros
+--   omega
+
+-- example (u v x y A B : Int)
+-- (a_7 : 0 < A - u)
+-- (a_8 : 0 < A - v) :
+-- (0 <= A * (1 - A))
+-- -> (0 <= A * (B - 1))
+-- -> (0 < A * (A - u))
+-- -> (0 <= (B - 1) * (A - u))
+-- -> (0 <= (B - 1) * (A - v))
+-- -> (0 <= (B - x) * v)
+-- -> (0 <= (B - y) * u)
+-- -> (0 <= u * (A - v))
+-- ->
+--  u * y + v * x + u * v < 3 * A * B := by
+--   intros
+--   omega
+
+-- example (u v x y A B : Int)
+-- (a : 0 < A)
+-- (a_1 : 0 <= 1 - A)
+-- (a_2 : 0 <= B - 1)
+-- (a_3 : 0 <= B - x)
+-- (a_4 : 0 <= B - y)
+-- (a_5 : 0 <= u)
+-- (a_6 : 0 <= v)
+-- (a_7 : 0 < A - u)
+-- (a_8 : 0 < A - v) :
+--  (0 < A * A)
+-- -> (0 <= A * (1 - A))
+-- -> (0 <= A * (B - 1))
+-- -> (0 <= A * (B - x))
+-- -> (0 <= A * (B - y))
+-- -> (0 <= A * u)
+-- -> (0 <= A * v)
+-- -> (0 < A * (A - u))
+-- -> (0 < A * (A - v))
+-- -> (0 <= (1 - A) * A)
+-- -> (0 <= (1 - A) * (1 - A))
+-- -> (0 <= (1 - A) * (B - 1))
+-- -> (0 <= (1 - A) * (B - x))
+-- -> (0 <= (1 - A) * (B - y))
+-- -> (0 <= (1 - A) * u)
+-- -> (0 <= (1 - A) * v)
+-- -> (0 <= (1 - A) * (A - u))
+-- -> (0 <= (1 - A) * (A - v))
+-- -> (0 <= (B - 1) * A)
+-- -> (0 <= (B - 1) * (1 - A))
+-- -> (0 <= (B - 1) * (B - 1))
+-- -> (0 <= (B - 1) * (B - x))
+-- -> (0 <= (B - 1) * (B - y))
+-- -> (0 <= (B - 1) * u)
+-- -> (0 <= (B - 1) * v)
+-- -> (0 <= (B - 1) * (A - u))
+-- -> (0 <= (B - 1) * (A - v))
+-- -> (0 <= (B - x) * A)
+-- -> (0 <= (B - x) * (1 - A))
+-- -> (0 <= (B - x) * (B - 1))
+-- -> (0 <= (B - x) * (B - x))
+-- -> (0 <= (B - x) * (B - y))
+-- -> (0 <= (B - x) * u)
+-- -> (0 <= (B - x) * v)
+-- -> (0 <= (B - x) * (A - u))
+-- -> (0 <= (B - x) * (A - v))
+-- -> (0 <= (B - y) * A)
+-- -> (0 <= (B - y) * (1 - A))
+-- -> (0 <= (B - y) * (B - 1))
+-- -> (0 <= (B - y) * (B - x))
+-- -> (0 <= (B - y) * (B - y))
+-- -> (0 <= (B - y) * u)
+-- -> (0 <= (B - y) * v)
+-- -> (0 <= (B - y) * (A - u))
+-- -> (0 <= (B - y) * (A - v))
+-- -> (0 <= u * A)
+-- -> (0 <= u * (1 - A))
+-- -> (0 <= u * (B - 1))
+-- -> (0 <= u * (B - x))
+-- -> (0 <= u * (B - y))
+-- -> (0 <= u * u)
+-- -> (0 <= u * v)
+-- -> (0 <= u * (A - u))
+-- -> (0 <= u * (A - v))
+-- -> (0 <= v * A)
+-- -> (0 <= v * (1 - A))
+-- -> (0 <= v * (B - 1))
+-- -> (0 <= v * (B - x))
+-- -> (0 <= v * (B - y))
+-- -> (0 <= v * u)
+-- -> (0 <= v * v)
+-- -> (0 <= v * (A - u))
+-- -> (0 <= v * (A - v))
+-- -> (0 < (A - u) * A)
+-- -> (0 <= (A - u) * (1 - A))
+-- -> (0 <= (A - u) * (B - 1))
+-- -> (0 <= (A - u) * (B - x))
+-- -> (0 <= (A - u) * (B - y))
+-- -> (0 <= (A - u) * u)
+-- -> (0 <= (A - u) * v)
+-- -> (0 < (A - u) * (A - u))
+-- -> (0 < (A - u) * (A - v))
+-- -> (0 < (A - v) * A)
+-- -> (0 <= (A - v) * (1 - A))
+-- -> (0 <= (A - v) * (B - 1))
+-- -> (0 <= (A - v) * (B - x))
+-- -> (0 <= (A - v) * (B - y))
+-- -> (0 <= (A - v) * u)
+-- -> (0 <= (A - v) * v)
+-- -> (0 < (A - v) * (A - u))
+-- -> (0 < (A - v) * (A - v))
+-- ->
+--  u * y + v * x + u * v < 3 * A * B := by
+--   intros
+--   omega
+
+-- example (A B : Int) : (0 < A) → (1 ≤ B) → (0 < A / 8 * B) := by
+--   intros
+--   nlinarith
+
+-- example (x y : Int) : 0 ≤ x ^2 + y ^2 := by
+--   nlinarith
+
+-- example (x y : Int) : 0 ≤ x*x + y*y := by
+--   nlinarith
+
+-- example (x y : Int) : x = 0 → y = 0 → x*x + y*y = 0 := by
+--   intros
+--   nlinarith
+
+-- theorem norm_eq_zero_iff {x y : Int} : x * x + y * y = 0 ↔ x = 0 ∧ y = 0 := by
+--   constructor
+--   · intro
+--     constructor <;> omega
+--   · intro; omega
+
+-- theorem norm_zero_left {x y : Int} (h1 : x * x + y * y = 0) : x = 0 := by
+--   omega
+
+-- theorem norm_nonpos_right {x y : Int} (h1 : x * x + y * y ≤ 0) : y = 0 := by
+--   omega
+
+-- theorem norm_nonpos_left (x y : Int) (h1 : x * x + y * y ≤ 0) : x = 0 := by
+--   omega
+
+-- example (p q r s t u v w : Nat) (h1 : p + u = q + t) (h2 : r + w = s + v) :
+--   p * r + q * s + (t * w + u * v) = p * s + q * r + (t * v + u * w) :=
+-- by omega

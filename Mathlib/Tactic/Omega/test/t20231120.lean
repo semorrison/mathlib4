@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Omega.Frontend
+import Mathlib.Tactic.Omega.Impl.Frontend
 
 example : True := by
   fail_if_success omega

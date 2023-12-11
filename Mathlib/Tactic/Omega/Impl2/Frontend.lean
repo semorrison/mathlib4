@@ -6,15 +6,7 @@ set_option autoImplicit true
 
 open Lean Meta
 
-theorem Nat.emod_pos_of_not_dvd {a b : Nat} (h : ¬ a ∣ b) : 0 < b % a := by
-  rw [Nat.dvd_iff_mod_eq_zero] at h
-  exact Nat.pos_of_ne_zero h
 
-theorem Int.emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
-  rw [Int.dvd_iff_emod_eq_zero] at h
-  by_cases w : a = 0
-  · simp_all
-  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨Int.emod_nonneg b w, Ne.symm h⟩)
 
 /--
 Given `p : P ∨ Q`, split the goal into two subgoals: one containing the hypothesis `h : P` and another containing `h : Q`.
@@ -34,9 +26,11 @@ namespace Omega
 A partially processed `omega` context.
 
 We have:
+* a `ProofProducing.Problem` representing the integer linear constraints extracted so far,
+  and their proofs
 * the unprocessed `facts : List Expr` taken from the local context,
-* a `Problem` representing the integer linear constraints extracted so far, and
-* a proof, wrapped in the `OmegaM` monad, that this problem is satisfiable in the local context.
+* the unprocessed `disjunctions : List Expr`,
+  which will only be split one at a time if we can't otherwise find a contradiction.
 
 We begin with `facts := ← getLocalHyps` and `problem := .trivial`,
 and progressively process the facts.
@@ -45,18 +39,17 @@ As we process the facts, we may generate additional facts
 (e.g. about coercions and integer divisions).
 To avoid duplicates, we maintain a `HashSet` of previously processed facts.
 
-TODO: we may even want to solve easy equalities as we find them. This would require recording their
-solutions and applying the substitutions to all later constraints as they are constructed.
+TODO: we may want to solve equalities as we find them.
 -/
 structure MetaProblem where
+  /-- An integer linear arithmetic problem. -/
+  problem : ProofProducing.Problem := {}
   /-- Pending facts which have not been processed yet. -/
   facts : List Expr := []
   /-- Pending disjunctions, which we will case split one at a time if we can't get a contradiction. -/
   disjunctions : List Expr := []
   /-- Facts which have already been processed; we keep these to avoid duplicates. -/
   processedFacts : HashSet Expr := ∅
-  /-- An integer linear arithmetic problem. -/
-  problem : ProofProducing.Problem := {}
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
@@ -266,7 +259,6 @@ def pushNot (h P : Expr) : Option Expr := do
     some (mkApp5 (.const ``Decidable.or_not_not_of_not_and []) P₁ P₂
       (.app (.const ``Classical.propDecidable []) P₁)
       (.app (.const ``Classical.propDecidable []) P₂) h)
-  -- TODO add support for `¬ a ∣ b`?
   | _ => none
 
 
@@ -336,7 +328,7 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
   trace[omega] "After elimination:\n{← atomsList}\n{p''}"
   if p''.possible then
     match m'.disjunctions with
-    | [] => throwError "omega did not find a contradiction:\n{p''}" -- TODO later, show a witness?
+    | [] => throwError "omega did not find a contradiction:\n{p''}"
     | h :: t =>
       trace[omega] "Case splitting on {← inferType h}"
       let (⟨g₁, h₁⟩, ⟨g₂, h₂⟩) ← g.cases2 h
@@ -404,7 +396,7 @@ along with negations of inequalities.
 
 We decompose the sides of the inequalities as linear combinations of atoms.
 
-If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxilliary variables
+If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxiliary variables
 and the relevant inequalities.
 
 On the first pass, we do not perform case splits on natural subtraction.

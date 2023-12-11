@@ -1,5 +1,3 @@
-import Mathlib.Tactic.Omega.Frontend
+import Mathlib.Tactic.Omega.Impl2.Frontend
 
-example (x : Nat) : x % 4 - x % 8 = 0 := by
-  rw [Nat.eq_iff_le_and_ge]
-  constructor <;> omega
+example (x : Nat) : x % 4 - x % 8 = 0 := by omega
