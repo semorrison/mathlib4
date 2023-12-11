@@ -335,12 +335,19 @@ and close the goal using that.
 def omega (facts : List Expr) (g : MVarId) : MetaM Unit := OmegaM.run do
   omegaImpl { facts } g
 
+/--
+If the goal is `False`, do nothing.
+If the goal is `¬ P`, introduce `P`.
+
+Otherwise, for a goal `P`, introduce `¬ P` and change the goal to `False`.
+-/
 syntax "false_or_by_contra" : tactic
 
 def falseOrByContra (g : MVarId) : MetaM (List MVarId) := do
   match ← g.getType with
   | .const ``False _ => pure [g]
-  | .app (.const ``Not _) _ => pure [(← g.intro1).2]
+  | .app (.const ``Not _) _
+  | mkAppN (.const ``Ne _) #[_, _, _] => pure [(← g.intro1).2]
   | _ => (← g.applyConst ``Classical.byContradiction).mapM fun s => (·.2) <$> s.intro1
 
 open Lean Elab Tactic
