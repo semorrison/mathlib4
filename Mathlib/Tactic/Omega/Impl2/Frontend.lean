@@ -6,6 +6,16 @@ set_option autoImplicit true
 
 open Lean Meta
 
+theorem Nat.emod_pos_of_not_dvd {a b : Nat} (h : ¬ a ∣ b) : 0 < b % a := by
+  rw [Nat.dvd_iff_mod_eq_zero] at h
+  exact Nat.pos_of_ne_zero h
+
+theorem Int.emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
+  rw [Int.dvd_iff_emod_eq_zero] at h
+  by_cases w : a = 0
+  · simp_all
+  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨Int.emod_nonneg b w, Ne.symm h⟩)
+
 /--
 Given `p : P ∨ Q`, split the goal into two subgoals: one containing the hypothesis `h : P` and another containing `h : Q`.
 -/
@@ -47,7 +57,6 @@ structure MetaProblem where
   processedFacts : HashSet Expr := ∅
   /-- An integer linear arithmetic problem. -/
   problem : ProofProducing.Problem := {}
-  depth : Nat
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
@@ -197,16 +206,11 @@ where
 
 end
 
--- /-- The statement that a problem is satisfied at `atomsList`. -/
--- def satType (p : Problem) : OmegaM Expr :=
---   return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
-
 namespace MetaProblem
 
 /-- The trivial `MetaProblem`, with no facts to processs and a trivial `Problem`. -/
 def trivial : MetaProblem where
   problem := {}
-  depth := 0
 
 instance : Inhabited MetaProblem := ⟨trivial⟩
 
@@ -238,7 +242,7 @@ def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
     facts := newFacts.toList ++ p.facts
     problem := p.problem.addInequality lc.const lc.coeffs
       (some do mkAppM ``le_of_le_of_eq #[h, (← prf)]) }
-#check Classical.decidableInhabited
+
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
 def pushNot (h P : Expr) : Option Expr := do
   match P.getAppFnArgs with
@@ -252,6 +256,11 @@ def pushNot (h P : Expr) : Option Expr := do
   | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
   | (``Eq, #[.const ``Nat [], x, y]) => some (mkApp3 (.const ``Nat.lt_or_gt_of_ne []) x y h)
   | (``Eq, #[.const ``Int [], x, y]) => some (mkApp3 (.const ``Int.lt_or_gt_of_ne []) x y h)
+  | (``Dvd.dvd, #[.const ``Nat [], _, k, x]) =>
+    some (mkApp3 (.const ``Nat.emod_pos_of_not_dvd []) k x h)
+  | (``Dvd.dvd, #[.const ``Int [], _, k, x]) =>
+    -- This introduces a disjunction that could be avoided by checking `k ≠ 0`.
+    some (mkApp3 (.const ``Int.emod_pos_of_not_dvd []) k x h)
   | (``Or, #[P₁, P₂]) => some (mkApp3 (.const ``and_not_not_of_not_or []) P₁ P₂ h)
   | (``And, #[P₁, P₂]) =>
     some (mkApp5 (.const ``Decidable.or_not_not_of_not_and []) P₁ P₂
@@ -259,6 +268,7 @@ def pushNot (h P : Expr) : Option Expr := do
       (.app (.const ``Classical.propDecidable []) P₂) h)
   -- TODO add support for `¬ a ∣ b`?
   | _ => none
+
 
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
@@ -288,11 +298,14 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
       p.addFact (mkApp3 (.const ``Int.ofNat_lt_of_lt []) x y h)
     | (``LE.le, #[.const ``Nat [], _, x, y]) =>
       p.addFact (mkApp3 (.const ``Int.ofNat_le_of_le []) x y h)
+    | (``Dvd.dvd, #[.const ``Nat [], _, k, x]) =>
+      p.addFact (mkApp3 (.const ``Nat.mod_eq_zero_of_dvd []) k x h)
+    | (``Dvd.dvd, #[.const ``Int [], _, k, x]) =>
+      p.addFact (mkApp3 (.const ``Int.mod_eq_zero_of_dvd []) k x h)
     | (``And, #[t₁, t₂]) => do
         (← p.addFact (mkApp3 (.const ``And.left []) t₁ t₂ h)).addFact
           (mkApp3 (.const ``And.right []) t₁ t₂ h)
     | (``Or, #[_, _]) => return { p with disjunctions := p.disjunctions.insert' h }
-    -- TODO Add support for `k ∣ b`?
     | _ => pure p
 
 /--
@@ -313,16 +326,13 @@ partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
 
 end MetaProblem
 
-
-
 partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withContext do
-  if m.depth > 2 then throwError "maxDepth"
   let m' ← m.processFacts
   guard m'.facts.isEmpty
   let p := m'.problem
   trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
   let p' := if p.possible then p.solveEqualities else p
-  let p'' := p'.run'
+  let p'' := if p'.possible then p'.run' else p'
   trace[omega] "After elimination:\n{← atomsList}\n{p''}"
   if p''.possible then
     match m'.disjunctions with
@@ -334,16 +344,14 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
       let m₁ := { m' with
         problem := p -- I would really hope that we can use p' here (reuse already solved equations)
         facts := [.fvar h₁]
-        disjunctions := t
-        depth := m'.depth + 1 }
+        disjunctions := t }
       -- Some way to check that the disjunction actually added something usable?
       savingState do omegaImpl m₁ g₁
       trace[omega] "Adding facts:\n{← g₂.withContext <| inferType (.fvar h₂)}"
       let m₂ := { m' with
         problem := p
         facts := [.fvar h₂]
-        disjunctions := t
-        depth := m'.depth + 1 }
+        disjunctions := t }
       omegaImpl m₂ g₂
   else
     match p''.proveFalse? with
@@ -358,20 +366,21 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
 /--
 Given a collection of facts, try prove `False` using the omega algorithm,
 and close the goal using that.
-
-(We need the goal present in case we need to do case splits.)
 -/
 def omega (facts : List Expr) (g : MVarId) : MetaM Unit := OmegaM.run do
-  omegaImpl { facts, depth := 0 } g
+  omegaImpl { facts } g
 
 /--
+Changes the goal to `False`, retaining as much information as possible:
+
 If the goal is `False`, do nothing.
 If the goal is `¬ P`, introduce `P`.
-
-Otherwise, for a goal `P`, introduce `¬ P` and change the goal to `False`.
+If the goal is `x ≠ y`, introduce `x = y`.
+Otherwise, for a goal `P`, replace it with `¬ ¬ P` and introduce `¬ P`.
 -/
-syntax "false_or_by_contra" : tactic
+syntax (name := false_or_by_contra) "false_or_by_contra" : tactic
 
+@[inherit_doc false_or_by_contra]
 def falseOrByContra (g : MVarId) : MetaM (List MVarId) := do
   match ← g.getType with
   | .const ``False _ => pure [g]
@@ -391,7 +400,7 @@ It is not yet a full decision procedure (no "dark" or "grey" shadows),
 but should be effective on many problems.
 
 We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y` for `x y` in `Nat` or `Int`,
-along with negations of inequalities. (We do not do case splits on `h : x ≠ y`.)
+along with negations of inequalities.
 
 We decompose the sides of the inequalities as linear combinations of atoms.
 
