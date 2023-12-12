@@ -14,6 +14,38 @@ set_option relaxedAutoImplicit true
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
 
+-- abbrev Coeffs := AssocList Nat Int
+abbrev Coeffs := IntList
+abbrev Coeffs.get (xs : Coeffs) (i : Nat) : Int := IntList.get xs i
+abbrev Coeffs.set (xs : Coeffs) (i : Nat) (y : Int) : IntList := IntList.set xs i y
+abbrev Coeffs.gcd (xs : Coeffs) : Nat := IntList.gcd xs
+abbrev Coeffs.smul (xs : Coeffs) (g : Int) : Coeffs := IntList.smul xs g
+abbrev Coeffs.sdiv (xs : Coeffs) (g : Int) : Coeffs := IntList.sdiv xs g
+abbrev Coeffs.dot (xs ys : Coeffs) : Int := IntList.dot xs ys
+abbrev Coeffs.combo (a : Int) (xs : Coeffs) (b : Int) (ys : Coeffs) : Coeffs := IntList.combo a xs b ys
+abbrev Coeffs.length (xs : Coeffs) := List.length xs
+
+abbrev Coeffs.get_of_length_le {i : Nat} {xs : Coeffs} (h : Coeffs.length xs ≤ i) :
+    Coeffs.get xs i = 0 :=
+  IntList.get_of_length_le h
+abbrev Coeffs.dot_set_left (xs ys : Coeffs) (i : Nat) (z : Int) :
+    Coeffs.dot (Coeffs.set xs i z) ys =
+      Coeffs.dot xs ys + (z - Coeffs.get xs i) * Coeffs.get ys i :=
+  IntList.dot_set_left xs ys i z
+abbrev Coeffs.dot_sdiv_left (xs ys : Coeffs) {d : Int} (h : d ∣ xs.gcd) :
+    dot (xs.sdiv d) ys = (dot xs ys) / d :=
+  IntList.dot_sdiv_left xs ys h
+abbrev Coeffs.dot_smul_left (xs ys : Coeffs) (i : Int) :
+    Coeffs.dot (i * xs) ys = i * Coeffs.dot xs ys :=
+  IntList.dot_smul_left xs ys i
+abbrev Coeffs.dot_distrib_left (xs ys zs : Coeffs) : (xs + ys).dot zs = xs.dot zs + ys.dot zs :=
+  IntList.dot_distrib_left xs ys zs
+abbrev Coeffs.combo_eq_smul_add_smul (a : Int) (xs : Coeffs) (b : Int) (ys : Coeffs) :
+    Coeffs.combo a xs b ys = a * xs + b * ys :=
+  IntList.combo_eq_smul_add_smul a xs b ys
+abbrev Coeffs.gcd_dvd_dot_left (xs ys : Coeffs) : (Coeffs.gcd xs : Int) ∣ Coeffs.dot xs ys :=
+  IntList.gcd_dvd_dot_left xs ys
+
 namespace Omega.ProofProducing
 
 abbrev LowerBound : Type := Option Int
@@ -189,16 +221,16 @@ theorem div_sat (c : Constraint) (t : Int) (k : Nat) (n : k ≠ 0) (h : (k : Int
       rw [← Int.sub_ediv_of_dvd _ h, Int.le_iff_ge, Int.div_nonneg_iff_of_pos (mod_cast n)]
       exact Int.sub_nonneg_of_le w.2
 
-abbrev sat' (c : Constraint) (x y : List Int) := c.sat (IntList.dot x y)
+abbrev sat' (c : Constraint) (x y : Coeffs) := c.sat (Coeffs.dot x y)
 
 theorem combine_sat' {s t : Constraint} {x y} (ws : s.sat' x y) (wt : t.sat' x y) :
     (s.combine t).sat' x y := (combine_sat _ _ _).mpr ⟨ws, wt⟩
 
-theorem div_sat' {c : Constraint} {x y} (h : IntList.gcd x ≠ 0) (w : c.sat (IntList.dot x y)) :
-    (c.div (IntList.gcd x)).sat' (IntList.sdiv x (IntList.gcd x)) y := by
+theorem div_sat' {c : Constraint} {x y} (h : Coeffs.gcd x ≠ 0) (w : c.sat (Coeffs.dot x y)) :
+    (c.div (Coeffs.gcd x)).sat' (Coeffs.sdiv x (Coeffs.gcd x)) y := by
   dsimp [sat']
-  rw [IntList.dot_sdiv_left _ _ (Int.dvd_refl _)]
-  exact div_sat c _ (IntList.gcd x) h (IntList.gcd_dvd_dot_left x y) w
+  rw [Coeffs.dot_sdiv_left _ _ (Int.dvd_refl _)]
+  exact div_sat c _ (Coeffs.gcd x) h (Coeffs.gcd_dvd_dot_left x y) w
 
 theorem not_sat'_of_isImpossible (h : isImpossible c) {x y} : ¬ c.sat' x y :=
   not_sat_of_isImpossible h
@@ -213,9 +245,9 @@ A delayed proof that a constraint is satisfied at the atoms.
 -/
 abbrev Proof : Type := OmegaM Expr
 
-def normalize? : Constraint × List Int → Option (Constraint × List Int)
+def normalize? : Constraint × Coeffs → Option (Constraint × Coeffs)
   | ⟨s, x⟩ =>
-    let gcd := IntList.gcd x -- TODO should we be caching this?
+    let gcd := Coeffs.gcd x -- TODO should we be caching this?
     if gcd = 0 then
       if s.sat 0 then
         some (.trivial, x)
@@ -224,13 +256,13 @@ def normalize? : Constraint × List Int → Option (Constraint × List Int)
     else if gcd = 1 then
       none
     else
-      some (s.div gcd, IntList.sdiv x gcd)
+      some (s.div gcd, Coeffs.sdiv x gcd)
 
-def normalize (p : Constraint × List Int) : Constraint × List Int :=
+def normalize (p : Constraint × Coeffs) : Constraint × Coeffs :=
   normalize? p |>.getD p
 
-abbrev normalizeConstraint (s : Constraint) (x : List Int) : Constraint := (normalize (s, x)).1
-abbrev normalizeCoeffs (s : Constraint) (x : List Int) : List Int := (normalize (s, x)).2
+abbrev normalizeConstraint (s : Constraint) (x : Coeffs) : Constraint := (normalize (s, x)).1
+abbrev normalizeCoeffs (s : Constraint) (x : Coeffs) : Coeffs := (normalize (s, x)).2
 
 theorem normalize?_eq_some (w : normalize? (s, x) = some (s', x')) :
     normalizeConstraint s x = s' ∧ normalizeCoeffs s x = x' := by
@@ -248,18 +280,18 @@ theorem normalize_sat {s x v} (w : s.sat' x v) :
     · exact w
     · exact Constraint.div_sat' h w
 
-def positivize? : Constraint × List Int → Option (Constraint × List Int)
+def positivize? : Constraint × Coeffs → Option (Constraint × Coeffs)
   | ⟨s, x⟩ =>
     if 0 ≤ (x.find? (! · == 0) |>.getD 0) then
       none
     else
-      (s.neg, IntList.smul x (-1) )
+      (s.neg, Coeffs.smul x (-1) )
 
-def positivize (p : Constraint × List Int) : Constraint × List Int :=
+def positivize (p : Constraint × Coeffs) : Constraint × Coeffs :=
   positivize? p |>.getD p
 
-abbrev positivizeConstraint (s : Constraint) (x : List Int) : Constraint := (positivize (s, x)).1
-abbrev positivizeCoeffs (s : Constraint) (x : List Int) : List Int := (positivize (s, x)).2
+abbrev positivizeConstraint (s : Constraint) (x : Coeffs) : Constraint := (positivize (s, x)).1
+abbrev positivizeCoeffs (s : Constraint) (x : Coeffs) : Coeffs := (positivize (s, x)).2
 
 theorem positivize?_eq_some (w : positivize? (s, x) = some (s', x')) :
     positivizeConstraint s x = s' ∧ positivizeCoeffs s x = x' := by
@@ -271,15 +303,16 @@ theorem positivize_sat {s x v} (w : s.sat' x v) :
   split
   · exact w
   · simp [Constraint.sat']
-    erw [IntList.dot_smul_left, ← Int.neg_eq_neg_one_mul]
+    erw [Coeffs.dot_smul_left, ← Int.neg_eq_neg_one_mul]
     exact Constraint.neg_sat w
 
 theorem trim_sat {s : Constraint} {x v} (w : s.sat' x v) : s.sat' (IntList.trim x) v := by
   dsimp [Constraint.sat']
+  rw [Coeffs.dot]
   rw [IntList.dot_trim_left]
   exact w
 
-def tidy? : Constraint × List Int → Option (Constraint × List Int)
+def tidy? : Constraint × Coeffs → Option (Constraint × Coeffs)
   | ⟨s, x⟩ =>
     match IntList.trim? x with
     | none => match positivize? (s, x) with
@@ -289,11 +322,11 @@ def tidy? : Constraint × List Int → Option (Constraint × List Int)
       | some (s', x') => normalize (s', x')
     | some x' => normalize (positivize (s, x'))
 
-def tidy (p : Constraint × List Int) : Constraint × List Int :=
+def tidy (p : Constraint × Coeffs) : Constraint × Coeffs :=
   tidy? p |>.getD p
 
-abbrev tidyConstraint (s : Constraint) (x : List Int) : Constraint := (tidy (s, x)).1
-abbrev tidyCoeffs (s : Constraint) (x : List Int) : List Int := (tidy (s, x)).2
+abbrev tidyConstraint (s : Constraint) (x : Coeffs) : Constraint := (tidy (s, x)).1
+abbrev tidyCoeffs (s : Constraint) (x : Coeffs) : Coeffs := (tidy (s, x)).2
 
 theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeffs s x) v := by
   dsimp [tidyConstraint, tidyCoeffs, tidy, tidy?]
@@ -309,24 +342,24 @@ theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeff
     exact normalize_sat (positivize_sat (trim_sat w))
 
 theorem combo_sat' (s t : Constraint)
-    (a : Int) (x : List Int) (b : Int) (y : List Int) (v : List Int)
+    (a : Int) (x : Coeffs) (b : Int) (y : Coeffs) (v : Coeffs)
     (wx : s.sat' x v) (wy : t.sat' y v) :
-    (Constraint.combo a s b t).sat' (IntList.combo a x b y) v := by
-  rw [Constraint.sat', IntList.combo_eq_smul_add_smul, IntList.dot_distrib_left,
-    IntList.dot_smul_left, IntList.dot_smul_left]
+    (Constraint.combo a s b t).sat' (Coeffs.combo a x b y) v := by
+  rw [Constraint.sat', Coeffs.combo_eq_smul_add_smul, Coeffs.dot_distrib_left,
+    Coeffs.dot_smul_left, Coeffs.dot_smul_left]
   exact Constraint.combo_sat a wx b wy
 
-abbrev IntList.bmod (x : List Int) (m : Nat) : List Int := x.map (Int.bmod · m)
+abbrev Coeffs.bmod (x : Coeffs) (m : Nat) : Coeffs := x.map (Int.bmod · m)
 
-theorem IntList.bmod_length (m) : (IntList.bmod x m).length = x.length := List.length_map _ _
+theorem Coeffs.bmod_length (m) : (Coeffs.bmod x m).length = x.length := List.length_map _ _
 
-def bmod_coeffs (m : Nat) (i : Nat) (x : List Int) : List Int :=
-  IntList.set (IntList.bmod x m) i m
+def bmod_coeffs (m : Nat) (i : Nat) (x : Coeffs) : Coeffs :=
+  Coeffs.set (Coeffs.bmod x m) i m
 
-abbrev bmod_sub_term (m : Nat) (a b : List Int) : Int :=
-    (Int.bmod (IntList.dot a b) m) - IntList.dot (IntList.bmod a m) b
+abbrev bmod_sub_term (m : Nat) (a b : Coeffs) : Int :=
+    (Int.bmod (Coeffs.dot a b) m) - Coeffs.dot (Coeffs.bmod a m) b
 
-theorem bmod_sat_aux (m : Nat) (xs ys : List Int) : (m : Int) ∣ bmod_sub_term m xs ys := by
+theorem bmod_sat_aux (m : Nat) (xs ys : Coeffs) : (m : Int) ∣ bmod_sub_term m xs ys := by
   dsimp [bmod_sub_term]
   rw [Int.dvd_iff_emod_eq_zero]
   induction xs generalizing ys with
@@ -345,27 +378,29 @@ theorem bmod_sat_aux (m : Nat) (xs ys : List Int) : (m : Int) ∣ bmod_sub_term 
         Int.emod_emod, Int.mul_emod, Int.mul_emod (Int.bmod x m), Int.bmod_emod, Int.sub_self,
         Int.zero_emod]
 
-abbrev bmod_div_term (m : Nat) (a b : List Int) : Int := bmod_sub_term m a b / m
+abbrev bmod_div_term (m : Nat) (a b : Coeffs) : Int := bmod_sub_term m a b / m
 
-theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : List Int)
+theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : Coeffs)
     (h : x.length ≤ i)  -- during proof reconstruction this will be by `decide`
-    (p : IntList.get v i = bmod_div_term m x v) -- and this will be by `rfl`
+    (p : Coeffs.get v i = bmod_div_term m x v) -- and this will be by `rfl`
     (w : (Constraint.exact r).sat' x v) :
     (Constraint.exact (Int.bmod r m)).sat' (bmod_coeffs m i x) v := by
   simp at w
-  simp only [p, bmod_coeffs, Constraint.exact_sat, IntList.dot_set_left, decide_eq_true_eq]
-  rw [← IntList.bmod_length m] at h
-  rw [IntList.get_of_length_le h, Int.sub_zero, Int.mul_ediv_cancel' (bmod_sat_aux _ _ _), w,
+  simp only [p, bmod_coeffs, Constraint.exact_sat, Coeffs.dot_set_left, decide_eq_true_eq]
+  rw [← Coeffs.bmod_length m] at h
+  rw [Coeffs.get_of_length_le h, Int.sub_zero, Int.mul_ediv_cancel' (bmod_sat_aux _ _ _), w,
     ← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
 
-inductive Justification : Constraint → List Int → Type
--- `Problem.assumptions[i]` generates a proof that `s.sat (IntList.dot coeffs atoms)`
-| assumption (coeffs : List Int) (s : Constraint) (i : Nat) : Justification s coeffs
+inductive Justification : Constraint → Coeffs → Type
+-- `Problem.assumptions[i]` generates a proof that `s.sat (Coeffs.dot coeffs atoms)`
+| assumption (coeffs : Coeffs) (s : Constraint) (i : Nat) : Justification s coeffs
 | tidy (j : Justification s c) : Justification (tidyConstraint s c) (tidyCoeffs s c)
 | combine {s t c} (j : Justification s c) (k : Justification t c) : Justification (s.combine t) c
-| combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) : Justification (Constraint.combo a s b t) (IntList.combo a x b y)
+| combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) :
+    Justification (Constraint.combo a s b t) (Coeffs.combo a x b y)
   -- This only makes sense when `s = .exact r`, but there is no point in enforcing that here:
-| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) : Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
+| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) :
+    Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
 
 nonrec def Justification.tidy? (j : Justification s c) : Option (Σ s' c', Justification s' c') :=
   match tidy? (s, c) with
@@ -389,19 +424,19 @@ instance : ToString (Justification s x) where toString := toString
 
 open Lean
 
-def normalizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+def normalizeProof (s : Constraint) (x : Coeffs) (v : Expr) (prf : Expr) : Expr :=
   mkApp4 (.const ``normalize_sat []) (toExpr s) (toExpr x) v prf
 
-def positivizeProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+def positivizeProof (s : Constraint) (x : Coeffs) (v : Expr) (prf : Expr) : Expr :=
   mkApp4 (.const ``positivize_sat []) (toExpr s) (toExpr x) v prf
 
-def tidyProof (s : Constraint) (x : List Int) (v : Expr) (prf : Expr) : Expr :=
+def tidyProof (s : Constraint) (x : Coeffs) (v : Expr) (prf : Expr) : Expr :=
   mkApp4 (.const ``tidy_sat []) (toExpr s) (toExpr x) v prf
 
-def combineProof (s t : Constraint) (x : List Int) (v : Expr) (ps pt : Expr) : Expr :=
+def combineProof (s t : Constraint) (x : Coeffs) (v : Expr) (ps pt : Expr) : Expr :=
   mkApp6 (.const ``Constraint.combine_sat' []) (toExpr s) (toExpr t) (toExpr x) v ps pt
 
-def comboProof (s t : Constraint) (a : Int) (x : List Int) (b : Int) (y : List Int)
+def comboProof (s t : Constraint) (a : Int) (x : Coeffs) (b : Int) (y : Coeffs)
     (v : Expr) (px py : Expr) : Expr :=
   mkApp9 (.const ``combo_sat' []) (toExpr s) (toExpr t) (toExpr a) (toExpr x) (toExpr b) (toExpr y)
     v px py
@@ -417,7 +452,7 @@ def takeListLit : Nat → Level → Expr → Expr → Expr
     | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
     | _ => mkApp (.const ``List.nil [u]) ty
 
-def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr) : MetaM Expr := do
+def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) : MetaM Expr := do
   let v' := takeListLit x.length .zero (.const ``Int []) v
   let m := toExpr m
   let r := toExpr r
@@ -425,7 +460,7 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : List Int) (v : Expr) (w : Expr)
   let x := toExpr x
   let h ← mkDecideProof (mkApp4 (.const ``LE.le [.zero]) (.const ``Nat []) (.const ``instLENat [])
     (mkApp2 (.const ``List.length [.zero]) (.const ``Int []) x) i)
-  let lhs := mkApp2 (.const ``IntList.get []) v i
+  let lhs := mkApp2 (.const ``Coeffs.get []) v i
   let rhs := mkApp3 (.const ``bmod_div_term []) m x v'
   _ ← isDefEq lhs rhs
   let p ← mkEqReflWithExpectedType lhs rhs
@@ -444,7 +479,7 @@ def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
 end Justification
 
 structure Fact where
-  coeffs : List Int
+  coeffs : Coeffs
   constraint : Constraint
   justification : Justification constraint coeffs
 
@@ -465,7 +500,7 @@ structure Problem where
 
   numVars : Nat := 0
 
-  constraints : HashMap (List Int) Fact := ∅
+  constraints : HashMap Coeffs Fact := ∅
 
   possible : Bool := true
 
@@ -474,7 +509,7 @@ structure Problem where
 
   explanation? : Option String := none
 
-  equalities : HashSet (List Int) := ∅
+  equalities : HashSet Coeffs := ∅
 
   -- Stores equations that have already been used to eliminate variables,
   -- along with the variable which was removed, and its coefficient (either `1` or `-1`).
@@ -549,18 +584,18 @@ def addConstraint (p : Problem) : Fact → Problem
     else
       p
 
-def selectEquality (p : Problem) : Option (List Int) :=
+def selectEquality (p : Problem) : Option Coeffs :=
   p.equalities.fold (init := none) fun
   | none, c => c
   | some r, c => if 2 ≤ r.minNatAbs && (c.minNatAbs < r.minNatAbs || c.minNatAbs = r.minNatAbs && c.maxNatAbs < r.maxNatAbs) then c else r
 
 def replayEliminations (p : Problem) (f : Fact) : Fact :=
   p.eliminations.foldr (init := f) fun (f, i, s) g =>
-    match IntList.get g.coeffs i with
+    match Coeffs.get g.coeffs i with
     | 0 => g
     | y => Fact.combo (-1 * s * y) f 1 g
 
-def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
+def solveEasyEquality (p : Problem) (c : Coeffs) : Problem :=
   let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
   let sign := c.get? i |>.getD 0 |> Int.sign
   match p.constraints.find? c with
@@ -570,7 +605,7 @@ def solveEasyEquality (p : Problem) (c : List Int) : Problem :=
     { assumptions := p.assumptions
       eliminations := (f, i, sign) :: p.eliminations }
     p.constraints.fold (init := init) fun p' coeffs g =>
-      match IntList.get coeffs i with
+      match Coeffs.get coeffs i with
       | 0 =>
         p'.addConstraint g
       | ci =>
@@ -587,7 +622,7 @@ We deal with a hard equality by introducing a new easy equality.
 After solving the easy equality,
 the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
 -/
-def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
+def dealWithHardEquality (p : Problem) (c : Coeffs) : Problem :=
   let m := c.minNatAbs + 1
   let (i, p) := p.freshVar
   match p.constraints.find? c with
@@ -596,7 +631,7 @@ def dealWithHardEquality (p : Problem) (c : List Int) : Problem :=
   | _ =>
     p -- unreachable
 
-def solveEquality (p : Problem) (c : List Int) : Problem :=
+def solveEquality (p : Problem) (c : Coeffs) : Problem :=
   if c.minNatAbs = 1 then
     p.solveEasyEquality c
   else
@@ -609,31 +644,31 @@ partial def solveEqualities (p : Problem) : Problem :=
     | none => p
   else p
 
-theorem addInequality_sat (w : c + IntList.dot x y ≥ 0) :
+theorem addInequality_sat (w : c + Coeffs.dot x y ≥ 0) :
     ({ lowerBound := some (-c), upperBound := none } : Constraint).sat' x y := by
   simp [Constraint.sat', Constraint.sat]
   rw [← Int.zero_sub c]
   exact Int.sub_left_le_of_le_add w
 
 open Lean in
-def addInequality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
+def addInequality_proof (c : Int) (x : Coeffs) (p : Proof) : Proof := do
   return mkApp4 (.const ``addInequality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
 
-theorem addEquality_sat (w : c + IntList.dot x y = 0) :
+theorem addEquality_sat (w : c + Coeffs.dot x y = 0) :
     ({ lowerBound := some (-c), upperBound := some (-c) } : Constraint).sat' x y := by
   simp [Constraint.sat', Constraint.sat]
   rw [Int.eq_iff_le_and_ge] at w
   rwa [Int.add_le_zero_iff_le_neg', Int.add_nonnneg_iff_neg_le', and_comm] at w
 
 open Lean in
-def addEquality_proof (c : Int) (x : List Int) (p : Proof) : Proof := do
+def addEquality_proof (c : Int) (x : Coeffs) (p : Proof) : Proof := do
   return mkApp4 (.const ``addEquality_sat []) (toExpr c) (toExpr x) (← atomsList) (← p)
 
--- prf? : const + IntList.dot coeffs atoms ≥ 0
--- But we need to transform this to `IntList.dot coeffs atoms ≥ -const` i.e.
+-- prf? : const + Coeffs.dot coeffs atoms ≥ 0
+-- But we need to transform this to `Coeffs.dot coeffs atoms ≥ -const` i.e.
 
 -- This is only ever used to add assumptions: during the elimination we call `addConstraint`.
-def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
+def addInequality (p : Problem) (const : Int) (coeffs : Coeffs) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
     let i := p.assumptions.size
     let p' := { p with assumptions := p.assumptions.push (addInequality_proof const coeffs prf) }
@@ -645,7 +680,7 @@ def addInequality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option
     let f := p.replayEliminations f
     p'.addConstraint f
 
-def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option Proof) : Problem :=
+def addEquality (p : Problem) (const : Int) (coeffs : Coeffs) (prf? : Option Proof) : Problem :=
     let prf := prf?.getD (do mkSorry (← mkFreshExprMVar none) false)
     let i := p.assumptions.size
     let p' := { p with assumptions := p.assumptions.push (addEquality_proof const coeffs prf) }
@@ -657,10 +692,10 @@ def addEquality (p : Problem) (const : Int) (coeffs : List Int) (prf? : Option P
     let f := p.replayEliminations f
     p'.addConstraint f
 
-def addInequalities (p : Problem) (ineqs : List (Int × List Int × Option Proof)) : Problem :=
+def addInequalities (p : Problem) (ineqs : List (Int × Coeffs × Option Proof)) : Problem :=
   ineqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addInequality const coeffs prf?
 
-def addEqualities (p : Problem) (eqs : List (Int × List Int × Option Proof)) : Problem :=
+def addEqualities (p : Problem) (eqs : List (Int × Coeffs × Option Proof)) : Problem :=
   eqs.foldl (init := p) fun p ⟨const, coeffs, prf?⟩ => p.addEquality const coeffs prf?
 
 structure FourierMotzkinData where
@@ -684,7 +719,7 @@ def fourierMotzkinData (p : Problem) : Array FourierMotzkinData := Id.run do
   let mut data : Array FourierMotzkinData := Array.mkArray p.numVars {}
   for (_, f@⟨xs, s, _⟩) in p.constraints.toList do -- We could make a forIn instance for HashMap
     for i in [0:n] do
-      let x := IntList.get xs i
+      let x := Coeffs.get xs i
       data := data.modify i fun d =>
         if x = 0 then
           { d with irrelevant := f :: d.irrelevant }

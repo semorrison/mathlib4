@@ -5,7 +5,7 @@ set_option trace.omega true
 -- Inequalities
 example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
 
--- Tightening inequalities over `Int`
+-- Tightening inequalities over `Int` or `Nat`
 example {x y : Nat} (_ : x + y > 10) (_ : 2 * x < 11) (_ : y < 5) : False := by omega
 
 -- GCDs not dividing constant terms
