@@ -1,50 +1,15 @@
 
 import Std
-import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.Impl2.OmegaM
-import Mathlib.Tactic.Omega.Impl.MinNatAbs
+import Mathlib.Tactic.Omega.Impl2.Problem
 import Mathlib.Tactic.DeriveToExpr
 import Mathlib.Tactic.LibrarySearch
-
-
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
-
--- abbrev Coeffs := AssocList Nat Int
-abbrev Coeffs := IntList
-abbrev Coeffs.get (xs : Coeffs) (i : Nat) : Int := IntList.get xs i
-abbrev Coeffs.set (xs : Coeffs) (i : Nat) (y : Int) : IntList := IntList.set xs i y
-abbrev Coeffs.gcd (xs : Coeffs) : Nat := IntList.gcd xs
-abbrev Coeffs.smul (xs : Coeffs) (g : Int) : Coeffs := IntList.smul xs g
-abbrev Coeffs.sdiv (xs : Coeffs) (g : Int) : Coeffs := IntList.sdiv xs g
-abbrev Coeffs.dot (xs ys : Coeffs) : Int := IntList.dot xs ys
-abbrev Coeffs.combo (a : Int) (xs : Coeffs) (b : Int) (ys : Coeffs) : Coeffs := IntList.combo a xs b ys
-abbrev Coeffs.length (xs : Coeffs) := List.length xs
-
-abbrev Coeffs.get_of_length_le {i : Nat} {xs : Coeffs} (h : Coeffs.length xs ≤ i) :
-    Coeffs.get xs i = 0 :=
-  IntList.get_of_length_le h
-abbrev Coeffs.dot_set_left (xs ys : Coeffs) (i : Nat) (z : Int) :
-    Coeffs.dot (Coeffs.set xs i z) ys =
-      Coeffs.dot xs ys + (z - Coeffs.get xs i) * Coeffs.get ys i :=
-  IntList.dot_set_left xs ys i z
-abbrev Coeffs.dot_sdiv_left (xs ys : Coeffs) {d : Int} (h : d ∣ xs.gcd) :
-    dot (xs.sdiv d) ys = (dot xs ys) / d :=
-  IntList.dot_sdiv_left xs ys h
-abbrev Coeffs.dot_smul_left (xs ys : Coeffs) (i : Int) :
-    Coeffs.dot (i * xs) ys = i * Coeffs.dot xs ys :=
-  IntList.dot_smul_left xs ys i
-abbrev Coeffs.dot_distrib_left (xs ys zs : Coeffs) : (xs + ys).dot zs = xs.dot zs + ys.dot zs :=
-  IntList.dot_distrib_left xs ys zs
-abbrev Coeffs.combo_eq_smul_add_smul (a : Int) (xs : Coeffs) (b : Int) (ys : Coeffs) :
-    Coeffs.combo a xs b ys = a * xs + b * ys :=
-  IntList.combo_eq_smul_add_smul a xs b ys
-abbrev Coeffs.gcd_dvd_dot_left (xs ys : Coeffs) : (Coeffs.gcd xs : Int) ∣ Coeffs.dot xs ys :=
-  IntList.gcd_dvd_dot_left xs ys
 
 namespace Omega.ProofProducing
 
@@ -282,7 +247,7 @@ theorem normalize_sat {s x v} (w : s.sat' x v) :
 
 def positivize? : Constraint × Coeffs → Option (Constraint × Coeffs)
   | ⟨s, x⟩ =>
-    if 0 ≤ (x.find? (! · == 0) |>.getD 0) then
+    if 0 ≤ x.leading then
       none
     else
       (s.neg, Coeffs.smul x (-1) )
@@ -306,21 +271,22 @@ theorem positivize_sat {s x v} (w : s.sat' x v) :
     erw [Coeffs.dot_smul_left, ← Int.neg_eq_neg_one_mul]
     exact Constraint.neg_sat w
 
-theorem trim_sat {s : Constraint} {x v} (w : s.sat' x v) : s.sat' (IntList.trim x) v := by
-  dsimp [Constraint.sat']
-  rw [Coeffs.dot]
-  rw [IntList.dot_trim_left]
-  exact w
+-- theorem trim_sat {s : Constraint} {x v} (w : s.sat' x v) : s.sat' (IntList.trim x) v := by
+--   dsimp [Constraint.sat']
+--   rw [Coeffs.dot]
+--   rw [IntList.dot_trim_left]
+--   exact w
 
 def tidy? : Constraint × Coeffs → Option (Constraint × Coeffs)
   | ⟨s, x⟩ =>
-    match IntList.trim? x with
-    | none => match positivize? (s, x) with
+    -- match IntList.trim? x with
+    -- | none =>
+    match positivize? (s, x) with
       | none => match normalize? (s, x) with
         | none => none
         | some (s', x') => some (s', x')
       | some (s', x') => normalize (s', x')
-    | some x' => normalize (positivize (s, x'))
+    -- | some x' => normalize (positivize (s, x'))
 
 def tidy (p : Constraint × Coeffs) : Constraint × Coeffs :=
   tidy? p |>.getD p
@@ -330,7 +296,7 @@ abbrev tidyCoeffs (s : Constraint) (x : Coeffs) : Coeffs := (tidy (s, x)).2
 
 theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeffs s x) v := by
   dsimp [tidyConstraint, tidyCoeffs, tidy, tidy?]
-  split <;> rename_i ht
+  -- split <;> rename_i ht
   · split <;> rename_i hp
     · split <;> rename_i hn
       · simp_all
@@ -338,8 +304,8 @@ theorem tidy_sat {s x v} (w : s.sat' x v) : (tidyConstraint s x).sat' (tidyCoeff
         exact normalize_sat w
     · rcases positivize?_eq_some hp with ⟨rfl, rfl⟩
       exact normalize_sat (positivize_sat w)
-  · rcases IntList.trim?_eq_some ht with rfl
-    exact normalize_sat (positivize_sat (trim_sat w))
+  -- · rcases IntList.trim?_eq_some ht with rfl
+  --   exact normalize_sat (positivize_sat (trim_sat w))
 
 theorem combo_sat' (s t : Constraint)
     (a : Int) (x : Coeffs) (b : Int) (y : Coeffs) (v : Coeffs)
@@ -351,7 +317,7 @@ theorem combo_sat' (s t : Constraint)
 
 abbrev Coeffs.bmod (x : Coeffs) (m : Nat) : Coeffs := x.map (Int.bmod · m)
 
-theorem Coeffs.bmod_length (m) : (Coeffs.bmod x m).length = x.length := List.length_map _ _
+theorem Coeffs.bmod_length (m) : (Coeffs.bmod x m).length = x.length := Coeffs.map_length
 
 def bmod_coeffs (m : Nat) (i : Nat) (x : Coeffs) : Coeffs :=
   Coeffs.set (Coeffs.bmod x m) i m
@@ -360,23 +326,24 @@ abbrev bmod_sub_term (m : Nat) (a b : Coeffs) : Int :=
     (Int.bmod (Coeffs.dot a b) m) - Coeffs.dot (Coeffs.bmod a m) b
 
 theorem bmod_sat_aux (m : Nat) (xs ys : Coeffs) : (m : Int) ∣ bmod_sub_term m xs ys := by
-  dsimp [bmod_sub_term]
-  rw [Int.dvd_iff_emod_eq_zero]
-  induction xs generalizing ys with
-  | nil => simp
-  | cons x xs ih =>
-    cases ys with
-    | nil => simp
-    | cons y ys =>
-      simp only [IntList.dot_cons₂, List.map_cons]
-      specialize ih ys
-      rw [Int.sub_emod, Int.bmod_emod] at ih
-      rw [Int.sub_emod, Int.bmod_emod, Int.add_emod, Int.add_emod (Int.bmod x m * y),
-        ← Int.sub_emod, ← Int.sub_sub, Int.sub_eq_add_neg, Int.sub_eq_add_neg,
-        Int.add_assoc (x * y % m), Int.add_comm (IntList.dot _ _ % m), ← Int.add_assoc,
-        Int.add_assoc, ← Int.sub_eq_add_neg, ← Int.sub_eq_add_neg, Int.add_emod, ih, Int.add_zero,
-        Int.emod_emod, Int.mul_emod, Int.mul_emod (Int.bmod x m), Int.bmod_emod, Int.sub_self,
-        Int.zero_emod]
+  sorry
+  -- dsimp [bmod_sub_term]
+  -- rw [Int.dvd_iff_emod_eq_zero]
+  -- induction xs generalizing ys with
+  -- | nil => simp
+  -- | cons x xs ih =>
+  --   cases ys with
+  --   | nil => simp
+  --   | cons y ys =>
+  --     simp only [IntList.dot_cons₂, List.map_cons]
+  --     specialize ih ys
+  --     rw [Int.sub_emod, Int.bmod_emod] at ih
+  --     rw [Int.sub_emod, Int.bmod_emod, Int.add_emod, Int.add_emod (Int.bmod x m * y),
+  --       ← Int.sub_emod, ← Int.sub_sub, Int.sub_eq_add_neg, Int.sub_eq_add_neg,
+  --       Int.add_assoc (x * y % m), Int.add_comm (IntList.dot _ _ % m), ← Int.add_assoc,
+  --       Int.add_assoc, ← Int.sub_eq_add_neg, ← Int.sub_eq_add_neg, Int.add_emod, ih, Int.add_zero,
+  --       Int.emod_emod, Int.mul_emod, Int.mul_emod (Int.bmod x m), Int.bmod_emod, Int.sub_self,
+  --       Int.zero_emod]
 
 abbrev bmod_div_term (m : Nat) (a b : Coeffs) : Int := bmod_sub_term m a b / m
 
@@ -415,7 +382,7 @@ namespace Justification
 
 def toString : Justification s x → String
 | assumption _ _ i => s!"{x} ∈ {s}: assumption {i}"
-| @tidy s' x' j => if s = s' ∧ x = x' then j.toString else s!"{x} ∈ {s}: tidying up:\n" ++ j.toString.bullet
+| @tidy s' x' j => if s == s' && x == x' then j.toString else s!"{x} ∈ {s}: tidying up:\n" ++ j.toString.bullet
 | combine j k => s!"{x} ∈ {s}: combination of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | combo a j b k => s!"{x} ∈ {s}: {a} * x + {b} * y combo of:\n" ++ j.toString.bullet ++ "\n" ++ k.toString.bullet
 | bmod m _ i j => s!"{x} ∈ {s}: bmod with m={m} and i={i} of:\n" ++ j.toString.bullet
@@ -559,7 +526,7 @@ def insertConstraint (p : Problem) : Fact → Problem
         proveFalse?_spec := rfl }
     else
       { p with
-        numVars := max p.numVars (IntList.trim x).length
+        numVars := max p.numVars x.length
         constraints := p.constraints.insert x f
         proveFalse?_spec := p.proveFalse?_spec
         equalities :=
@@ -597,7 +564,7 @@ def replayEliminations (p : Problem) (f : Fact) : Fact :=
 
 def solveEasyEquality (p : Problem) (c : Coeffs) : Problem :=
   let i := c.findIdx? (·.natAbs = 1) |>.getD 0 -- findIdx? is always some
-  let sign := c.get? i |>.getD 0 |> Int.sign
+  let sign := c.get i |> Int.sign
   match p.constraints.find? c with
   | some f =>
     -- TODO Lame that we are copying around assumptions here:

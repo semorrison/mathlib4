@@ -54,6 +54,8 @@ theorem set_get_eq : get (set xs i y) j = if i = j then y else xs.get j := by
 @[simp] theorem set_get_self : get (set xs i y) i = y := by simp [set_get_eq]
 @[simp] theorem set_get_of_ne (h : i ≠ j) : get (set xs i y) j = xs.get j := by simp [set_get_eq, h]
 
+def leading (xs : IntList) : Int := xs.find? (! · == 0) |>.getD 0
+
 def add (xs ys : IntList) : IntList :=
   List.zipWithAll (fun x y => x.getD 0 + y.getD 0) xs ys
 

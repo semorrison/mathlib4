@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Omega.Problem
+import Mathlib.Tactic.Omega.Impl2.Problem
 import Mathlib.Tactic.Omega.Int
 import Mathlib.Tactic.Omega.Impl2.fast
 
@@ -59,11 +59,6 @@ instance : ToExpr LinearCombo where
   toExpr lc :=
     (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
   toTypeExpr := .const ``LinearCombo []
-
-instance : ToExpr Problem where
-  toExpr p := (Expr.const ``Problem.mk []).app (toExpr p.possible)
-    |>.app (toExpr p.equalities) |>.app (toExpr p.inequalities)
-  toTypeExpr := .const ``Problem []
 
 /-- Construct the `rfl` proof that `lc.eval atoms = e`. -/
 def mkEvalRflProof (e : Expr) (lc : LinearCombo) : OmegaM Expr := do

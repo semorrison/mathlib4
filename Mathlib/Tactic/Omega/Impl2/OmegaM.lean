@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Omega.Problem
+import Mathlib.Tactic.Omega.Impl2.Problem
 
 set_option autoImplicit true
 
@@ -119,9 +119,5 @@ def lookup (e : Expr) : OmegaM (Nat × Option (HashSet Expr)) := do
     { c with
       atoms := c.atoms.push e })
   return (i, some facts)
-
-/-- The proof that the trivial `Problem` is satisfied at the atoms. -/
-def trivialSat : OmegaM Expr :=
-  return .app (.const ``Problem.trivial_sat []) (← atomsList)
 
 end Omega
