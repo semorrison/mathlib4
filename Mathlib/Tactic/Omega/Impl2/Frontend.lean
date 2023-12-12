@@ -77,8 +77,7 @@ def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : OmegaM Expr := do
     let atoms ← atomsList
     let n := toExpr n
     let eq ← mkEqReflWithExpectedType e
-      (mkApp3 (.const ``Option.getD [.zero]) (.const ``Int [])
-        (mkApp3 (.const ``List.get? [.zero]) (.const ``Int []) atoms n) (toExpr (0 : Int)))
+      (mkApp2 (.const ``Coeffs.get []) atoms n)
     mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
@@ -86,7 +85,7 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
--- TODO this can be removed at `v4.4.0-rc1`, Kyle has PR'd it to Lean.
+-- TODO this can be removed after leanprover/lean4#2900
 @[inherit_doc mkAppN]
 macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
@@ -120,12 +119,12 @@ Also returns:
   * for each new atom `a` of the form `((x : Nat) : Int)`, the fact that `0 ≤ a`
   * for each new atom `a` of the form `x / k`, for `k` a positive numeral, the facts that
     `k * a ≤ x < (k + 1) * a`
+  * for each new atom of the form `((a - b : Nat) : Int)`, the fact:
+    `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`
 
 We also transform the expression as we descend into it:
 * pushing coercions: `↑(x + y)`, `↑(x * y)`, `↑(x / k)`, `↑(x % k)`, `↑k`
 * unfolding `emod`: `x % k` → `x - x / k`
-
-Finally, the `OmegaM` monad records appearances of `↑(x - y)` atoms, for later case splitting.
 -/
 partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   trace[omega] "processing {e}"

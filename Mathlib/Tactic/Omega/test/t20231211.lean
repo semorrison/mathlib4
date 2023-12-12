@@ -131,6 +131,8 @@ example {x1 x2 x3 x4 x5 x6 : Int} (h : 0 ≤ 2 * x1 + 1) (h : x1 = x2) (h : x2 =
 example {x : Int} (_ : 1 ≤ -3 * x) (_ : 1 ≤ 2 * x) : False := by omega
 
 example {x y : Int} (_ : 2 * x + 3 * y = 0) (_ : 1 ≤ x) (_ : 1 ≤ y) : False := by omega
+set_option trace.omega true in
+example {x y z : Int} (_ : 2 * x + 3 * y = 0) (_ : 3 * y + 4 * z = 0) (_ : 1 ≤ x) (_ : 1 ≤ -z) : False := by omega
 
 example {x y z : Int} (_ : 2 * x + 3 * y + 4 * z = 0) (_ : 1 ≤ x + y) (_ : 1 ≤ y + z)
     (_ : 1 ≤ x + z) : False := by omega

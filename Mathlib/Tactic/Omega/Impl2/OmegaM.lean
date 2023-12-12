@@ -34,7 +34,8 @@ def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 def atoms : OmegaM (List Expr) := return (← getThe State).atoms.toList
 
 /-- Return the `Expr` representing the list of atoms. -/
-def atomsList : OmegaM Expr := do mkListLit (.const ``Int []) (← atoms)
+def atomsList : OmegaM Expr := do
+  return .app (.const ``Coeffs.ofList []) (← mkListLit (.const ``Int []) (← atoms))
 
 /--
 Run an `OmegaM` computation, restoring the state afterwards.

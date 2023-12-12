@@ -7,7 +7,6 @@ import Mathlib.Tactic.LibrarySearch
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
-
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
 
@@ -504,9 +503,10 @@ and constructs a proof of `False`.
 -/
 def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof := do
   let atoms ← atoms
-  let v ← mkListLit (.const ``Int [])
-    (atoms ++ (← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))))
+  let mvars ← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))
+  let v ← mkListLit (.const ``Int []) (atoms ++ mvars)
   let prf ← j.proof v assumptions
+  trace[omega] "Additional mvars:\n{← mvars.mapM instantiateMVars}"
   let x := toExpr x
   let s := toExpr s
   let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
