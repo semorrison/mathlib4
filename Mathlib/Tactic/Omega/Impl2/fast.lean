@@ -508,12 +508,8 @@ Takes a proof that `s.sat' x v` for some `s` such that `s.isImpossible`,
 and constructs a proof of `False`.
 -/
 def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof := do
-  let atoms ← atoms
-  let mvars ← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))
-  let v ← mkListLit (.const ``Int []) (atoms ++ mvars)
-  let v := .app (.const ``Coeffs.ofList []) v
+  let v := .app (.const ``Coeffs.ofList []) (← mkListLit (.const ``Int []) (← atoms))
   let prf ← j.proof v assumptions
-  trace[omega] "Additional mvars:\n{← mvars.mapM instantiateMVars}"
   let x := toExpr x
   let s := toExpr s
   let impossible ← mkDecideProof (← mkEq (mkApp (.const ``Constraint.isImpossible []) s) (.const ``true []))
@@ -587,36 +583,42 @@ def solveEasyEquality (p : Problem) (c : Coeffs) : Problem :=
         p'.addConstraint (Fact.combo k f 1 g).tidy
   | _ => p -- unreachable
 
-def freshVar (p : Problem) : Nat × Problem :=
-  (p.numVars, { p with numVars := p.numVars + 1 })
+-- def freshVar (p : Problem) : Nat × Problem :=
+--   (p.numVars, { p with numVars := p.numVars + 1 })
 
+open Lean in
 /--
 We deal with a hard equality by introducing a new easy equality.
 
 After solving the easy equality,
 the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been reduced.
 -/
-def dealWithHardEquality (p : Problem) (c : Coeffs) : Problem :=
-  let m := c.minNatAbs + 1
-  let (i, p) := p.freshVar
+def dealWithHardEquality (p : Problem) (c : Coeffs) : OmegaM Problem :=
   match p.constraints.find? c with
-  | some ⟨_, ⟨some r, _⟩, j⟩ =>
-    p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
+  | some ⟨_, ⟨some r, _⟩, j⟩ => do
+    let m := c.minNatAbs + 1
+    let x := mkApp3 (.const ``bmod_div_term []) (toExpr m) (toExpr c) (← atomsList)
+    let (i, facts?) ← lookup x
+    match facts? with
+    | none => throwError "When solving hard equality, new atom had been seen before!"
+    | some facts => if ! facts.isEmpty then
+      throwError "When solving hard equality, there should not have been interesting facts about the new atom!"
+    return p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
   | _ =>
-    p -- unreachable
+    return p -- unreachable
 
-def solveEquality (p : Problem) (c : Coeffs) : Problem :=
+def solveEquality (p : Problem) (c : Coeffs) : OmegaM Problem :=
   if c.minNatAbs = 1 then
-    p.solveEasyEquality c
+    return p.solveEasyEquality c
   else
     p.dealWithHardEquality c
 
-partial def solveEqualities (p : Problem) : Problem :=
+partial def solveEqualities (p : Problem) : OmegaM Problem :=
   if p.possible then
     match p.selectEquality with
-    | some c => (p.solveEquality c).solveEqualities
-    | none => p
-  else p
+    | some c => do (← p.solveEquality c).solveEqualities
+    | none => return p
+  else return p
 
 theorem addInequality_sat (w : c + Coeffs.dot x y ≥ 0) :
     ({ lowerBound := some (-c), upperBound := none } : Constraint).sat' x y := by
@@ -745,25 +747,25 @@ def fourierMotzkin (p : Problem) : Problem := Id.run do
       r := r.addConstraint (Fact.combo a f (-b) g).tidy
   return r
 
-partial def run (p : Problem) : Problem :=
+partial def run (p : Problem) : OmegaM Problem := do
   if p.possible then
-    let p' := p.solveEqualities
+    let p' ← p.solveEqualities
     if p'.possible then
       if p'.constraints.isEmpty then
-        p'
+        return p'
       else
         run (p'.fourierMotzkin)
     else
-      p'
+      return p'
   else
-    p
+    return p
 
 -- As for `run'`, but assuming the first round of solving equalities has already happened.
-def run' (p : Problem) : Problem :=
+def run' (p : Problem) : OmegaM Problem :=
   if p.possible then
     if p.constraints.isEmpty then
-      p
+      return p
     else
       run (p.fourierMotzkin)
   else
-    p
+    return p
