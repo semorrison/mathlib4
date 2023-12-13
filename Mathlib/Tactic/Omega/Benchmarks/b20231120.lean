@@ -102,6 +102,18 @@ fe17c00be5bb5e31e18f84e82400a82feab03cd3
 Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
   Time (mean ± σ):      1.281 s ±  0.006 s    [User: 1.028 s, System: 0.242 s]
   Range (min … max):    1.271 s …  1.290 s    10 runs
+
+Just prior to trying out sparse coefficients
+Wed Dec 13 13:47:32 AEDT 2023
+3f7958448fb6f86948287d582db67e91ab9a67d9
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      1.189 s ±  0.007 s    [User: 0.968 s, System: 0.210 s]
+  Range (min … max):    1.181 s …  1.205 s    10 runs
+
+Sparse coefficients:
+Benchmark 1: lake env lean Mathlib/Tactic/Omega/Benchmarks/b20231120.lean
+  Time (mean ± σ):      1.468 s ±  0.011 s    [User: 1.244 s, System: 0.214 s]
+  Range (min … max):    1.459 s …  1.497 s    10 runs
 -/
 
 example : True := by
