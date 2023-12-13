@@ -418,14 +418,10 @@ def takeListLit : Nat → Level → Expr → Expr → Expr
     | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
     | _ => mkApp (.const ``List.nil [u]) ty
 
-def foo (k : Nat) (v : Expr) : Expr :=
-  match v.getAppFnArgs with
-  | (``Coeffs.ofList, #[v]) => .app (.const ``Coeffs.ofList []) (takeListLit k .zero (.const ``Int []) v)
-  | _ => v -- unreachable
-
 def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) : MetaM Expr := do
   -- let v' := takeListLit x.length .zero (.const ``Int []) v
-  let v' := foo x.length v
+  -- let v' := foo x.length v
+  let v' := v
   let m := toExpr m
   let r := toExpr r
   let i := toExpr i
@@ -442,7 +438,10 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) :
 
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
-| assumption s c i => assumptions[i]!
+| assumption s c i => do
+  match assumptions[i]? with
+  | some a => a
+  | none => throwError "No such assumption: {i}"
 | @tidy s c j => return tidyProof s c v (← proof v assumptions j)
 | @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
 | @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
@@ -456,6 +455,9 @@ structure Fact where
   justification : Justification constraint coeffs
 
 namespace Fact
+
+instance : ToString Fact where
+  toString f := toString f.justification
 
 def tidy (f : Fact) : Fact :=
   match f.justification.tidy? with
@@ -489,10 +491,15 @@ structure Problem where
   -- so if these are being reapplied it is essential to use `List.foldr`.
   eliminations : List (Fact × Nat × Int) := []
 
+
+namespace Problem
+
+def isEmpty (p : Problem) : Bool := p.constraints.isEmpty
+
 instance : ToString Problem where
   toString p :=
     if p.possible then
-      if p.constraints.isEmpty then
+      if p.isEmpty then
         "trivial"
       else
         "\n".intercalate <|
@@ -500,7 +507,6 @@ instance : ToString Problem where
     else
       "impossible"
 
-namespace Problem
 
 open Lean in
 /--
@@ -682,6 +688,9 @@ structure FourierMotzkinData where
   upperExact : Bool := true
 deriving Inhabited
 
+instance : ToString FourierMotzkinData where
+  toString d := s!"• irrelevant: {d.irrelevant}\n" ++ s!"• lowerBounds: {d.lowerBounds}\n" ++ s!"• upperBounds: {d.upperBounds}"
+
 def FourierMotzkinData.isEmpty (d : FourierMotzkinData) : Bool :=
   d.lowerBounds.isEmpty && d.upperBounds.isEmpty
 def FourierMotzkinData.size (d : FourierMotzkinData) : Nat := d.lowerBounds.length * d.upperBounds.length
@@ -748,13 +757,15 @@ def fourierMotzkin (p : Problem) : Problem := Id.run do
   return r
 
 partial def run (p : Problem) : OmegaM Problem := do
+  trace[omega] "Running omega on: {p}"
   if p.possible then
     let p' ← p.solveEqualities
     if p'.possible then
-      if p'.constraints.isEmpty then
+      if p'.isEmpty then
         return p'
       else
-        run (p'.fourierMotzkin)
+        trace[omega] "Running Fourier-Motzkin on:\n{p'}"
+        run p'.fourierMotzkin
     else
       return p'
   else
@@ -763,9 +774,10 @@ partial def run (p : Problem) : OmegaM Problem := do
 -- As for `run'`, but assuming the first round of solving equalities has already happened.
 def run' (p : Problem) : OmegaM Problem :=
   if p.possible then
-    if p.constraints.isEmpty then
+    if p.isEmpty then
       return p
-    else
-      run (p.fourierMotzkin)
+    else do
+      trace[omega] "Running Fourier-Motzkin on:\n{p}"
+      run p.fourierMotzkin
   else
     return p

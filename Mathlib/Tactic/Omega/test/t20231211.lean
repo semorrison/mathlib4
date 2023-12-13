@@ -7,7 +7,6 @@ example : True := by
   trivial
 
 -- set_option trace.omega true
-
 example (_ : (1 : Int) < (0 : Int)) : False := by omega
 
 example (_ : (0 : Int) < (0 : Int)) : False := by omega
@@ -27,6 +26,7 @@ example (_ : 0 < 0) : False := by omega
 
 example {x : Nat} (_ : x > 7) (_ : x < 3) : False := by omega
 example {x : Nat} (_ : x ≥ 7) (_ : x ≤ 3) : False := by omega
+
 example {x y : Nat} (_ : x + y > 10) (_ : x < 5) (_ : y < 5) : False := by omega
 
 example {x y : Int} (_ : x + y > 10) (_ : 2 * x < 11) (_ : y < 5) : False := by omega

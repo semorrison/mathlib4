@@ -86,9 +86,24 @@ where
   | _, .nil => []
   | i, .cons j x t => if i < j then 0 :: go (i+1) (.cons j x t) else x :: go (i+1) t
 
-instance : ToString IntDict where toString xs := toString xs.toList
+-- instance : ToString IntDict where toString xs := toString xs.toList
+nonrec def toString (xs : IntDict) : String :=
+  toString <| AssocList.toList xs
 
-def length (xs : IntDict) : Nat := xs.last?.map (·.1) |>.getD 0
+instance : ToString IntDict where toString := toString
+
+def length (xs : IntDict) : Nat := xs.last?.map (·.1 + 1) |>.getD 0
+
+-- TODO tail recursive version
+def map (f : Int → Int) (xs : IntDict) : IntDict :=
+  match xs with
+  | .nil => .nil
+  | .cons i x t =>
+    let r := f x
+    if r = 0 then
+      map f t
+    else
+      .cons i r (map f t)
 
 def get (xs : IntDict) (i : Nat) : Int :=
   match xs with
@@ -103,18 +118,23 @@ def set (xs : IntDict) (i : Nat) (y : Int) : IntDict :=
   match xs with
   | .nil => .cons i y .nil
   | .cons j x t =>
-    if i = j then .cons j y t else if i < j then .cons i y xs else .cons j x (set t i y )
+    if i = j then
+      if y = 0 then t else .cons j y t
+    else if i < j then
+      .cons i y xs
+    else
+      .cons j x (set t i y )
 
 def gcd (xs : IntDict) : Nat :=
   xs.foldl (fun g _ x => Nat.gcd x.natAbs g) 0
 
 def smul (xs : IntDict) (g : Int) : IntDict :=
-  xs.mapVal fun _ x => g * x
+  if g = 0 then .nil else xs.mapVal fun _ x => g * x
 
 instance : HMul Int IntDict IntDict where hMul i xs := smul xs i
 
 def sdiv (xs : IntDict) (g : Int) : IntDict :=
-  xs.mapVal fun _ x => x / g
+  xs.map (· / g)
 
 def dot (xs ys : IntDict) : Int :=
   match xs, ys with
@@ -140,7 +160,12 @@ def add (xs ys : IntDict) : IntDict :=
       .cons i x (add xs (.cons j y ys))
     else if j < i then
       .cons j y (add (.cons i x xs) ys)
-    else .cons i (x + y) (add xs ys)
+    else
+      let r := x + y
+      if r = 0 then
+        add xs ys
+      else
+        .cons i r (add xs ys)
 termination_by add xs ys => xs.size + ys.size
 
 instance : Add IntDict where add := add
@@ -166,7 +191,12 @@ def sub (xs ys : IntDict) : IntDict :=
       .cons i x (sub xs (.cons j y ys))
     else if j < i then
       .cons j (-y) (sub (.cons i x xs) ys)
-    else .cons i (x - y) (sub xs ys)
+    else
+      let r := x - y
+      if r = 0 then
+        sub xs ys
+      else
+        .cons i r (sub xs ys)
 termination_by sub xs ys => xs.size + ys.size
 
 instance : Sub IntDict where sub := sub
@@ -180,6 +210,8 @@ theorem sub_eq_add_neg (xs ys : IntDict) : xs - ys = xs + -ys := by
   sorry
 
 def combo (a : Int) (xs : IntDict) (b : Int) (ys : IntDict) : IntDict :=
+  if a = 0 then smul ys b else
+  if b = 0 then smul xs a else
   match xs, ys with
   | .nil, _ => smul ys b
   | _, .nil => smul xs a
@@ -188,7 +220,12 @@ def combo (a : Int) (xs : IntDict) (b : Int) (ys : IntDict) : IntDict :=
       .cons i (a * x) (combo a xs b (.cons j y ys))
     else if j < i then
       .cons j (b * y) (combo a (.cons i x xs) b ys)
-    else .cons i (a * x + b * y) (combo a xs b ys)
+    else
+      let r := a * x + b * y
+      if r = 0 then
+        combo a xs b ys
+      else
+        .cons i (a * x + b * y) (combo a xs b ys)
 termination_by combo a xs b ys => xs.size + ys.size
 
 def leading (xs : IntDict) : Int :=

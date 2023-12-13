@@ -317,8 +317,9 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
   guard m'.facts.isEmpty
   let p := m'.problem
   trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
-  let p' := if p.possible then ← p.solveEqualities else p
-  let p'' := if p'.possible then ← p'.run' else p'
+  let p' ← if p.possible then p.solveEqualities else pure p
+  trace[omega] "After solving equalities:\n{← atomsList}\n{p'}"
+  let p'' ← if p'.possible then p'.run' else pure p'
   trace[omega] "After elimination:\n{← atomsList}\n{p''}"
   if p''.possible then
     match m'.disjunctions with
