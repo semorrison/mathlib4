@@ -1,9 +1,14 @@
 import Mathlib.Tactic.Omega.ForStd
--- import Mathlib.Tactic.Rewrites
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+/--
+A type synonym for `List Int`, used by `omega` for dense representation of coefficients.
+
+We define algebraic operations,
+interpreting `List Int` as a finitely supported function `Nat → Int`.
+-/
 abbrev IntList := List Int
 
 namespace IntList
@@ -362,7 +367,9 @@ theorem dvd_gcd (xs : IntList) (c : Nat) (w : ∀ {a : Int}, a ∈ xs → (c : I
       exact List.mem_cons_of_mem x m
 
 theorem gcd_eq_iff (xs : IntList) (g : Nat) :
-    xs.gcd = g ↔ (∀ {a : Int}, a ∈ xs → (g : Int) ∣ a) ∧ (∀ (c : Nat), (∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) → c ∣ g) := by
+    xs.gcd = g ↔
+      (∀ {a : Int}, a ∈ xs → (g : Int) ∣ a) ∧
+        (∀ (c : Nat), (∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) → c ∣ g) := by
   constructor
   · rintro rfl
     exact ⟨gcd_dvd _, dvd_gcd _⟩
@@ -408,8 +415,6 @@ theorem dot_eq_zero_of_gcd_left_eq_zero {xs ys : IntList} (h : xs.gcd = 0) : dot
   simp at h
   simp_all
 
-attribute [simp] Int.zero_ediv
-
 theorem dot_sdiv_left (xs ys : IntList) {d : Int} (h : d ∣ xs.gcd) :
     dot (xs.sdiv d) ys = (dot xs ys) / d := by
   induction xs generalizing ys with
@@ -443,8 +448,6 @@ theorem leadingSign_cons : leadingSign (x :: xs) = if x = 0 then leadingSign xs 
     intro w
     exact h w
 
-attribute [simp] Int.neg_eq_zero
-
 theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign := by
   induction xs with
   | nil => simp
@@ -453,31 +456,6 @@ theorem leadingSign_neg {xs : IntList} : (-xs).leadingSign = - xs.leadingSign :=
     · subst h
       simp_all
     · simp_all [leadingSign_cons]
-
--- def trim? (xs : IntList) : Option IntList :=
---   go #[] 0 xs
--- where
---   go : Array Int → Nat → IntList → Option IntList
---   | _, 0, [] => none
---   | acc, _ + 1, [] => acc.toList
---   | acc, n, 0 :: xs => go acc (n+1) xs
---   | acc, 0, x :: xs => go (acc.push x) 0 xs
---   | acc, (n+1), x :: xs => go (acc.push 0) n (x :: xs)
-
--- def trim (xs : IntList) : IntList := xs.trim?.getD xs
-
--- theorem trim?_isSome {xs : IntList} : xs.trim?.isSome = (xs.getLast? = some 0) := by
---   dsimp [trim?]
---   suffices h : ∀ acc n, (trim?.go acc n xs).isSome = (0 < n && xs = [] || xs.getLast? = some 0) by
---     specialize h #[] 0
---     simp_all
---   intro acc n
---   induction xs with
---   | nil => cases n <;> simp [trim?.go]
---   | cons h t ih =>
---     induction n with
---     | zero => sorry
---     | succ n ih => sorry
 
 /--
 Trim trailing zeroes from a `List Int`, returning `none` if none were removed.
@@ -521,16 +499,6 @@ theorem trim_spec {xs : IntList} : xs.trim = (xs.reverse.dropWhile (· == 0)).re
 @[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
   simp [trim_spec, List.dropWhile]
 
--- theorem trim_cons :
---     trim (x :: xs) = if x = 0 then if trim xs = [] then [] else 0 :: trim xs else x :: trim xs := by
---   simp only [trim_spec, List.reverse_cons]
---   generalize xs.reverse = xs'
---   simp only [List.dropWhile_append, List.reverse_eq_nil_iff]
---   split <;> rename_i h
---   · simp only [List.dropWhile_cons, beq_iff_eq, List.dropWhile_nil, h, List.reverse_nil]
---     split <;> simp
---   · split <;> simp_all
-
 @[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
   simp only [trim_spec, neg_def, List.reverse_map]
   generalize xs.reverse = xs'
@@ -541,30 +509,23 @@ theorem trim_spec {xs : IntList} : xs.trim = (xs.reverse.dropWhile (· == 0)).re
     split <;>
     simp_all [List.reverse_map]
 
--- theorem dot_trim_left {xs ys : IntList} : dot xs.trim ys = dot xs ys := by
---   induction xs generalizing ys with
---   | nil => rfl
---   | cons x xs ih =>
---     simp only [trim_cons]
---     split <;> cases ys <;> (try split) <;> simp_all; apply ih
+-- def sign : IntList → Int
+--   | [] => 0
+--   | 0 :: xs => sign xs
+--   | x :: _ => Int.sign x
 
-def sign : IntList → Int
-  | [] => 0
-  | 0 :: xs => sign xs
-  | x :: _ => Int.sign x
+-- @[simp] theorem sign_nil : sign [] = 0 := rfl
+-- theorem sign_cons : sign (x :: xs) = if x = 0 then sign xs else Int.sign x := by
+--   split <;> rename_i h
+--   · subst h; simp [sign]
+--   · rwa [sign]
 
-@[simp] theorem sign_nil : sign [] = 0 := rfl
-theorem sign_cons : sign (x :: xs) = if x = 0 then sign xs else Int.sign x := by
-  split <;> rename_i h
-  · subst h; simp [sign]
-  · rwa [sign]
-
-theorem sign_neg : sign (-xs) = - sign xs := by
-  induction xs with
-  | nil => simp
-  | cons h t ih =>
-    simp only [neg_cons, sign_cons]
-    split <;> simp_all
+-- theorem sign_neg : sign (-xs) = - sign xs := by
+--   induction xs with
+--   | nil => simp
+--   | cons h t ih =>
+--     simp only [neg_cons, sign_cons]
+--     split <;> simp_all
 
 -- open Classical in
 -- theorem sign_eq_zero_iff : sign xs = 0 ↔ xs.trim = [] := by
@@ -574,19 +535,19 @@ theorem sign_neg : sign (-xs) = - sign xs := by
 --     simp only [sign_cons, trim_cons]
 --     split <;> simp_all [not_not, imp_false]
 
-theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
-  induction xs with
-  | nil => simp
-  | cons h t ih =>
-    simp only [sign_cons, smul_cons, Int.sign_mul]
-    split
-    · simp_all only [Int.mul_zero, Int.sign_zero, ite_true]
-    · simp_all only [Int.mul_eq_zero, Int.sign_eq_zero_iff_zero, or_self, Int.sign_sign, ite_false]
-      exact Int.mul_self_nonneg
+-- theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
+--   induction xs with
+--   | nil => simp
+--   | cons h t ih =>
+--     simp only [sign_cons, smul_cons, Int.sign_mul]
+--     split
+--     · simp_all only [Int.mul_zero, Int.sign_zero, ite_true]
+--     · simp_all only [Int.mul_eq_zero, Int.sign_eq_zero_iff_zero, or_self, Int.sign_sign, ite_false]
+--       exact Int.mul_self_nonneg
 
 abbrev bmod (x : IntList) (m : Nat) : IntList := x.map (Int.bmod · m)
 
-theorem bmod_length (x : IntList) (m) : (bmod x m).length = x.length := List.length_map _ _
+theorem bmod_length (x : IntList) (m) : (bmod x m).length ≤ x.length := Nat.le_of_eq (List.length_map _ _)
 
 abbrev bmod_dot_sub_dot_bmod (m : Nat) (a b : IntList) : Int :=
     (Int.bmod (dot a b) m) - dot (bmod a m) b

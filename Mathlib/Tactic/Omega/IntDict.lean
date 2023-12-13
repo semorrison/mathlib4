@@ -2,6 +2,7 @@ import Std.Data.AssocList
 import Std.Data.Int.Basic
 import Std
 import Mathlib.Tactic.ToExpr
+import Mathlib.Tactic.Omega.IntList
 
 open Std (AssocList)
 
@@ -10,8 +11,7 @@ set_option relaxedAutoImplicit true
 
 namespace Std.AssocList
 
-instance : EmptyCollection (AssocList α β) where emptyCollection := .nil
-
+-- https://github.com/leanprover/std4/pull/435
 /-- The number of entries in an `AssocList`. -/
 def size (L : AssocList α β) : Nat :=
   match L with
@@ -33,6 +33,7 @@ deriving instance Hashable for AssocList
 
 deriving instance Repr for AssocList
 
+-- https://github.com/leanprover/std4/pull/434
 private def beq [BEq α] [BEq β] : AssocList α β → AssocList α β → Bool
   | .nil, .nil => true
   | .cons _ _ _, .nil => false
@@ -64,6 +65,12 @@ instance [BEq α] [LawfulBEq α] [BEq β] [LawfulBEq β] : LawfulBEq (AssocList 
 
 end Std.AssocList
 
+/--
+A type synonum for `AssocList Nat Int`, used by `omega`.
+
+In this use case, we always have the keys in strictly increasing order,
+and no zero values. (Neither of these conditions are verified, however.)
+-/
 def IntDict := AssocList Nat Int
 
 namespace IntDict
@@ -77,24 +84,8 @@ instance : DecidableEq IntDict := inferInstanceAs <| DecidableEq (AssocList Nat 
 instance : EmptyCollection IntDict := inferInstanceAs <| EmptyCollection (AssocList Nat Int)
 instance : Repr IntDict := inferInstanceAs <| Repr (AssocList Nat Int)
 
-def ofList (xs : List Int) : IntDict := List.toAssocList xs.enum
-
-partial def toList (xs : IntDict) : List Int :=
-  go 0 xs
-where
-  go : Nat → IntDict → List Int
-  | _, .nil => []
-  | i, .cons j x t => if i < j then 0 :: go (i+1) (.cons j x t) else x :: go (i+1) t
-
--- instance : ToString IntDict where toString xs := toString xs.toList
-nonrec def toString (xs : IntDict) : String :=
-  toString <| AssocList.toList xs
-
-instance : ToString IntDict where toString := toString
-
-def length (xs : IntDict) : Nat := xs.last?.map (·.1 + 1) |>.getD 0
-
--- TODO tail recursive version
+-- TODO tail recursive version?
+/-- Apply a function to all values in an `IntDict`, dropping zeroes. -/
 def map (f : Int → Int) (xs : IntDict) : IntDict :=
   match xs with
   | .nil => .nil
@@ -105,9 +96,57 @@ def map (f : Int → Int) (xs : IntDict) : IntDict :=
     else
       .cons i r (map f t)
 
-abbrev map_length {xs : IntDict} : (xs.map f).length = xs.length :=
-  sorry
+/--
+Construct an "dense" `IntDict` from a list (dropping zeroes).
+-/
+def ofList (xs : List Int) : IntDict :=
+  go 0 xs
+where
+  go : Nat → List Int → IntDict
+  | _, [] => .nil
+  | i, 0 :: xs => go (i+1) xs
+  | i, x :: xs => .cons i x (go (i+1) xs)
 
+/-- The "dimension" of an `IntDict`, i.e. one greater than the largest key. -/
+def length (xs : IntDict) : Nat := xs.last?.map (·.1 + 1) |>.getD 0
+
+theorem length_le_length_cons {xs : IntDict} : length xs ≤ length (.cons i x xs) := by
+  cases xs <;> dsimp [length, AssocList.last?]
+  · exact Nat.zero_le (i + 1)
+  · exact Nat.le_refl _
+
+/--
+Convert a "sparse" `IntDict` to a list, filling in zeroes as needed.
+
+(We drop any out of order terms!)
+-/
+def toList (xs : IntDict) : List Int :=
+  go 0 xs
+where
+  go : Nat → IntDict → List Int
+  | _, .nil => []
+  | i, .cons j x t => if i ≤ j then List.replicate (j - i) 0 ++ x :: go (j+1) t else go i t
+
+@[simp] theorem toList_nil : toList .nil = [] := rfl
+
+/-- String representation of an `IntDict`. -/
+nonrec def toString (xs : IntDict) : String :=
+  toString <| AssocList.toList xs
+
+instance : ToString IntDict where toString := toString
+
+theorem map_length (f : Int → Int) : (xs : IntDict) → (xs.map f).length ≤ xs.length
+  | .nil => sorry
+  | .cons i x xs => by
+    rw [map]
+    dsimp
+    split
+    · refine Nat.le_trans (map_length f xs) ?_
+      exact length_le_length_cons
+    · sorry
+
+
+/-- Returns the value in the `i`-th coordinate, or zero if there is no such key. -/
 def get (xs : IntDict) (i : Nat) : Int :=
   match xs with
   | .nil => 0
@@ -116,7 +155,7 @@ def get (xs : IntDict) (i : Nat) : Int :=
 
 @[simp] theorem get_nil : get (.nil : IntDict) i = 0 := rfl
 
--- This is not tail recursive.
+/-- Sets the `i`-th coordinate to a specified value (and drops it if that value is zero). -/
 def set (xs : IntDict) (i : Nat) (y : Int) : IntDict :=
   match xs with
   | .nil => .cons i y .nil
@@ -128,17 +167,21 @@ def set (xs : IntDict) (i : Nat) (y : Int) : IntDict :=
     else
       .cons j x (set t i y )
 
+/-- Calculates the gcd of the absolute values of the values. -/
 def gcd (xs : IntDict) : Nat :=
   xs.foldl (fun g _ x => Nat.gcd x.natAbs g) 0
 
+/-- Multiplies all values by a constant. (Returns the empty `IntDict` if the constant is zero.) -/
 def smul (xs : IntDict) (g : Int) : IntDict :=
   if g = 0 then .nil else xs.mapVal fun _ x => g * x
 
 instance : HMul Int IntDict IntDict where hMul i xs := smul xs i
 
+/-- Divides all values by a constant (dropping zeros). -/
 def sdiv (xs : IntDict) (g : Int) : IntDict :=
   xs.map (· / g)
 
+/-- Computes the dot product of two `IntDict`s. -/
 def dot (xs ys : IntDict) : Int :=
   match xs, ys with
   | .nil, _ => 0
@@ -154,6 +197,16 @@ termination_by dot xs ys => xs.size + ys.size
 @[simp] theorem dot_nil_left : dot .nil ys = 0 := by cases ys <;> rfl
 @[simp] theorem dot_nil_right : dot xs .nil = 0 := by cases xs <;> rfl
 
+-- theorem dot_eq_dot_toList : (xs ys : IntDict) → dot xs ys = IntList.dot xs.toList ys.toList
+--   | .nil, _ => by simp
+--   | _, .nil => by simp
+--   | .cons i x xs, .cons j y ys => by
+--     rw [dot]
+--     split
+--     · rw [dot_eq_dot_toList xs (.cons j y ys)]
+
+
+/-- Adds two `IntDict`s, dropping any zero values. -/
 def add (xs ys : IntDict) : IntDict :=
   match xs, ys with
   | .nil, _ => ys
@@ -180,6 +233,7 @@ theorem add_def {xs ys : IntDict} : xs + ys = add xs ys := rfl
 @[simp] theorem add_nil_right {xs : IntDict} : xs + .nil = xs := by
   cases xs <;> rfl
 
+/-- Negates an `IntDict`. -/
 def neg (xs : IntDict) : IntDict := xs.mapVal fun _ x => -x
 
 instance : Neg IntDict where neg := neg
@@ -193,6 +247,7 @@ theorem neg_def {xs : IntDict} : (-xs) = neg xs := rfl
 theorem neg_cons' {i : Nat} {x : Int} {xs : IntDict} :
     (neg (.cons i x xs) : IntDict) = .cons i (-x) (neg xs) := rfl
 
+/-- Subtracts two `IntDict`s, dropping any zero values. -/
 def sub (xs ys : IntDict) : IntDict :=
   match xs, ys with
   | .nil, _ => -ys
@@ -245,6 +300,7 @@ termination_by sub_eq_add_neg xs ys => xs.size + ys.size
       · rw [dot_neg_left xs ys, Int.neg_add, Int.neg_mul]
 termination_by dot_neg_left xs ys => xs.size + ys.size
 
+/-- Computes a linear combination of two `IntDict`s, dropping any zero values. -/
 def combo (a : Int) (xs : IntDict) (b : Int) (ys : IntDict) : IntDict :=
   if a = 0 then smul ys b else
   if b = 0 then smul xs a else
@@ -301,14 +357,34 @@ theorem gcd_dvd_dot_left (xs ys : IntDict) : (gcd xs : Int) ∣ dot xs ys :=
 
 abbrev bmod (x : IntDict) (m : Nat) : IntDict := x.map (Int.bmod · m)
 
-theorem bmod_length (x : IntDict) (m) : (bmod x m).length = x.length := map_length
+theorem bmod_length (x : IntDict) (m) : (bmod x m).length ≤ x.length := map_length _ _
 
 abbrev bmod_dot_sub_dot_bmod (m : Nat) (a b : IntDict) : Int :=
     (Int.bmod (dot a b) m) - dot (bmod a m) b
 
-theorem dvd_bmod_dot_sub_dot_bmod (m : Nat) (xs ys : IntDict) :
-    (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys := by
-  -- I think we'll have to reuse the `IntList` proof
-  sorry
+theorem dvd_bmod_dot_sub_dot_bmod (m : Nat) : (xs ys : IntDict) →
+    (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys
+  | .nil, _ => sorry
+  | _, .nil => sorry
+  | .cons i x xs, .cons j y ys => by
+    dsimp [bmod_dot_sub_dot_bmod]
+    -- rw [bmod, map]
+    rw [dot]
+    split <;> rename_i h₁
+    · rw [bmod, map]
+      dsimp only
+      split
+      · exact dvd_bmod_dot_sub_dot_bmod m xs (.cons j y ys)
+      · rw [dot]
+        rw [if_pos h₁]
+        exact dvd_bmod_dot_sub_dot_bmod m xs (.cons j y ys)
+    · split
+      · rw [bmod, map]
+        dsimp only
+        split
+        · sorry
+        · sorry
+      · sorry
+
 
 end IntDict

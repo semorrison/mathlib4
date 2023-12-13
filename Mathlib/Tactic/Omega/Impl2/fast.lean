@@ -326,7 +326,7 @@ theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : Coeffs)
     (Constraint.exact (Int.bmod r m)).sat' (bmod_coeffs m i x) v := by
   simp at w
   simp only [p, bmod_coeffs, Constraint.exact_sat, Coeffs.dot_set_left, decide_eq_true_eq]
-  rw [← Coeffs.bmod_length x m] at h
+  replace h := Nat.le_trans (Coeffs.bmod_length x m) h
   rw [Coeffs.get_of_length_le h, Int.sub_zero,
     Int.mul_ediv_cancel' (Coeffs.dvd_bmod_dot_sub_dot_bmod _ _ _), w,
     ← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]

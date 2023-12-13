@@ -1,6 +1,6 @@
 import Mathlib.Tactic.Omega.IntList
 import Mathlib.Tactic.Omega.IntDict
-import Mathlib.Tactic.Omega.Impl.MinNatAbs
+import Mathlib.Tactic.Omega.MinNatAbs
 
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
@@ -27,7 +27,7 @@ abbrev Coeffs.map (f : Int → Int) (xs : Coeffs) : Coeffs := List.map f xs
 abbrev Coeffs.bmod_dot_sub_dot_bmod (m : Nat) (a b : Coeffs) : Int :=
   IntList.bmod_dot_sub_dot_bmod m a b
 abbrev Coeffs.bmod (x : Coeffs) (m : Nat) : Coeffs := IntList.bmod x m
-abbrev Coeffs.bmod_length (x : Coeffs) (m : Nat) : (bmod x m).length = x.length :=
+abbrev Coeffs.bmod_length (x : Coeffs) (m : Nat) : (bmod x m).length ≤ x.length :=
   IntList.bmod_length x m
 abbrev Coeffs.dvd_bmod_dot_sub_dot_bmod (m : Nat) (xs ys : Coeffs) :
     (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys := IntList.dvd_bmod_dot_sub_dot_bmod m xs ys
@@ -56,8 +56,8 @@ abbrev Coeffs.combo_eq_smul_add_smul (a : Int) (xs : Coeffs) (b : Int) (ys : Coe
   IntList.combo_eq_smul_add_smul a xs b ys
 abbrev Coeffs.gcd_dvd_dot_left (xs ys : Coeffs) : (Coeffs.gcd xs : Int) ∣ Coeffs.dot xs ys :=
   IntList.gcd_dvd_dot_left xs ys
-abbrev Coeffs.map_length {xs : Coeffs} : (xs.map f).length = xs.length :=
-  List.length_map xs f
+abbrev Coeffs.map_length {xs : Coeffs} : (xs.map f).length ≤ xs.length :=
+  Nat.le_of_eq (List.length_map xs f)
 
 abbrev Coeffs.dot_nil_right {xs : Coeffs} : dot xs .nil = 0 := IntList.dot_nil_right
 abbrev Coeffs.get_nil : get .nil i = 0 := IntList.get_nil
@@ -87,7 +87,7 @@ abbrev Coeffs.dot_neg_left (xs ys : IntList) : dot (-xs) ys = -dot xs ys :=
 -- abbrev Coeffs.bmod_dot_sub_dot_bmod (m : Nat) (a b : Coeffs) : Int :=
 --   IntDict.bmod_dot_sub_dot_bmod m a b
 -- abbrev Coeffs.bmod (x : Coeffs) (m : Nat) : Coeffs := IntDict.bmod x m
--- abbrev Coeffs.bmod_length (x : Coeffs) (m : Nat) : (bmod x m).length = x.length :=
+-- abbrev Coeffs.bmod_length (x : Coeffs) (m : Nat) : (bmod x m).length ≤ x.length :=
 --   IntDict.bmod_length x m
 -- abbrev Coeffs.dvd_bmod_dot_sub_dot_bmod (m : Nat) (xs ys : Coeffs) :
 --     (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys := IntDict.dvd_bmod_dot_sub_dot_bmod m xs ys
@@ -118,7 +118,7 @@ abbrev Coeffs.dot_neg_left (xs ys : IntList) : dot (-xs) ys = -dot xs ys :=
 --   IntDict.combo_eq_smul_add_smul a xs b ys
 -- abbrev Coeffs.gcd_dvd_dot_left (xs ys : Coeffs) : (Coeffs.gcd xs : Int) ∣ Coeffs.dot xs ys :=
 --   IntDict.gcd_dvd_dot_left xs ys
--- abbrev Coeffs.map_length {xs : Coeffs} : (xs.map f).length = xs.length :=
+-- abbrev Coeffs.map_length {xs : Coeffs} : (xs.map f).length ≤ xs.length :=
 --   sorry
 
 -- abbrev Coeffs.dot_nil_right {xs : Coeffs} : dot xs .nil = 0 := IntDict.dot_nil_right
