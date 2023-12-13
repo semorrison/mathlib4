@@ -12,6 +12,7 @@ namespace Std.AssocList
 
 instance : EmptyCollection (AssocList α β) where emptyCollection := .nil
 
+/-- The number of entries in an `AssocList`. -/
 def size (L : AssocList α β) : Nat :=
   match L with
   | .nil => 0
@@ -27,7 +28,6 @@ def last? (L : AssocList α β) : Option (α × β) :=
   | .cons _ _ t => last? t
 
 deriving instance Lean.ToExpr for AssocList
-deriving instance BEq for AssocList
 deriving instance DecidableEq for AssocList
 deriving instance Hashable for AssocList
 
@@ -105,6 +105,9 @@ def map (f : Int → Int) (xs : IntDict) : IntDict :=
     else
       .cons i r (map f t)
 
+abbrev map_length {xs : IntDict} : (xs.map f).length = xs.length :=
+  sorry
+
 def get (xs : IntDict) (i : Nat) : Int :=
   match xs with
   | .nil => 0
@@ -170,17 +173,25 @@ termination_by add xs ys => xs.size + ys.size
 
 instance : Add IntDict where add := add
 
-theorem add_get {xs ys : IntDict} {i : Nat} : (xs + ys).get i = xs.get i + ys.get i := by
-  sorry
+theorem add_def {xs ys : IntDict} : xs + ys = add xs ys := rfl
 
-theorem add_nil_left {ys : IntDict} : .nil + ys = ys := by
+@[simp] theorem add_nil_left {ys : IntDict} : .nil + ys = ys := by
   cases ys <;> rfl
-theorem add_nil_right {xs : IntDict} : xs + .nil = xs := by
+@[simp] theorem add_nil_right {xs : IntDict} : xs + .nil = xs := by
   cases xs <;> rfl
 
 def neg (xs : IntDict) : IntDict := xs.mapVal fun _ x => -x
 
 instance : Neg IntDict where neg := neg
+
+theorem neg_def {xs : IntDict} : (-xs) = neg xs := rfl
+
+@[simp] theorem neg_nil : (- (.nil) : IntDict) = .nil := rfl
+@[simp] theorem neg_cons {i : Nat} {x : Int} {xs : IntDict} :
+    (- (.cons i x xs) : IntDict) = .cons i (-x) (-xs) := rfl
+
+theorem neg_cons' {i : Nat} {x : Int} {xs : IntDict} :
+    (neg (.cons i x xs) : IntDict) = .cons i (-x) (neg xs) := rfl
 
 def sub (xs ys : IntDict) : IntDict :=
   match xs, ys with
@@ -201,13 +212,38 @@ termination_by sub xs ys => xs.size + ys.size
 
 instance : Sub IntDict where sub := sub
 
-theorem sub_eq_add_neg (xs ys : IntDict) : xs - ys = xs + -ys := by
-  induction xs generalizing ys with
-  | nil => sorry
-  | cons i x xs ih => sorry
+theorem sub_def {xs ys : IntDict} : xs - ys = sub xs ys := rfl
 
-@[simp] theorem dot_neg_left (xs ys : IntDict) : (-xs).dot ys = -(xs.dot ys) := by
-  sorry
+@[simp] theorem sub_nil_left {ys : IntDict} : .nil - ys = -ys := by
+  cases ys <;> rfl
+@[simp] theorem sub_nil_right {xs : IntDict} : xs - .nil = xs := by
+  cases xs <;> rfl
+
+theorem sub_eq_add_neg : (xs ys : IntDict) → xs - ys = xs + -ys
+  | .nil, _ => by rw [sub_nil_left, add_nil_left]
+  | _, .nil => by rw [sub_nil_right, neg_nil, add_nil_right]
+  | .cons i x xs, .cons j y ys => by
+    rw [sub_def, sub, neg_cons, add_def, add]
+    split
+    · congr
+      rw [← sub_def, ← add_def, sub_eq_add_neg xs (.cons j y ys), neg_cons]
+    · split
+      · congr
+        rw [← sub_def, ← add_def, sub_eq_add_neg (.cons i x xs) ys]
+      · rw [← sub_def, ← add_def, sub_eq_add_neg xs ys, Int.sub_eq_add_neg]
+termination_by sub_eq_add_neg xs ys => xs.size + ys.size
+
+@[simp] theorem dot_neg_left : (xs ys : IntDict) → (-xs).dot ys = -(xs.dot ys)
+  | .nil, _ => by simp
+  | _, .nil => by simp
+  | .cons i x xs, .cons j y ys => by
+    rw [neg_cons, dot, dot]
+    split
+    · rw [dot_neg_left xs (.cons j y ys)]
+    · split
+      · rw [← neg_cons, dot_neg_left (.cons i x xs) ys]
+      · rw [dot_neg_left xs ys, Int.neg_add, Int.neg_mul]
+termination_by dot_neg_left xs ys => xs.size + ys.size
 
 def combo (a : Int) (xs : IntDict) (b : Int) (ys : IntDict) : IntDict :=
   if a = 0 then smul ys b else
@@ -263,19 +299,16 @@ theorem gcd_dvd_dot_left (xs ys : IntDict) : (gcd xs : Int) ∣ dot xs ys :=
 
 @[simp] theorem dot_zero_of_gcd_zero (xs ys : IntDict) (h : xs.gcd = 0) : dot xs ys = 0 := sorry
 
--- theorem gcd_dvd (xs : IntDict) {a : Int} (m : a ∈ xs) : (xs.gcd : Int) ∣ a := by
---   sorry
+abbrev bmod (x : IntDict) (m : Nat) : IntDict := x.map (Int.bmod · m)
 
--- theorem dvd_gcd (xs : IntDict) (c : Nat) (w : ∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) :
---     c ∣ xs.gcd := by
---   sorry
+theorem bmod_length (x : IntDict) (m) : (bmod x m).length = x.length := map_length
 
--- theorem gcd_eq_iff (xs : IntDict) (g : Nat) :
---     xs.gcd = g ↔ (∀ {a : Int}, a ∈ xs → (g : Int) ∣ a) ∧ (∀ (c : Nat), (∀ {a : Int}, a ∈ xs → (c : Int) ∣ a) → c ∣ g) := by
---   sorry
+abbrev bmod_dot_sub_dot_bmod (m : Nat) (a b : IntDict) : Int :=
+    (Int.bmod (dot a b) m) - dot (bmod a m) b
 
--- @[simp] theorem gcd_eq_zero (xs : IntDict) : xs.gcd = 0 ↔ ∀ x ∈ xs, x = 0 := by
---   simp [gcd_eq_iff, Nat.dvd_zero]
-
+theorem dvd_bmod_dot_sub_dot_bmod (m : Nat) (xs ys : IntDict) :
+    (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys := by
+  -- I think we'll have to reuse the `IntList` proof
+  sorry
 
 end IntDict

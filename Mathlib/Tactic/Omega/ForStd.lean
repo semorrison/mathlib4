@@ -16,6 +16,7 @@ def Lex' (α : Type _) := α
 instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
   lt := Prod.Lex (· < ·) (· < ·)
 
+-- Next three in https://github.com/leanprover/std4/pull/438
 /-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
 @[simp] theorem dite_eq_ite' [Decidable P] : (dite P (fun _ ↦ a) fun _ ↦ b) = ite P a b :=
   rfl
@@ -30,6 +31,7 @@ instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) wh
 
 namespace Nat
 
+-- https://github.com/leanprover/std4/pull/436
 theorem emod_pos_of_not_dvd {a b : Nat} (h : ¬ a ∣ b) : 0 < b % a := by
   rw [dvd_iff_mod_eq_zero] at h
   exact Nat.pos_of_ne_zero h
@@ -40,6 +42,14 @@ namespace Int
 
 theorem le_iff_ge {a b : Int} : a ≤ b ↔ b ≥ a := Iff.rfl
 
+-- https://github.com/leanprover/std4/pull/436
+theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
+  rw [dvd_iff_emod_eq_zero] at h
+  by_cases w : a = 0
+  · simp_all
+  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨emod_nonneg b w, Ne.symm h⟩)
+
+-- Next two in https://github.com/leanprover/std4/pull/437
 theorem mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
   calc k * (x / k)
     _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
@@ -50,6 +60,7 @@ theorem lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
     _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
     _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
 
+-- https://github.com/leanprover/std4/pull/443
 protected theorem mul_le_mul_of_nonpos_left {a b c : Int}
     (ha : a ≤ 0) (h : c ≤ b) : a * b ≤ a * c := by
   rw [Int.mul_comm a b, Int.mul_comm a c]
@@ -86,12 +97,7 @@ theorem add_nonnneg_iff_neg_le (a b : Int) : 0 ≤ a + b ↔ -b ≤ a := by
 theorem add_nonnneg_iff_neg_le' (a b : Int) : 0 ≤ a + b ↔ -a ≤ b := by
   rw [Int.add_comm, add_nonnneg_iff_neg_le]
 
-theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
-  constructor
-  · simp_all
-  · rintro ⟨h₁, h₂⟩
-    exact Int.le_antisymm h₁ h₂
-
+-- Next three in https://github.com/leanprover/std4/pull/444
 protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := by
   constructor
   · intro h
@@ -105,14 +111,15 @@ protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := b
 
 protected alias ⟨lt_or_gt_of_ne, _⟩ := Int.ne_iff_lt_or_gt
 
-
-
-theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
-  rw [dvd_iff_emod_eq_zero] at h
-  by_cases w : a = 0
+protected theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
+  constructor
   · simp_all
-  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨emod_nonneg b w, Ne.symm h⟩)
+  · rintro ⟨h₁, h₂⟩
+    exact Int.le_antisymm h₁ h₂
 
+
+
+-- In https://github.com/leanprover/std4/pull/442
 attribute [simp] sign_eq_zero_iff_zero
 
 @[simp] theorem sign_sign : sign (sign x) = sign x := by
@@ -133,9 +140,11 @@ end Int
 
 namespace List
 
+-- https://github.com/leanprover/std4/pull/441
 @[simp] theorem reverse_eq_nil_iff {xs : List α} : xs.reverse = [] ↔ xs = [] := by
   induction xs <;> simp
 
+-- https://github.com/leanprover/std4/pull/445
 @[simp] theorem isEmpty_nil : ([] : List α).isEmpty = true := rfl
 @[simp] theorem isEmpty_cons : (x :: xs : List α).isEmpty = false := rfl
 
@@ -188,42 +197,38 @@ theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
 end List
 
 -- Currently not even using
-namespace UInt64
+-- namespace UInt64
 
-attribute [ext] UInt64
+-- attribute [ext] UInt64
 
-protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b := rfl
-protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
-protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
+-- protected theorem min_def {a b : UInt64} : min a b = if a ≤ b then a else b := rfl
+-- protected theorem le_def {a b : UInt64} : a ≤ b ↔ a.val.val ≤ b.val.val := Iff.rfl
+-- protected theorem lt_def {a b : UInt64} : a < b ↔ a.val.val < b.val.val := Iff.rfl
 
-@[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
-  rw [UInt64.le_def, UInt64.lt_def]
-  exact Fin.not_le
+-- @[simp] protected theorem not_le {a b : UInt64} : ¬ (a ≤ b) ↔ b < a := by
+--   rw [UInt64.le_def, UInt64.lt_def]
+--   exact Fin.not_le
 
-protected theorem min_comm {a b : UInt64} : min a b = min b a := by
-  ext
-  have min_val_val : ∀ a b : UInt64, (min a b).val.val = min a.val.val b.val.val := by
-    intros
-    simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
-    split <;> rfl
-  simp [min_val_val, Nat.min_comm]
+-- protected theorem min_comm {a b : UInt64} : min a b = min b a := by
+--   ext
+--   have min_val_val : ∀ a b : UInt64, (min a b).val.val = min a.val.val b.val.val := by
+--     intros
+--     simp only [UInt64.min_def, UInt64.le_def, Nat.min_def]
+--     split <;> rfl
+--   simp [min_val_val, Nat.min_comm]
 
-protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
-  simp [UInt64.min_def, h]
+-- protected theorem min_eq_left {a b : UInt64} (h : a ≤ b) : min a b = a := by
+--   simp [UInt64.min_def, h]
 
-protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
-  rw [UInt64.min_comm]; exact UInt64.min_eq_left h
+-- protected theorem min_eq_right {a b : UInt64} (h : b ≤ a) : min a b = b := by
+--   rw [UInt64.min_comm]; exact UInt64.min_eq_left h
 
-end UInt64
+-- end UInt64
 
-
-namespace Int
-
-
-end Int
 
 namespace List
 
+-- https://github.com/leanprover/std4/pull/440
 /-- Variant of `List.insert` using `BEq` instead of `DecidableEq`. -/
 @[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
   if l.elem a then l else a :: l
@@ -237,26 +242,27 @@ def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bo
 
 end Std.HashMap
 
-namespace Std.AssocList
+-- namespace Std.AssocList
 
-def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
-  | .nil => .cons a b .nil
-  | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
+-- def insert [BEq α] (a : α) (b : β) : AssocList α β → AssocList α β
+--   | .nil => .cons a b .nil
+--   | .cons x y t => if x == a then .cons x b t else .cons x y (insert a b t)
 
-def partitionMapRev (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
-  go {} {} l
-where
-  go : AssocList α γ → AssocList α δ → AssocList α β → AssocList α γ × AssocList α δ
-  | xs, ys, .nil => (xs, ys)
-  | xs, ys, .cons a b t => match f a b with
-    | .inl x => go (cons a x xs) ys t
-    | .inr y => go xs (cons a y ys) t
+-- def partitionMapRev (f : α → β → γ ⊕ δ) (l : AssocList α β) : AssocList α γ × AssocList α δ :=
+--   go {} {} l
+-- where
+--   go : AssocList α γ → AssocList α δ → AssocList α β → AssocList α γ × AssocList α δ
+--   | xs, ys, .nil => (xs, ys)
+--   | xs, ys, .cons a b t => match f a b with
+--     | .inl x => go (cons a x xs) ys t
+--     | .inr y => go xs (cons a y ys) t
 
-def partitionRev (f : α → β → Bool) (l : AssocList α β) : AssocList α β × AssocList α β :=
-  l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
+-- def partitionRev (f : α → β → Bool) (l : AssocList α β) : AssocList α β × AssocList α β :=
+--   l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
 
-end Std.AssocList
+-- end Std.AssocList
 
+-- These are in https://github.com/leanprover/std4/pull/439
 namespace Option
 
 @[simp] theorem all_none : Option.all p none = true := rfl

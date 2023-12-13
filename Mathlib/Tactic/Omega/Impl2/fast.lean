@@ -314,37 +314,10 @@ theorem combo_sat' (s t : Constraint)
     Coeffs.dot_smul_left, Coeffs.dot_smul_left]
   exact Constraint.combo_sat a wx b wy
 
-abbrev Coeffs.bmod (x : Coeffs) (m : Nat) : Coeffs := x.map (Int.bmod · m)
-
-theorem Coeffs.bmod_length (m) : (Coeffs.bmod x m).length = x.length := Coeffs.map_length
+abbrev bmod_div_term (m : Nat) (a b : Coeffs) : Int := Coeffs.bmod_dot_sub_dot_bmod m a b / m
 
 def bmod_coeffs (m : Nat) (i : Nat) (x : Coeffs) : Coeffs :=
   Coeffs.set (Coeffs.bmod x m) i m
-
-abbrev bmod_sub_term (m : Nat) (a b : Coeffs) : Int :=
-    (Int.bmod (Coeffs.dot a b) m) - Coeffs.dot (Coeffs.bmod a m) b
-
-theorem bmod_sat_aux (m : Nat) (xs ys : Coeffs) : (m : Int) ∣ bmod_sub_term m xs ys := by
-  sorry
-  -- dsimp [bmod_sub_term]
-  -- rw [Int.dvd_iff_emod_eq_zero]
-  -- induction xs generalizing ys with
-  -- | nil => simp
-  -- | cons x xs ih =>
-  --   cases ys with
-  --   | nil => simp
-  --   | cons y ys =>
-  --     simp only [IntList.dot_cons₂, List.map_cons]
-  --     specialize ih ys
-  --     rw [Int.sub_emod, Int.bmod_emod] at ih
-  --     rw [Int.sub_emod, Int.bmod_emod, Int.add_emod, Int.add_emod (Int.bmod x m * y),
-  --       ← Int.sub_emod, ← Int.sub_sub, Int.sub_eq_add_neg, Int.sub_eq_add_neg,
-  --       Int.add_assoc (x * y % m), Int.add_comm (IntList.dot _ _ % m), ← Int.add_assoc,
-  --       Int.add_assoc, ← Int.sub_eq_add_neg, ← Int.sub_eq_add_neg, Int.add_emod, ih, Int.add_zero,
-  --       Int.emod_emod, Int.mul_emod, Int.mul_emod (Int.bmod x m), Int.bmod_emod, Int.sub_self,
-  --       Int.zero_emod]
-
-abbrev bmod_div_term (m : Nat) (a b : Coeffs) : Int := bmod_sub_term m a b / m
 
 theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : Coeffs)
     (h : x.length ≤ i)  -- during proof reconstruction this will be by `decide`
@@ -353,8 +326,9 @@ theorem bmod_sat (m : Nat) (r : Int) (i : Nat) (x v : Coeffs)
     (Constraint.exact (Int.bmod r m)).sat' (bmod_coeffs m i x) v := by
   simp at w
   simp only [p, bmod_coeffs, Constraint.exact_sat, Coeffs.dot_set_left, decide_eq_true_eq]
-  rw [← Coeffs.bmod_length m] at h
-  rw [Coeffs.get_of_length_le h, Int.sub_zero, Int.mul_ediv_cancel' (bmod_sat_aux _ _ _), w,
+  rw [← Coeffs.bmod_length x m] at h
+  rw [Coeffs.get_of_length_le h, Int.sub_zero,
+    Int.mul_ediv_cancel' (Coeffs.dvd_bmod_dot_sub_dot_bmod _ _ _), w,
     ← Int.add_sub_assoc, Int.add_comm, Int.add_sub_assoc, Int.sub_self, Int.add_zero]
 
 inductive Justification : Constraint → Coeffs → Type

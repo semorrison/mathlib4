@@ -521,15 +521,15 @@ theorem trim_spec {xs : IntList} : xs.trim = (xs.reverse.dropWhile (· == 0)).re
 @[simp] theorem trim_append_zero {xs : IntList} : (xs ++ [0]).trim = xs.trim := by
   simp [trim_spec, List.dropWhile]
 
-theorem trim_cons :
-    trim (x :: xs) = if x = 0 then if trim xs = [] then [] else 0 :: trim xs else x :: trim xs := by
-  simp only [trim_spec, List.reverse_cons]
-  generalize xs.reverse = xs'
-  simp only [List.dropWhile_append, List.reverse_eq_nil_iff]
-  split <;> rename_i h
-  · simp only [List.dropWhile_cons, beq_iff_eq, List.dropWhile_nil, h, List.reverse_nil]
-    split <;> simp
-  · split <;> simp_all
+-- theorem trim_cons :
+--     trim (x :: xs) = if x = 0 then if trim xs = [] then [] else 0 :: trim xs else x :: trim xs := by
+--   simp only [trim_spec, List.reverse_cons]
+--   generalize xs.reverse = xs'
+--   simp only [List.dropWhile_append, List.reverse_eq_nil_iff]
+--   split <;> rename_i h
+--   · simp only [List.dropWhile_cons, beq_iff_eq, List.dropWhile_nil, h, List.reverse_nil]
+--     split <;> simp
+--   · split <;> simp_all
 
 @[simp] theorem trim_neg {xs : IntList} : (-xs).trim = -xs.trim := by
   simp only [trim_spec, neg_def, List.reverse_map]
@@ -541,12 +541,12 @@ theorem trim_cons :
     split <;>
     simp_all [List.reverse_map]
 
-theorem dot_trim_left {xs ys : IntList} : dot xs.trim ys = dot xs ys := by
-  induction xs generalizing ys with
-  | nil => rfl
-  | cons x xs ih =>
-    simp only [trim_cons]
-    split <;> cases ys <;> (try split) <;> simp_all; apply ih
+-- theorem dot_trim_left {xs ys : IntList} : dot xs.trim ys = dot xs ys := by
+--   induction xs generalizing ys with
+--   | nil => rfl
+--   | cons x xs ih =>
+--     simp only [trim_cons]
+--     split <;> cases ys <;> (try split) <;> simp_all; apply ih
 
 def sign : IntList → Int
   | [] => 0
@@ -566,13 +566,13 @@ theorem sign_neg : sign (-xs) = - sign xs := by
     simp only [neg_cons, sign_cons]
     split <;> simp_all
 
-open Classical in
-theorem sign_eq_zero_iff : sign xs = 0 ↔ xs.trim = [] := by
-  induction xs with
-  | nil => simp
-  | cons h t ih =>
-    simp only [sign_cons, trim_cons]
-    split <;> simp_all [not_not, imp_false]
+-- open Classical in
+-- theorem sign_eq_zero_iff : sign xs = 0 ↔ xs.trim = [] := by
+--   induction xs with
+--   | nil => simp
+--   | cons h t ih =>
+--     simp only [sign_cons, trim_cons]
+--     split <;> simp_all [not_not, imp_false]
 
 theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
   induction xs with
@@ -584,21 +584,31 @@ theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
     · simp_all only [Int.mul_eq_zero, Int.sign_eq_zero_iff_zero, or_self, Int.sign_sign, ite_false]
       exact Int.mul_self_nonneg
 
--- /--
--- We need two properties of this hash:
--- 1. It is stable under adding trailing zeroes.
--- 2. `(-xs).hash = xs.hash`
--- -/
--- def hash (xs : IntList) : UInt64 :=
---   min (Hashable.hash xs.trim) (Hashable.hash (-xs).trim)
+abbrev bmod (x : IntList) (m : Nat) : IntList := x.map (Int.bmod · m)
 
--- /-- We override the default `Hashable` instance. -/
--- instance : Hashable IntList := ⟨hash⟩
+theorem bmod_length (x : IntList) (m) : (bmod x m).length = x.length := List.length_map _ _
 
--- theorem hash_append_zero : hash (xs ++ [0]) = hash xs := by
---   simp [hash]
+abbrev bmod_dot_sub_dot_bmod (m : Nat) (a b : IntList) : Int :=
+    (Int.bmod (dot a b) m) - dot (bmod a m) b
 
--- theorem hash_neg : hash (-xs) = hash xs := by
---   simp [hash, UInt64.min_comm]
+theorem dvd_bmod_dot_sub_dot_bmod (m : Nat) (xs ys : IntList) :
+    (m : Int) ∣ bmod_dot_sub_dot_bmod m xs ys := by
+  dsimp [bmod_dot_sub_dot_bmod]
+  rw [Int.dvd_iff_emod_eq_zero]
+  induction xs generalizing ys with
+  | nil => simp
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp
+    | cons y ys =>
+      simp only [IntList.dot_cons₂, List.map_cons]
+      specialize ih ys
+      rw [Int.sub_emod, Int.bmod_emod] at ih
+      rw [Int.sub_emod, Int.bmod_emod, Int.add_emod, Int.add_emod (Int.bmod x m * y),
+        ← Int.sub_emod, ← Int.sub_sub, Int.sub_eq_add_neg, Int.sub_eq_add_neg,
+        Int.add_assoc (x * y % m), Int.add_comm (IntList.dot _ _ % m), ← Int.add_assoc,
+        Int.add_assoc, ← Int.sub_eq_add_neg, ← Int.sub_eq_add_neg, Int.add_emod, ih, Int.add_zero,
+        Int.emod_emod, Int.mul_emod, Int.mul_emod (Int.bmod x m), Int.bmod_emod, Int.sub_self,
+        Int.zero_emod]
 
 end IntList
