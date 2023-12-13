@@ -153,25 +153,28 @@ theorem add_nil_left {ys : IntDict} : .nil + ys = ys := by
 theorem add_nil_right {xs : IntDict} : xs + .nil = xs := by
   cases xs <;> rfl
 
+def neg (xs : IntDict) : IntDict := xs.mapVal fun _ x => -x
+
+instance : Neg IntDict where neg := neg
+
 def sub (xs ys : IntDict) : IntDict :=
   match xs, ys with
-  | .nil, _ => ys
+  | .nil, _ => -ys
   | _, .nil => xs
   | .cons i x xs, .cons j y ys =>
     if i < j then
       .cons i x (sub xs (.cons j y ys))
     else if j < i then
-      .cons j y (sub (.cons i x xs) ys)
+      .cons j (-y) (sub (.cons i x xs) ys)
     else .cons i (x - y) (sub xs ys)
 termination_by sub xs ys => xs.size + ys.size
 
 instance : Sub IntDict where sub := sub
 
-def neg (xs : IntDict) : IntDict := xs.mapVal fun _ x => -x
-
-instance : Neg IntDict where neg := neg
-
-theorem sub_eq_add_neg (xs ys : IntDict) : xs - ys = xs + -ys := sorry
+theorem sub_eq_add_neg (xs ys : IntDict) : xs - ys = xs + -ys := by
+  induction xs generalizing ys with
+  | nil => sorry
+  | cons i x xs ih => sorry
 
 @[simp] theorem dot_neg_left (xs ys : IntDict) : (-xs).dot ys = -(xs.dot ys) := by
   sorry

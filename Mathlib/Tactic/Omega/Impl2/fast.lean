@@ -418,14 +418,20 @@ def takeListLit : Nat → Level → Expr → Expr → Expr
     | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
     | _ => mkApp (.const ``List.nil [u]) ty
 
+def foo (k : Nat) (v : Expr) : Expr :=
+  match v.getAppFnArgs with
+  | (``Coeffs.ofList, #[v]) => .app (.const ``Coeffs.ofList []) (takeListLit k .zero (.const ``Int []) v)
+  | _ => v -- unreachable
+
 def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) : MetaM Expr := do
-  let v' := takeListLit x.length .zero (.const ``Int []) v
+  -- let v' := takeListLit x.length .zero (.const ``Int []) v
+  let v' := foo x.length v
   let m := toExpr m
   let r := toExpr r
   let i := toExpr i
   let x := toExpr x
   let h ← mkDecideProof (mkApp4 (.const ``LE.le [.zero]) (.const ``Nat []) (.const ``instLENat [])
-    (mkApp2 (.const ``List.length [.zero]) (.const ``Int []) x) i)
+    (.app (.const ``Coeffs.length []) x) i)
   let lhs := mkApp2 (.const ``Coeffs.get []) v i
   let rhs := mkApp3 (.const ``bmod_div_term []) m x v'
   _ ← isDefEq lhs rhs
@@ -505,6 +511,7 @@ def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof
   let atoms ← atoms
   let mvars ← (List.range (x.length - atoms.length)).mapM fun _ => Meta.mkFreshExprMVar (some (.const ``Int []))
   let v ← mkListLit (.const ``Int []) (atoms ++ mvars)
+  let v := .app (.const ``Coeffs.ofList []) v
   let prf ← j.proof v assumptions
   trace[omega] "Additional mvars:\n{← mvars.mapM instantiateMVars}"
   let x := toExpr x
