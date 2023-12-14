@@ -1,4 +1,13 @@
-import Mathlib.Tactic.Omega.Coeffs.IntList -- replace `IntList` with `IntDict` here to use sparse representations
+-- replace `IntList` with `IntDict` here to use sparse representations
+import Mathlib.Tactic.Omega.Coeffs.IntList
+
+
+/-!
+# Linear combinations
+
+We use this data structure while processing hypotheses.
+
+-/
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -7,8 +16,11 @@ initialize Lean.registerTraceClass `omega
 
 namespace Std.Tactic.Omega
 
+/-- Internal representation of a linear combination of atoms, and a constant term. -/
 structure LinearCombo where
+  /-- Constant term. -/
   const : Int := 0
+  /-- Coefficients of the atoms. -/
   coeffs : Coeffs := {}
 deriving DecidableEq, Repr
 
@@ -42,6 +54,7 @@ def eval (lc : LinearCombo) (values : Coeffs) : Int :=
 @[simp] theorem eval_nil : (lc : LinearCombo).eval .nil = lc.const := by
   simp [eval]
 
+/-- The `i`-th coordinate function. -/
 def coordinate (i : Nat) : LinearCombo where
   const := 0
   coeffs := Coeffs.set .nil i 1
@@ -75,6 +88,7 @@ theorem coordinate_eval_9 :
     (coordinate 9).eval (.ofList (a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: a7 :: a8 :: a9 :: t)) = a9 := by
   simp
 
+/-- Implementation of addition on `LinearCombo`. -/
 def add (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const + l₂.const
   coeffs := l₁.coeffs + l₂.coeffs
@@ -84,6 +98,7 @@ instance : Add LinearCombo := ⟨add⟩
 @[simp] theorem add_const {l₁ l₂ : LinearCombo} : (l₁ + l₂).const = l₁.const + l₂.const := rfl
 @[simp] theorem add_coeffs {l₁ l₂ : LinearCombo} : (l₁ + l₂).coeffs = l₁.coeffs + l₂.coeffs := rfl
 
+/-- Implementation of subtraction on `LinearCombo`. -/
 def sub (l₁ l₂ : LinearCombo) : LinearCombo where
   const := l₁.const - l₂.const
   coeffs := l₁.coeffs - l₂.coeffs
@@ -93,7 +108,7 @@ instance : Sub LinearCombo := ⟨sub⟩
 @[simp] theorem sub_const {l₁ l₂ : LinearCombo} : (l₁ - l₂).const = l₁.const - l₂.const := rfl
 @[simp] theorem sub_coeffs {l₁ l₂ : LinearCombo} : (l₁ - l₂).coeffs = l₁.coeffs - l₂.coeffs := rfl
 
-/-- Negating a linear combination means negating the constant term and the coefficients. -/
+/-- Implementation of negation on `LinearCombo`. -/
 def neg (lc : LinearCombo) : LinearCombo where
   const := -lc.const
   coeffs := -lc.coeffs
@@ -109,6 +124,7 @@ theorem sub_eq_add_neg (l₁ l₂ : LinearCombo) : l₁ - l₂ = l₁ + -l₂ :=
   · simp [Int.sub_eq_add_neg]
   · simp [Coeffs.sub_eq_add_neg]
 
+/-- Implementation of scalar multiplication of a `LinearCombo` by an `Int`. -/
 def smul (lc : LinearCombo) (i : Int) : LinearCombo where
   const := i * lc.const
   coeffs := lc.coeffs.smul i

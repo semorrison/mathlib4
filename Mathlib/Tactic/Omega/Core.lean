@@ -7,7 +7,7 @@ set_option relaxedAutoImplicit true
 
 open Lean (HashSet)
 
-namespace Std.Tactic.Omega.ProofProducing
+namespace Std.Tactic.Omega
 
 open Lean (Expr)
 open Lean.Meta
@@ -453,8 +453,8 @@ def addInequality (p : Problem) (const : Int) (coeffs : Coeffs) (prf? : Option P
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := none }
       justification := .assumption _ _ i }
-    let f := f.tidy
     let f := p.replayEliminations f
+    let f := f.tidy
     p'.addConstraint f
 
 def addEquality (p : Problem) (const : Int) (coeffs : Coeffs) (prf? : Option Proof) : Problem :=
@@ -465,8 +465,8 @@ def addEquality (p : Problem) (const : Int) (coeffs : Coeffs) (prf? : Option Pro
     { coeffs
       constraint := { lowerBound := some (-const), upperBound := some (-const) }
       justification := .assumption _ _ i }
-    let f := f.tidy
     let f := p.replayEliminations f
+    let f := f.tidy
     p'.addConstraint f
 
 def addInequalities (p : Problem) (ineqs : List (Int × Coeffs × Option Proof)) : Problem :=

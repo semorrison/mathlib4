@@ -2,20 +2,119 @@ import Mathlib.Tactic.Omega.LinearCombo
 import Mathlib.Tactic.Omega.Int
 import Mathlib.Tactic.Omega.Core
 
+/-!
+# `omega`
+
+This is an implementation of the `omega` algorithm, currently without "dark" and "grey" shadows,
+although the framework should be compatible with adding that part of the algorithm later.
+
+The `MetaM` level `omega` tactic which takes a `List Expr` of facts,
+and tries to discharge the goal by proving `False`.
+
+The user-facing `omega` tactic first calls `false_or_by_contra`, and then invokes the `omega` tactic
+on all hypotheses. In the `false_or_by_contra` step, we:
+* if the goal is `False`, do nothing,
+* if the goal is `¬ P`, introduce `P`,
+* if the goal is `x ≠ y`, introduce `x = y`,
+* otherwise, for a goal `P`, replace it with `¬ ¬ P` and introduce `¬ P`.
+
+The `omega` tactic pre-processes the hypotheses in the following ways:
+* Replace `x > y` with `x ≥ y + 1`.
+* Given `x ≥ y` for `x : Nat`, replace it with `(x : Int) ≥ (y : Int)`.
+* Push `Nat`-to-`Int` coercions inwards across `+`, `*`, `/`, `%`.
+* Replace `k ∣ x` for a literal `k : Nat` with `x % k = 0`,
+  and replace `¬ k ∣ x` with `x % k > 0`.
+* If `x / m` appears, for some `x : Int` and literal `m : Nat`,
+  replace `x / m` with a new variable `α` and add the constraints
+  `0 ≤ - m * α + x ≤ m - 1`.
+* If `x % m` appears, similarly, introduce the same new contraints
+  but replace `x % m` with `- m * α + x`.
+* Split conjunctions.
+* TODO: Split existentials.
+* Record, for each appearance of `(a - b : Int)` with `a b : Nat`, the disjunction
+  `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`.
+  We don't immediately split this; see the discussion below for how disjunctions are handled.
+
+After this preprocessing stage, we have a collection of linear inequalities (all using `≤`)
+and equalities in some set of atoms.
+
+TODO: We should identify atoms up to associativity and commutativity,
+so that `omega` can handle problems such as `a * b < 0 && b * a > 0 → False`.
+This should be a relatively easy modification of the `lookup` function in `OmegaM`.
+After doing so, we should allow the preprocessor to distribute multiplication over addition.
+
+Throughout the remainder of the algorithm, we apply the following normalization steps to
+all linear constraints:
+* Make the leading coefficient positive (thus giving us both upper and lower bounds).
+* Divide through by the GCD of the coefficients, rounding the constant terms appropriately.
+* Whenever we have both an upper and lower bound for the same coefficients,
+  check they are compatible. If they are tight, mark the pair of constraints as an equality.
+  If they are inconsistent, stop further processing.
+
+The next step is to solve all equalities.
+We first solve any equalities that have a `±1` coefficient;
+these allow us to eliminate that variable.
+After this, there may be equalities remaining with all coefficients having absolute value greater
+than one. We select an equality `c₀ + ∑ cᵢ * xᵢ = 0` with smallest minimal absolute value
+of the `cᵢ`, breaking ties by preferring equalities with smallest maximal absolute value.
+We let `m = ∣cⱼ| + 1` where `cⱼ` is the coefficient with smallest absolute value..
+We then add the new equality `(bmod c₀ m) + ∑ (bmod cᵢ m) xᵢ = m α` with `α` being a new variable.
+Here `bmod` is "balanced mod", taking values in `[- m/2, (m - 1)/2]`.
+This equality holds (for some value of `α`) because the left hand side differs from the left hand
+side of the original equality by a multiple of `m`.
+Moreover, in this equality the coefficient of `xⱼ` is `±1`, so we can solve and eliminate `xⱼ`.
+So far this isn't progress: we've introduced a new variable and eliminated a variable.
+However, this process terminates, as the pair `(c, C)` lexicographically decreases,
+where `c` is the smallest minimal absolute value and `C` is the smallest maximal absolute value
+amongst those equalities with minimal absolute value `c`.
+(Happily because we're running this in metaprogramming code, we don't actually need to prove this
+termination!)
+
+After solving all equalities, we turn to the inequalities.
+We need to select a variable to eliminate; this choice is discussed below.
+The omega algorithm indicates we should consider three subproblems,
+called the "real", "dark", and "grey" shadows.
+(In fact the "grey" shadow is a disjunction of potentially many problems.)
+Our problem is satisfiable if and only if the real shadow is satisfiable
+and either the dark or grey shadow is satisfiable.
+Currently we do not implement either the dark or grey shadows, and thus if the real shadow is
+satisfiable we must fail, and report that we couldn't find a contradiction, even though the
+problem may be unsatisfiable.
+Fortunately, in many cases it is possible to choose a variable to eliminate that results in
+the real and dark shadows coinciding, and the grey shadows being empty. In this situation
+we don't lose anything by ignoring the dark and grey shadows.
+
+In practical problems, it appears to be relatively rare that we fail because of not handling the
+dark and grey shadows.
+
+The real shadow for a variable `i` is just the Fourier-Motzkin elimination.
+TODO: finish writing this description!
+
+TODO: implement the dark and grey shadows.
+
+TODO: explain how we handle disjunctions.
+
+-/
+
 set_option autoImplicit true
 
 open Lean Meta
 
 /--
-Given `p : P ∨ Q`, split the goal into two subgoals: one containing the hypothesis `h : P` and another containing `h : Q`.
+Given `p : P ∨ Q` (or any inductive type with two one-argument constructors),
+split the goal into two subgoals:
+one containing the hypothesis `h : P` and another containing `h : Q`.
 -/
-def _root_.Lean.MVarId.cases2 (mvarId : MVarId) (p : Expr) (hName : Name := `h) : MetaM ((MVarId × FVarId) × (MVarId × FVarId)) := do
+def _root_.Lean.MVarId.cases₂ (mvarId : MVarId) (p : Expr) (hName : Name := `h) :
+    MetaM ((MVarId × FVarId) × (MVarId × FVarId)) := do
   let mvarId ← mvarId.assert `hByCases (← inferType p) p
   let (fvarId, mvarId) ← mvarId.intro1
   let #[s₁, s₂] ← mvarId.cases fvarId #[{ varNames := [hName] }, { varNames := [hName] }] |
     throwError "'cases' tactic failed, unexpected number of subgoals"
-  let #[Expr.fvar f₁ ..] ← pure s₁.fields | throwError "'cases' tactic failed, unexpected new hypothesis"
-  let #[Expr.fvar f₂ ..] ← pure s₂.fields | throwError "'cases' tactic failed, unexpected new hypothesis"
+  let #[Expr.fvar f₁ ..] ← pure s₁.fields
+    | throwError "'cases' tactic failed, unexpected new hypothesis"
+  let #[Expr.fvar f₂ ..] ← pure s₂.fields
+    | throwError "'cases' tactic failed, unexpected new hypothesis"
   return ((s₁.mvarId, f₁), (s₂.mvarId, f₂))
 
 namespace Std.Tactic.Omega
@@ -24,8 +123,7 @@ namespace Std.Tactic.Omega
 A partially processed `omega` context.
 
 We have:
-* a `ProofProducing.Problem` representing the integer linear constraints extracted so far,
-  and their proofs
+* a `Problem` representing the integer linear constraints extracted so far, and their proofs
 * the unprocessed `facts : List Expr` taken from the local context,
 * the unprocessed `disjunctions : List Expr`,
   which will only be split one at a time if we can't otherwise find a contradiction.
@@ -41,10 +139,12 @@ TODO: we may want to solve equalities as we find them.
 -/
 structure MetaProblem where
   /-- An integer linear arithmetic problem. -/
-  problem : ProofProducing.Problem := {}
+  problem : Problem := {}
   /-- Pending facts which have not been processed yet. -/
   facts : List Expr := []
-  /-- Pending disjunctions, which we will case split one at a time if we can't get a contradiction. -/
+  /--
+  Pending disjunctions, which we will case split one at a time if we can't get a contradiction.
+  -/
   disjunctions : List Expr := []
   /-- Facts which have already been processed; we keep these to avoid duplicates. -/
   processedFacts : HashSet Expr := ∅
@@ -66,11 +166,10 @@ def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : OmegaM Expr := do
     let lem := .str ``LinearCombo s!"coordinate_eval_{n}"
     mkEqSymm (mkAppN (.const lem []) (atoms[:n+1].toArray.push tail))
   else
-    -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
     let atoms ← atomsList
     let n := toExpr n
-    let eq ← mkEqReflWithExpectedType e
-      (mkApp2 (.const ``Coeffs.get []) atoms n)
+    -- Construct the `rfl` proof that `e = (atoms.get? n).getD 0`
+    let eq ← mkEqReflWithExpectedType e (mkApp2 (.const ``Coeffs.get []) atoms n)
     mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
@@ -248,7 +347,6 @@ def pushNot (h P : Expr) : Option Expr := do
       (.app (.const ``Classical.propDecidable []) P₂) h)
   | _ => none
 
-
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
     return p
@@ -319,13 +417,12 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
     | [] => throwError "omega did not find a contradiction:\n{p''}"
     | h :: t =>
       trace[omega] "Case splitting on {← inferType h}"
-      let (⟨g₁, h₁⟩, ⟨g₂, h₂⟩) ← g.cases2 h
+      let (⟨g₁, h₁⟩, ⟨g₂, h₂⟩) ← g.cases₂ h
       trace[omega] "Adding facts:\n{← g₁.withContext <| inferType (.fvar h₁)}"
       let m₁ := { m' with
-        problem := p -- I would really hope that we can use p' here (reuse already solved equations)
+        problem := p'
         facts := [.fvar h₁]
         disjunctions := t }
-      -- Some way to check that the disjunction actually added something usable?
       savingState do omegaImpl m₁ g₁
       trace[omega] "Adding facts:\n{← g₂.withContext <| inferType (.fvar h₂)}"
       let m₂ := { m' with

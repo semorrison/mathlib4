@@ -20,7 +20,11 @@ The main functions are:
   * for each new atom of the form `((a - b : Nat) : Int)`, the fact:
     `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`
 
-The `OmegaM` monad also keeps a
+The `OmegaM` monad also keeps an internal cache of visited expressions
+(not necessarily atoms, but arbitrary subexpressions of one side of a linear relation)
+to reduce duplication.
+The cache maps `Expr`s to pairs consisting of a `LinearCombo`,
+and proof that the expression is equal to the evaluation of the `LinearCombo` at the atoms.
 -/
 
 set_option autoImplicit true
