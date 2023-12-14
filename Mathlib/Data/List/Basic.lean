@@ -247,12 +247,17 @@ theorem singleton_eq (x : α) : ({x} : List α) = [x] :=
   rfl
 #align list.singleton_eq List.singleton_eq
 
-theorem insert_neg [DecidableEq α] {x : α} {l : List α} (h : x ∉ l) : Insert.insert x l = x :: l :=
-  if_neg h
+theorem insert_neg [DecidableEq α] {x : α} {l : List α} (h : x ∉ l) :
+    Insert.insert x l = x :: l := by
+  dsimp [Insert.insert, List.insert]
+  rw [if_neg]
+  simp_all only [elem_iff, not_false_eq_true, h]
 #align list.insert_neg List.insert_neg
 
-theorem insert_pos [DecidableEq α] {x : α} {l : List α} (h : x ∈ l) : Insert.insert x l = l :=
-  if_pos h
+theorem insert_pos [DecidableEq α] {x : α} {l : List α} (h : x ∈ l) : Insert.insert x l = l := by
+  dsimp [Insert.insert, List.insert]
+  rw [if_pos]
+  simp_all only [elem_iff, h]
 #align list.insert_pos List.insert_pos
 
 theorem doubleton_eq [DecidableEq α] {x y : α} (h : x ≠ y) : ({x, y} : List α) = [x, y] := by
@@ -1108,6 +1113,7 @@ theorem indexOf_cons_eq {a b : α} (l : List α) : b = a → indexOf a (b :: l) 
 @[simp]
 theorem indexOf_cons_ne {a b : α} (l : List α) : b ≠ a → indexOf a (b :: l) = succ (indexOf a l)
   | h => by simp only [indexOf, findIdx_cons, Bool.cond_eq_ite, beq_iff_eq, h, ite_false]
+
 #align list.index_of_cons_ne List.indexOf_cons_ne
 
 -- rfl
