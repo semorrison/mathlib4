@@ -3321,9 +3321,6 @@ import Mathlib.Tactic.NormNum.Prime
 import Mathlib.Tactic.NormNum.Result
 import Mathlib.Tactic.NthRewrite
 import Mathlib.Tactic.Observe
-import Mathlib.Tactic.Omega.Impl2.test
-import Mathlib.Tactic.Omega.test.t20231120
-import Mathlib.Tactic.Omega.test.t20231202
 import Mathlib.Tactic.PPWithUniv
 import Mathlib.Tactic.Peel
 import Mathlib.Tactic.Polyrith
