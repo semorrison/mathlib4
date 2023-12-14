@@ -1,5 +1,4 @@
-import Mathlib.Tactic.Simps.Basic
-import Mathlib.Tactic.Omega.Coeffs
+import Mathlib.Tactic.Omega.Coeffs.IntList
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
@@ -19,7 +18,7 @@ Later we will define variants carrying additional data required to run Omega eff
 and transfer the proofs from these simpler versions.
 -/
 
-namespace Omega
+namespace Std.Tactic.Omega
 
 structure LinearCombo where
   const : Int := 0

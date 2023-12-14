@@ -13,7 +13,7 @@ instance name_collision : ToExpr Int where
     | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
     | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
 
-namespace Omega
+namespace Std.Tactic.Omega
 
 structure State where
   /-- The atoms up-to-defeq encountered so far. -/

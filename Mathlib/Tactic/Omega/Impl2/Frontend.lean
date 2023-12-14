@@ -20,7 +20,7 @@ def _root_.Lean.MVarId.cases2 (mvarId : MVarId) (p : Expr) (hName : Name := `h) 
   let #[Expr.fvar f₂ ..] ← pure s₂.fields | throwError "'cases' tactic failed, unexpected new hypothesis"
   return ((s₁.mvarId, f₁), (s₂.mvarId, f₂))
 
-namespace Omega
+namespace Std.Tactic.Omega
 
 /--
 A partially processed `omega` context.

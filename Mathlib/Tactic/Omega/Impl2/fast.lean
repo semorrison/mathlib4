@@ -10,7 +10,7 @@ set_option relaxedAutoImplicit true
 open Std (HashMap RBSet RBMap AssocList)
 open Lean (HashSet)
 
-namespace Omega.ProofProducing
+namespace Std.Tactic.Omega.ProofProducing
 
 abbrev LowerBound : Type := Option Int
 abbrev UpperBound : Type := Option Int
@@ -339,7 +339,7 @@ inductive Justification : Constraint → Coeffs → Type
 | combo {s t x y} (a : Int) (j : Justification s x) (b : Int) (k : Justification t y) :
     Justification (Constraint.combo a s b t) (Coeffs.combo a x b y)
   -- This only makes sense when `s = .exact r`, but there is no point in enforcing that here:
-| bmod (m : Nat) (r : Int) (i : Nat) {x} {s} (j : Justification s x) :
+| bmod (m : Nat) (r : Int) (i : Nat) {x} (j : Justification (.exact r) x) :
     Justification (.exact (Int.bmod r m)) (bmod_coeffs m i x)
 
 nonrec def Justification.tidy? (j : Justification s c) : Option (Σ s' c', Justification s' c') :=
@@ -385,17 +385,14 @@ def comboProof (s t : Constraint) (a : Int) (x : Coeffs) (b : Int) (y : Coeffs)
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
   mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
-def takeListLit : Nat → Level → Expr → Expr → Expr
-  | 0, u, ty, _ => mkApp (.const ``List.nil [u]) ty
-  | (k + 1), u, ty, e =>
-    match e.getAppFnArgs with
-    | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
-    | _ => mkApp (.const ``List.nil [u]) ty
+-- def takeListLit : Nat → Level → Expr → Expr → Expr
+--   | 0, u, ty, _ => mkApp (.const ``List.nil [u]) ty
+--   | (k + 1), u, ty, e =>
+--     match e.getAppFnArgs with
+--     | (``List.cons, #[_, h, t]) => mkApp3 (.const ``List.cons [u]) ty h (takeListLit k u ty t)
+--     | _ => mkApp (.const ``List.nil [u]) ty
 
 def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) : MetaM Expr := do
-  -- let v' := takeListLit x.length .zero (.const ``Int []) v
-  -- let v' := foo x.length v
-  let v' := v
   let m := toExpr m
   let r := toExpr r
   let i := toExpr i
@@ -403,8 +400,7 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) :
   let h ← mkDecideProof (mkApp4 (.const ``LE.le [.zero]) (.const ``Nat []) (.const ``instLENat [])
     (.app (.const ``Coeffs.length []) x) i)
   let lhs := mkApp2 (.const ``Coeffs.get []) v i
-  let rhs := mkApp3 (.const ``bmod_div_term []) m x v'
-  _ ← isDefEq lhs rhs
+  let rhs := mkApp3 (.const ``bmod_div_term []) m x v
   let p ← mkEqReflWithExpectedType lhs rhs
   return mkApp8 (.const ``bmod_sat []) m r i x v h p w
 
@@ -412,16 +408,33 @@ def bmodProof (m : Nat) (r : Int) (i : Nat) (x : Coeffs) (v : Expr) (w : Expr) :
 
 /-- Constructs a proof that `s.sat' c v = true` -/
 def proof (v : Expr) (assumptions : Array Proof) : Justification s c → Proof
-| assumption s c i => do
-  match assumptions[i]? with
-  | some a => a
-  | none => throwError "No such assumption: {i}"
-| @tidy s c j => return tidyProof s c v (← proof v assumptions j)
-| @combine s t c j k => return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
-| @combo s t x y a j b k => return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
-| @bmod m r i x s j => do bmodProof m r i x v (← proof v assumptions j)
+  | assumption s c i => assumptions[i]!
+  | @tidy s c j => return tidyProof s c v (← proof v assumptions j)
+  | @combine s t c j k =>
+    return combineProof s t c v (← proof v assumptions j) (← proof v assumptions k)
+  | @combo s t x y a j b k =>
+    return comboProof s t a x b y v (← proof v assumptions j) (← proof v assumptions k)
+  | @bmod m r i x j => do bmodProof m r i x v (← proof v assumptions j)
 
 end Justification
+
+-- inductive Result (assumptions : List (Constraint × Coeffs)) (atoms : Coeffs) (proof : ∀ a ∈ assumptions, a.1.sat' a.2 atoms) :
+--     Constraint × Coeffs → Type
+--   | assumption (i : Fin assumptions.length) : Result assumptions atoms proof (assumptions.get i)
+--   | tidy (p : Constraint × Coeffs) : Result assumptions atoms proof p → Result assumptions atoms proof (tidy p)
+--   | combine (s t : Constraint) (x : Coeffs) : Result assumptions atoms proof (s, x) → Result assumptions atoms proof (t, x) →
+--       Result assumptions atoms proof (s.combine t, x)
+--   | combo (p q : Constraint × Coeffs) (a b : Int) : Result assumptions atoms proof p → Result assumptions atoms proof q →
+--       Result assumptions atoms proof (.combo a p.1 b q.1, Coeffs.combo a p.2 b q.2)
+--   | bmod (m : Nat) (r : Int) (i : Nat) (x : Coeffs) : x.length ≤ i → atoms.get i = bmod_div_term m x atoms → Result assumptions atoms proof (.exact r, x) →
+--       Result assumptions atoms proof (.exact (Int.bmod r m), bmod_coeffs m i x)
+
+-- theorem Result.sat {assumptions atoms proof} : Result assumptions atoms proof p → p.1.sat' p.2 atoms
+--   | .assumption i => proof _ (List.get_mem _ _ _)
+--   | .tidy p f => tidy_sat (Result.sat f)
+--   | .combine s t x fs ft => Constraint.combine_sat' (Result.sat fs) (Result.sat ft)
+--   | .combo p q a b fp fq => combo_sat' _ _ _ _ _ _ _ (Result.sat fp) (Result.sat fq)
+--   | .bmod m r i x h w f => bmod_sat _ _ _ _ _ h w (Result.sat f)
 
 structure Fact where
   coeffs : Coeffs
@@ -488,7 +501,7 @@ Takes a proof that `s.sat' x v` for some `s` such that `s.isImpossible`,
 and constructs a proof of `False`.
 -/
 def proveFalse {s x} (j : Justification s x) (assumptions : Array Proof) : Proof := do
-  let v := .app (.const ``Coeffs.ofList []) (← mkListLit (.const ``Int []) (← atoms))
+  let v := .app (.const ``Coeffs.ofList []) (← atomsList)
   let prf ← j.proof v assumptions
   let x := toExpr x
   let s := toExpr s
@@ -563,9 +576,6 @@ def solveEasyEquality (p : Problem) (c : Coeffs) : Problem :=
         p'.addConstraint (Fact.combo k f 1 g).tidy
   | _ => p -- unreachable
 
--- def freshVar (p : Problem) : Nat × Problem :=
---   (p.numVars, { p with numVars := p.numVars + 1 })
-
 open Lean in
 /--
 We deal with a hard equality by introducing a new easy equality.
@@ -575,15 +585,18 @@ the minimum lexicographic value of `(c.minNatAbs, c.maxNatAbs)` will have been r
 -/
 def dealWithHardEquality (p : Problem) (c : Coeffs) : OmegaM Problem :=
   match p.constraints.find? c with
-  | some ⟨_, ⟨some r, _⟩, j⟩ => do
+  | some ⟨_, ⟨some r, some r'⟩, j⟩ => do
     let m := c.minNatAbs + 1
     let x := mkApp3 (.const ``bmod_div_term []) (toExpr m) (toExpr c) (← atomsList)
     let (i, facts?) ← lookup x
-    match facts? with
-    | none => throwError "When solving hard equality, new atom had been seen before!"
-    | some facts => if ! facts.isEmpty then
-      throwError "When solving hard equality, there should not have been interesting facts about the new atom!"
-    return p.addConstraint { coeffs := _, constraint := _, justification := j.bmod m r i }
+    if hr : r' = r then
+      match facts? with
+      | none => throwError "When solving hard equality, new atom had been seen before!"
+      | some facts => if ! facts.isEmpty then
+        throwError "When solving hard equality, there should not have been interesting facts about the new atom!"
+      return p.addConstraint { coeffs := _, constraint := _, justification := (hr ▸ j).bmod m r i }
+    else
+      throwError "Invalid constraint, expected an equation." -- unreachable
   | _ =>
     return p -- unreachable
 
