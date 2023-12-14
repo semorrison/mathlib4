@@ -1,6 +1,28 @@
 import Mathlib.Tactic.Omega.Int
 import Mathlib.Tactic.Omega.LinearCombo
 
+/-!
+# The `OmegaM` state monad.
+
+We keep track of the linear atoms (up to defeq) that have been encountered so far,
+and also generate new facts as new atoms are recorded.
+
+The main functions are:
+* `atoms : OmegaM (List Expr)` which returns the atoms recorded so far
+* `lookup (e : Expr) : OmegaM (Nat × Option (HashSet Expr))` which checks if an `Expr` has
+  already been recorded as an atom, and records it.
+  `lookup` return the index in `atoms` for this `Expr`.
+  The `Option (HashSet Expr)` return value is `none` is the expression has been previously
+  recorded, and otherwise contains new facts that should be added to the `omega` problem.
+  * for each new atom `a` of the form `((x : Nat) : Int)`, the fact that `0 ≤ a`
+  * for each new atom `a` of the form `x / k`, for `k` a positive numeral, the facts that
+    `k * a ≤ x < k * a + k`
+  * for each new atom of the form `((a - b : Nat) : Int)`, the fact:
+    `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`
+
+The `OmegaM` monad also keeps a
+-/
+
 set_option autoImplicit true
 
 open Lean Meta
