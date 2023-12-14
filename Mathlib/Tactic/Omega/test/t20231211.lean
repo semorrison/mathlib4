@@ -1,6 +1,6 @@
 import Mathlib.Tactic.Omega.Frontend
 
-open Std.Tactic.Omega ProofProducing
+open Std.Tactic.Omega
 
 example : True := by
   fail_if_success omega

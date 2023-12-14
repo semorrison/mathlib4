@@ -54,23 +54,6 @@ theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a :
   · simp_all
   · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨emod_nonneg b w, Ne.symm h⟩)
 
--- Next two in https://github.com/leanprover/std4/pull/437
-theorem mul_ediv_self_le {x k : Int} (h : k ≠ 0) : k * (x / k) ≤ x :=
-  calc k * (x / k)
-    _ ≤ k * (x / k) + x % k := Int.le_add_of_nonneg_right (emod_nonneg x h)
-    _ = x                   := ediv_add_emod _ _
-
-theorem lt_mul_ediv_self_add {x k : Int} (h : 0 < k) : x < k * (x / k) + k :=
-  calc x
-    _ = k * (x / k) + x % k := (ediv_add_emod _ _).symm
-    _ < k * (x / k) + k     := Int.add_lt_add_left (emod_lt_of_pos x h) _
-
--- https://github.com/leanprover/std4/pull/443
-protected theorem mul_le_mul_of_nonpos_left {a b c : Int}
-    (ha : a ≤ 0) (h : c ≤ b) : a * b ≤ a * c := by
-  rw [Int.mul_comm a b, Int.mul_comm a c]
-  apply Int.mul_le_mul_of_nonpos_right h ha
-
 -- theorem pow_two {x : Int} : x^2 = x * x := by
 --   change Int.pow _ _ = _
 --   simp [Int.pow]
@@ -145,32 +128,6 @@ attribute [simp] sign_eq_zero_iff_zero
 end Int
 
 namespace List
-
--- https://github.com/leanprover/std4/pull/441
-@[simp] theorem reverse_eq_nil_iff {xs : List α} : xs.reverse = [] ↔ xs = [] := by
-  induction xs <;> simp
-
--- https://github.com/leanprover/std4/pull/445
-@[simp] theorem isEmpty_nil : ([] : List α).isEmpty = true := rfl
-@[simp] theorem isEmpty_cons : (x :: xs : List α).isEmpty = false := rfl
-
-instance {xs : List α} : Decidable (xs = []) :=
-  decidable_of_decidable_of_iff (by induction xs <;> simp : xs.isEmpty ↔ xs = [])
-
-@[simp] theorem dropWhile_nil : ([] : List α).dropWhile p = [] := rfl
-
-theorem dropWhile_cons :
-    (x :: xs : List α).dropWhile p = if p x then xs.dropWhile p else x :: xs := by
-  split <;> simp_all [dropWhile]
-
-theorem dropWhile_append {xs ys : List α} :
-    (xs ++ ys).dropWhile p =
-      if xs.dropWhile p = [] then ys.dropWhile p else xs.dropWhile p ++ ys := by
-  induction xs with
-  | nil => simp
-  | cons h t ih =>
-    simp only [cons_append, dropWhile_cons]
-    split <;> simp_all
 
 -- @[simp]
 -- theorem get?_coe {xs : List α} {i : Fin xs.length} : xs.get? i = some (xs.get i) :=
