@@ -210,21 +210,21 @@ theorem div_sat (c : Constraint) (t : Int) (k : Nat) (n : k ≠ 0) (h : (k : Int
   · simp_all [sat, div]
   · simp_all [sat, div]
     apply Int.le_of_sub_nonneg
-    rw [← Int.sub_ediv_of_dvd _ h, Int.le_iff_ge, Int.div_nonneg_iff_of_pos (mod_cast n)]
+    rw [← Int.sub_ediv_of_dvd _ h, ← ge_iff_le, Int.div_nonneg_iff_of_pos (mod_cast n)]
     exact Int.sub_nonneg_of_le w
   · simp_all [sat, div]
     apply Int.le_of_sub_nonneg
-    rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, Int.le_iff_ge,
+    rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, ← ge_iff_le,
       Int.div_nonneg_iff_of_pos (mod_cast n)]
     exact Int.sub_nonneg_of_le w
   · simp_all [sat, div]
     constructor
     · apply Int.le_of_sub_nonneg
-      rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, Int.le_iff_ge,
+      rw [Int.sub_neg, ← Int.add_ediv_of_dvd_left h, ← ge_iff_le,
         Int.div_nonneg_iff_of_pos (mod_cast n)]
       exact Int.sub_nonneg_of_le w.1
     · apply Int.le_of_sub_nonneg
-      rw [← Int.sub_ediv_of_dvd _ h, Int.le_iff_ge, Int.div_nonneg_iff_of_pos (mod_cast n)]
+      rw [← Int.sub_ediv_of_dvd _ h, ← ge_iff_le, Int.div_nonneg_iff_of_pos (mod_cast n)]
       exact Int.sub_nonneg_of_le w.2
 
 /--

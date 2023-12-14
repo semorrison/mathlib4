@@ -7,6 +7,10 @@ set_option relaxedAutoImplicit true
 
 open Lean (HashSet)
 
+alias ⟨and_not_not_of_not_or, _⟩ := not_or
+alias ⟨Decidable.or_not_not_of_not_and, _⟩ := Decidable.not_and_iff_or_not
+
+
 -- https://github.com/leanprover/std4/pull/448
 instance [BEq α] [Hashable α] : Singleton α (HashSet α) := ⟨fun x => HashSet.empty.insert x⟩
 instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.insert a⟩
@@ -18,9 +22,6 @@ instance name_collision : ToExpr Int where
   toExpr i := match i with
     | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
     | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
-
-alias ⟨and_not_not_of_not_or, _⟩ := not_or
-alias ⟨Decidable.or_not_not_of_not_and, _⟩ := Decidable.not_and_iff_or_not
 
 -- Next three in https://github.com/leanprover/std4/pull/438
 /-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
@@ -46,8 +47,6 @@ end Nat
 
 namespace Int
 
-theorem le_iff_ge {a b : Int} : a ≤ b ↔ b ≥ a := Iff.rfl
-
 -- https://github.com/leanprover/std4/pull/436
 theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
   rw [dvd_iff_emod_eq_zero] at h
@@ -72,17 +71,18 @@ protected theorem mul_le_mul_of_nonpos_left {a b c : Int}
   rw [Int.mul_comm a b, Int.mul_comm a c]
   apply Int.mul_le_mul_of_nonpos_right h ha
 
-theorem pow_two {x : Int} : x^2 = x * x := by
-  change Int.pow _ _ = _
-  simp [Int.pow]
+-- theorem pow_two {x : Int} : x^2 = x * x := by
+--   change Int.pow _ _ = _
+--   simp [Int.pow]
 
-theorem mul_self_nonneg {x : Int} : 0 ≤ x * x := by
-  match x with
-  | .ofNat n =>
-    simpa only [ofNat_eq_coe, ← Int.ofNat_mul] using Int.ofNat_nonneg _
-  | .negSucc n =>
-    simpa only [negSucc_mul_negSucc, ge_iff_le, ← Int.ofNat_mul] using Int.ofNat_nonneg _
+-- theorem mul_self_nonneg {x : Int} : 0 ≤ x * x := by
+--   match x with
+--   | .ofNat n =>
+--     simpa only [ofNat_eq_coe, ← Int.ofNat_mul] using Int.ofNat_nonneg _
+--   | .negSucc n =>
+--     simpa only [negSucc_mul_negSucc, ge_iff_le, ← Int.ofNat_mul] using Int.ofNat_nonneg _
 
+-- Next three in https://github.com/leanprover/std4/pull/451
 theorem add_le_iff_le_sub (a b c : Int) : a + b ≤ c ↔ a ≤ c - b := by
   conv =>
     lhs
@@ -172,33 +172,34 @@ theorem dropWhile_append {xs ys : List α} :
     simp only [cons_append, dropWhile_cons]
     split <;> simp_all
 
-@[simp]
-theorem get?_coe {xs : List α} {i : Fin xs.length} : xs.get? i = some (xs.get i) :=
-   get?_eq_some.mpr ⟨i.2, rfl⟩
+-- @[simp]
+-- theorem get?_coe {xs : List α} {i : Fin xs.length} : xs.get? i = some (xs.get i) :=
+--    get?_eq_some.mpr ⟨i.2, rfl⟩
 
-/--
-Return an index for an element in a list, given that the element is a member of the list.
-This function is `O(xs.length)`, as it just traverses the list looking the element.
--/
-def idx_of_mem [DecidableEq α] {xs : List α} (h : y ∈ xs) : Fin xs.length :=
-  ⟨xs.findIdx (· = y), xs.findIdx_lt_length_of_exists ⟨y, h, by simp⟩⟩
+-- /--
+-- Return an index for an element in a list, given that the element is a member of the list.
+-- This function is `O(xs.length)`, as it just traverses the list looking the element.
+-- -/
+-- def idx_of_mem [DecidableEq α] {xs : List α} (h : y ∈ xs) : Fin xs.length :=
+--   ⟨xs.findIdx (· = y), xs.findIdx_lt_length_of_exists ⟨y, h, by simp⟩⟩
 
-theorem idx_of_mem_spec [DecidableEq α] {xs : List α} (w : y ∈ xs) :
-    xs.get (xs.idx_of_mem w) = y :=
-  decide_eq_true_eq.mp (List.findIdx_get (p := (· = y)) (xs := xs))
+-- theorem idx_of_mem_spec [DecidableEq α] {xs : List α} (w : y ∈ xs) :
+--     xs.get (xs.idx_of_mem w) = y :=
+--   decide_eq_true_eq.mp (List.findIdx_get (p := (· = y)) (xs := xs))
 
+-- https://github.com/leanprover/std4/pull/450
 @[simp]
 theorem map_id''' (l : List α) : l.map (fun a => a) = l := l.map_id
 
-theorem mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
-  (mem_filter.mp h).1
+-- theorem mem_of_mem_filter' {a : α} {l} (h : a ∈ filter p l) : a ∈ l :=
+--   (mem_filter.mp h).1
 
-theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
-    a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
-  by_cases h : a = b
-  · subst h
-    simp [or_iff_right_of_imp List.mem_of_mem_erase]
-  · simp_all
+-- theorem mem_iff_mem_erase_or_eq [DecidableEq α] (l : List α) (a b : α) :
+--     a ∈ l ↔ a ∈ l.erase b ∨ (a = b ∧ b ∈ l) := by
+--   by_cases h : a = b
+--   · subst h
+--     simp [or_iff_right_of_imp List.mem_of_mem_erase]
+--   · simp_all
 
 end List
 
@@ -241,12 +242,12 @@ namespace List
 
 end List
 
-namespace Std.HashMap
+-- namespace Std.HashMap
 
-def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
-  m.fold (init := true) fun r a b => r && f a b
+-- def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
+--   m.fold (init := true) fun r a b => r && f a b
 
-end Std.HashMap
+-- end Std.HashMap
 
 -- namespace Std.AssocList
 
