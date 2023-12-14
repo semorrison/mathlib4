@@ -35,7 +35,22 @@ theorem sub_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a - c = b - d 
 theorem neg_congr {a b : Int} (h₁ : a = b) : -a = -b := by
   subst h₁; rfl
 
+theorem ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
+  Int.ofNat_eq_zero.mpr (Nat.sub_eq_zero_of_le (Nat.le_of_lt (Nat.not_le.mp h)))
+
+theorem ofNat_sub_dichotomy {a b : Nat} :
+    b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0 := by
+  by_cases h : b ≤ a
+  · left
+    simpa [Int.ofNat_sub h]
+  · right
+    simpa [Int.ofNat_sub_eq_zero h] using (Nat.not_le.mp h)
+
 end Int
 
-theorem Nat.lt_of_gt {x y : Nat} (h : x > y) : y < x := gt_iff_lt.mp h
-theorem Nat.le_of_ge {x y : Nat} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
+namespace Nat
+
+theorem lt_of_gt {x y : Nat} (h : x > y) : y < x := gt_iff_lt.mp h
+theorem le_of_ge {x y : Nat} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h
+
+end Nat

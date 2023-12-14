@@ -2,6 +2,16 @@ import Std.Data.List.Lemmas
 import Std.Data.Int.Lemmas
 import Std.Tactic.LeftRight
 
+/-!
+# `List.nonzeroMinimum`, `List.minNatAbs`, `List.maxNatAbs`
+
+`List.minNatAbs` computes the minimum non-zero absolute value of a `List Int`.
+This is not generally useful outside of the implementation of the `omega` tactic,
+so we keep it in the `Std/Tactic/Omega` directory
+(although the definitions are in the `List` namespace).
+
+-/
+
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
@@ -123,4 +133,5 @@ theorem minNatAbs_eq_nonzero_iff (xs : List Int) (w : z ≠ 0) :
 
 @[simp] theorem minNatAbs_nil : ([] : List Int).minNatAbs = 0 := rfl
 
+/-- The maximum absolute value in a list of integers. -/
 def maxNatAbs (xs : List Int) : Nat := xs.map Int.natAbs |>.maximum? |>.getD 0

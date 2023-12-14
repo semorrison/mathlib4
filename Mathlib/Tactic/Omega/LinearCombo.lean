@@ -1,22 +1,9 @@
-import Mathlib.Tactic.Omega.Coeffs.IntList
+import Mathlib.Tactic.Omega.Coeffs.IntList -- replace `IntList` with `IntDict` here to use sparse representations
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 initialize Lean.registerTraceClass `omega
-
-/-!
-# Abstract description of integer linear programming problems.
-
-We define `LinearCombo`, `Problem`, and `DisjunctiveProblem`.
-These are abstract descriptions of integer linear programming problems.
-
-In particular, they are intended to be easy to reason about,
-but need not be fast to compute with.
-
-Later we will define variants carrying additional data required to run Omega efficiently,
-and transfer the proofs from these simpler versions.
--/
 
 namespace Std.Tactic.Omega
 

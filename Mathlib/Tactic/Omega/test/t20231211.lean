@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Omega.Impl2.Frontend
+import Mathlib.Tactic.Omega.Frontend
 
 open Std.Tactic.Omega ProofProducing
 

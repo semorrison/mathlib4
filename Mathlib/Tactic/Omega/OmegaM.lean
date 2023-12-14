@@ -1,4 +1,5 @@
-import Mathlib.Tactic.Omega.Impl2.Problem
+import Mathlib.Tactic.Omega.Int
+import Mathlib.Tactic.Omega.LinearCombo
 
 set_option autoImplicit true
 
@@ -60,16 +61,6 @@ def int? (n : Expr) : Option Int :=
   | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
   | _ => n.int?
 
-theorem Int.ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
-  Int.ofNat_eq_zero.mpr (Nat.sub_eq_zero_of_le (Nat.le_of_lt (Nat.not_le.mp h)))
-
-theorem Int.ofNat_sub_dichotomy {a b : Nat} :
-    b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0 := by
-  by_cases h : b ≤ a
-  · left
-    simpa [Int.ofNat_sub h]
-  · right
-    simpa [Int.ofNat_sub_eq_zero h] using (Nat.not_le.mp h)
 
 /--
 Analyzes a newly recorded atom,

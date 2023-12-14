@@ -1,21 +1,34 @@
-import Mathlib.Tactic.Omega.Problem
+import Mathlib.Tactic.Omega.LinearCombo
 import Mathlib.Tactic.Omega.Int
-import Mathlib.Tactic.Omega.Impl.OmegaM
-import Mathlib.Tactic.Omega.Impl.Problem
+import Mathlib.Tactic.Omega.Core
 
 set_option autoImplicit true
 
 open Lean Meta
 
-namespace Omega
+/--
+Given `p : P ∨ Q`, split the goal into two subgoals: one containing the hypothesis `h : P` and another containing `h : Q`.
+-/
+def _root_.Lean.MVarId.cases2 (mvarId : MVarId) (p : Expr) (hName : Name := `h) : MetaM ((MVarId × FVarId) × (MVarId × FVarId)) := do
+  let mvarId ← mvarId.assert `hByCases (← inferType p) p
+  let (fvarId, mvarId) ← mvarId.intro1
+  let #[s₁, s₂] ← mvarId.cases fvarId #[{ varNames := [hName] }, { varNames := [hName] }] |
+    throwError "'cases' tactic failed, unexpected number of subgoals"
+  let #[Expr.fvar f₁ ..] ← pure s₁.fields | throwError "'cases' tactic failed, unexpected new hypothesis"
+  let #[Expr.fvar f₂ ..] ← pure s₂.fields | throwError "'cases' tactic failed, unexpected new hypothesis"
+  return ((s₁.mvarId, f₁), (s₂.mvarId, f₂))
+
+namespace Std.Tactic.Omega
 
 /--
 A partially processed `omega` context.
 
 We have:
+* a `ProofProducing.Problem` representing the integer linear constraints extracted so far,
+  and their proofs
 * the unprocessed `facts : List Expr` taken from the local context,
-* a `Problem` representing the integer linear constraints extracted so far, and
-* a proof, wrapped in the `OmegaM` monad, that this problem is satisfiable in the local context.
+* the unprocessed `disjunctions : List Expr`,
+  which will only be split one at a time if we can't otherwise find a contradiction.
 
 We begin with `facts := ← getLocalHyps` and `problem := .trivial`,
 and progressively process the facts.
@@ -24,21 +37,17 @@ As we process the facts, we may generate additional facts
 (e.g. about coercions and integer divisions).
 To avoid duplicates, we maintain a `HashSet` of previously processed facts.
 
-TODO: which should be running the "tidy" steps of the `omega` algorithm as we process facts,
-so easy problems with contradictions can be solved quickly.
-
-TODO: we may even want to solve easy equalities as we find them. This would require recording their
-solutions and applying the substitutions to all later constraints as they are constructed.
+TODO: we may want to solve equalities as we find them.
 -/
 structure MetaProblem where
+  /-- An integer linear arithmetic problem. -/
+  problem : ProofProducing.Problem := {}
   /-- Pending facts which have not been processed yet. -/
   facts : List Expr := []
+  /-- Pending disjunctions, which we will case split one at a time if we can't get a contradiction. -/
+  disjunctions : List Expr := []
   /-- Facts which have already been processed; we keep these to avoid duplicates. -/
   processedFacts : HashSet Expr := ∅
-  /-- An integer linear arithmetic problem. -/
-  problem : Problem := .trivial
-  /-- A proof, in the `OmegaM` monad, that `problem` is satisfiable at the atoms. -/
-  sat : OmegaM Expr := trivialSat
 
 /-- Construct the term with type hint `(Eq.refl a : a = b)`-/
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
@@ -48,11 +57,6 @@ instance : ToExpr LinearCombo where
   toExpr lc :=
     (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
   toTypeExpr := .const ``LinearCombo []
-
-instance : ToExpr Problem where
-  toExpr p := (Expr.const ``Problem.mk []).app (toExpr p.possible)
-    |>.app (toExpr p.equalities) |>.app (toExpr p.inequalities)
-  toTypeExpr := .const ``Problem []
 
 /-- Construct the `rfl` proof that `lc.eval atoms = e`. -/
 def mkEvalRflProof (e : Expr) (lc : LinearCombo) : OmegaM Expr := do
@@ -71,8 +75,7 @@ def mkCoordinateEvalAtomsEq (e : Expr) (n : Nat) : OmegaM Expr := do
     let atoms ← atomsList
     let n := toExpr n
     let eq ← mkEqReflWithExpectedType e
-      (mkApp3 (.const ``Option.getD [.zero]) (.const ``Int [])
-        (mkApp3 (.const ``List.get? [.zero]) (.const ``Int []) atoms n) (toExpr (0 : Int)))
+      (mkApp2 (.const ``Coeffs.get []) atoms n)
     mkEqTrans eq (← mkEqSymm (mkApp2 (.const ``LinearCombo.coordinate_eval []) n atoms))
 
 /-- Construct the linear combination (and its associated proof and new facts) for an atom. -/
@@ -80,7 +83,7 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
--- TODO this can be removed at `v4.4.0-rc1`, Kyle has PR'd it to Lean.
+-- TODO this can be removed after leanprover/lean4#2900
 @[inherit_doc mkAppN]
 macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
@@ -114,12 +117,12 @@ Also returns:
   * for each new atom `a` of the form `((x : Nat) : Int)`, the fact that `0 ≤ a`
   * for each new atom `a` of the form `x / k`, for `k` a positive numeral, the facts that
     `k * a ≤ x < (k + 1) * a`
+  * for each new atom of the form `((a - b : Nat) : Int)`, the fact:
+    `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`
 
 We also transform the expression as we descend into it:
 * pushing coercions: `↑(x + y)`, `↑(x * y)`, `↑(x / k)`, `↑(x % k)`, `↑k`
 * unfolding `emod`: `x % k` → `x - x / k`
-
-Finally, the `OmegaM` monad records appearances of `↑(x - y)` atoms, for later case splitting.
 -/
 partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
   trace[omega] "processing {e}"
@@ -188,16 +191,11 @@ where
 
 end
 
-/-- The statement that a problem is satisfied at `atomsList`. -/
-def satType (p : Problem) : OmegaM Expr :=
-  return .app (.app (.const ``Problem.sat []) (toExpr p)) (← atomsList)
-
 namespace MetaProblem
 
 /-- The trivial `MetaProblem`, with no facts to processs and a trivial `Problem`. -/
 def trivial : MetaProblem where
-  problem := .trivial
-  sat := trivialSat
+  problem := {}
 
 instance : Inhabited MetaProblem := ⟨trivial⟩
 
@@ -209,27 +207,26 @@ def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo x
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
+  trace[omega] "Adding proof of {lc} = 0"
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addEquality lc
-    sat := do
-      mkAppM ``Problem.addEquality_sat #[← p.sat, ← mkEqTrans (← mkEqSymm (← prf)) h] }
+    problem := p.problem.addEquality lc.const lc.coeffs
+      (some do mkEqTrans (← mkEqSymm (← prf)) h) }
 
 /--
 Add an integer inequality to the `Problem`.
 -/
--- TODO once we've got this working, we should run `tidy` at every step
 def addIntInequality (p : MetaProblem) (h y : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo y
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
     if p.processedFacts.contains e then s else s.insert e
+  trace[omega] "Adding proof of {lc} ≥ 0"
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addInequality lc
-    sat := do
-      mkAppM ``Problem.addInequality_sat #[← p.sat, ← mkAppM ``le_of_le_of_eq #[h, (← prf)]] }
+    problem := p.problem.addInequality lc.const lc.coeffs
+      (some do mkAppM ``le_of_le_of_eq #[h, (← prf)]) }
 
 /-- Given a fact `h` with type `¬ P`, return a more useful fact obtained by pushing the negation. -/
 def pushNot (h P : Expr) : Option Expr := do
@@ -242,8 +239,20 @@ def pushNot (h P : Expr) : Option Expr := do
   | (``GE.ge, #[.const ``Int [], _, x, y]) => some (mkApp3 (.const ``Int.lt_of_not_le []) y x h)
   | (``GT.gt, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.le_of_not_lt []) y x h)
   | (``GE.ge, #[.const ``Nat [], _, x, y]) => some (mkApp3 (.const ``Nat.lt_of_not_le []) y x h)
-  -- TODO add support for `¬ a ∣ b`?
+  | (``Eq, #[.const ``Nat [], x, y]) => some (mkApp3 (.const ``Nat.lt_or_gt_of_ne []) x y h)
+  | (``Eq, #[.const ``Int [], x, y]) => some (mkApp3 (.const ``Int.lt_or_gt_of_ne []) x y h)
+  | (``Dvd.dvd, #[.const ``Nat [], _, k, x]) =>
+    some (mkApp3 (.const ``Nat.emod_pos_of_not_dvd []) k x h)
+  | (``Dvd.dvd, #[.const ``Int [], _, k, x]) =>
+    -- This introduces a disjunction that could be avoided by checking `k ≠ 0`.
+    some (mkApp3 (.const ``Int.emod_pos_of_not_dvd []) k x h)
+  | (``Or, #[P₁, P₂]) => some (mkApp3 (.const ``and_not_not_of_not_or []) P₁ P₂ h)
+  | (``And, #[P₁, P₂]) =>
+    some (mkApp5 (.const ``Decidable.or_not_not_of_not_and []) P₁ P₂
+      (.app (.const ``Classical.propDecidable []) P₁)
+      (.app (.const ``Classical.propDecidable []) P₂) h)
   | _ => none
+
 
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
   if ¬ p.problem.possible then
@@ -273,11 +282,14 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
       p.addFact (mkApp3 (.const ``Int.ofNat_lt_of_lt []) x y h)
     | (``LE.le, #[.const ``Nat [], _, x, y]) =>
       p.addFact (mkApp3 (.const ``Int.ofNat_le_of_le []) x y h)
-    -- TODO Add support for `k ∣ b`?
-    | (``False, #[]) => pure <|
-      { facts := []
-        problem := .impossible,
-        sat := pure (.app (.app (.const ``False.elim []) (← satType p.problem)) h) }
+    | (``Dvd.dvd, #[.const ``Nat [], _, k, x]) =>
+      p.addFact (mkApp3 (.const ``Nat.mod_eq_zero_of_dvd []) k x h)
+    | (``Dvd.dvd, #[.const ``Int [], _, k, x]) =>
+      p.addFact (mkApp3 (.const ``Int.mod_eq_zero_of_dvd []) k x h)
+    | (``And, #[t₁, t₂]) => do
+        (← p.addFact (mkApp3 (.const ``And.left []) t₁ t₂ h)).addFact
+          (mkApp3 (.const ``And.right []) t₁ t₂ h)
+    | (``Or, #[_, _]) => return { p with disjunctions := p.disjunctions.insert' h }
     | _ => pure p
 
 /--
@@ -298,71 +310,67 @@ partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
 
 end MetaProblem
 
-def runOmega (p : Problem) : Problem :=
-  let p₀ := Impl.Problem.of p
-  let p₁ := p₀.tidy
-  let p₂ := p₁.eliminateEqualities 100
-  let p₃ := p₂.eliminateInequalities 100
-  p₃.to
-
-def runOmega_map (p : Problem) : p → (runOmega p) :=
-  let p₀ := Impl.Problem.of p
-  let p₁ := p₀.tidy
-  let p₂ := p₁.eliminateEqualities 100
-  let p₃ := p₂.eliminateInequalities 100
-  Impl.Problem.map_to p₃ ∘ p₂.eliminateInequalities_map 100 ∘ p₁.eliminateEqualities_equiv 100 ∘ p₀.tidy_equiv.mpr ∘ Impl.Problem.map_of p
-
-def unsat_of_impossible {p : Problem} (h : (runOmega p).possible = false) : p.unsat :=
-  (runOmega p).unsat_of_impossible h ∘ runOmega_map p
-
-def Problem.of {p : Problem} {v} (h : p.sat v) : p := ⟨v, h⟩
-
-theorem Int.ofNat_sub_eq_zero {b a : Nat} (h : ¬ b ≤ a) : ((a - b : Nat) : Int) = 0 :=
-  Int.ofNat_eq_zero.mpr (Nat.sub_eq_zero_of_le (Nat.le_of_lt (Nat.not_le.mp h)))
-
 partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withContext do
   let m' ← m.processFacts
   guard m'.facts.isEmpty
   let p := m'.problem
-  let sat := m'.sat
   trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
-  if (runOmega p).possible then
-    match ← popSub with
-    | none => throwError "omega did not find a contradiction" -- TODO later, show a witness?
-    | some (a, b) =>
-      trace[omega] "Case splitting on {b} ≤ {a}"
-      let (⟨gpos, hpos⟩, ⟨gneg, hneg⟩) ← g.byCases (← mkLE b a)
-      let wpos := mkApp3 (.const ``Int.ofNat_sub []) b a (.fvar hpos)
-      trace[omega] "Adding facts:\n{← gpos.withContext <| inferType (.fvar hpos)}\n{← inferType wpos}"
-      let mpos := { m' with facts := [.fvar hpos, wpos] }
-      savingState do omegaImpl mpos gpos
-      let wneg := mkApp3 (.const ``Int.ofNat_sub_eq_zero []) b a (.fvar hneg)
-      trace[omega] "Adding facts:\n{← gneg.withContext <| inferType (.fvar hneg)}\n{← inferType wneg}"
-      let mneg := { m' with facts := [.fvar hneg, wneg] }
-      omegaImpl mneg gneg
-  else do
-    let s ← mkAppM ``Problem.possible #[← mkAppM ``runOmega #[toExpr p]]
-    let ty ← mkAppM ``Eq #[s, .const ``Bool.false []]
-    let r := (← mkFreshExprMVar ty).mvarId!
-    r.assign (mkApp2 (mkConst ``Eq.refl [.succ .zero]) (.const ``Bool []) (.const ``Bool.false []))
-    -- r.assign (← mkSorry ty false)
-    g.assign <| (← mkAppM ``unsat_of_impossible #[.mvar r]).app (← mkAppM ``Problem.of #[← sat])
+  let p' ← if p.possible then p.solveEqualities else pure p
+  trace[omega] "After solving equalities:\n{← atomsList}\n{p'}"
+  let p'' ← if p'.possible then p'.run' else pure p'
+  trace[omega] "After elimination:\n{← atomsList}\n{p''}"
+  if p''.possible then
+    match m'.disjunctions with
+    | [] => throwError "omega did not find a contradiction:\n{p''}"
+    | h :: t =>
+      trace[omega] "Case splitting on {← inferType h}"
+      let (⟨g₁, h₁⟩, ⟨g₂, h₂⟩) ← g.cases2 h
+      trace[omega] "Adding facts:\n{← g₁.withContext <| inferType (.fvar h₁)}"
+      let m₁ := { m' with
+        problem := p -- I would really hope that we can use p' here (reuse already solved equations)
+        facts := [.fvar h₁]
+        disjunctions := t }
+      -- Some way to check that the disjunction actually added something usable?
+      savingState do omegaImpl m₁ g₁
+      trace[omega] "Adding facts:\n{← g₂.withContext <| inferType (.fvar h₂)}"
+      let m₂ := { m' with
+        problem := p
+        facts := [.fvar h₂]
+        disjunctions := t }
+      omegaImpl m₂ g₂
+  else
+    match p''.proveFalse? with
+    | none => throwError "omega found a contradiction, but didn't produce a proof of False"
+    | some prf =>
+      trace[omega] "Justification:\n{p''.explanation?.get!}"
+      let prf ← instantiateMVars (← prf)
+      trace[omega] "omega found a contradiction, proving {← inferType prf}"
+      trace[omega] "{prf}"
+      g.assign prf
 
 /--
 Given a collection of facts, try prove `False` using the omega algorithm,
 and close the goal using that.
-
-(We need the goal present in case we need to do case splits.)
 -/
 def omega (facts : List Expr) (g : MVarId) : MetaM Unit := OmegaM.run do
   omegaImpl { facts } g
 
-syntax "false_or_by_contra" : tactic
+/--
+Changes the goal to `False`, retaining as much information as possible:
 
+If the goal is `False`, do nothing.
+If the goal is `¬ P`, introduce `P`.
+If the goal is `x ≠ y`, introduce `x = y`.
+Otherwise, for a goal `P`, replace it with `¬ ¬ P` and introduce `¬ P`.
+-/
+syntax (name := false_or_by_contra) "false_or_by_contra" : tactic
+
+@[inherit_doc false_or_by_contra]
 def falseOrByContra (g : MVarId) : MetaM (List MVarId) := do
   match ← g.getType with
   | .const ``False _ => pure [g]
-  | .app (.const ``Not _) _ => pure [(← g.intro1).2]
+  | .app (.const ``Not _) _
+  | mkAppN (.const ``Ne _) #[_, _, _] => pure [(← g.intro1).2]
   | _ => (← g.applyConst ``Classical.byContradiction).mapM fun s => (·.2) <$> s.intro1
 
 open Lean Elab Tactic
@@ -377,11 +385,11 @@ It is not yet a full decision procedure (no "dark" or "grey" shadows),
 but should be effective on many problems.
 
 We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y` for `x y` in `Nat` or `Int`,
-along with negations of inequalities. (We do not do case splits on `h : x ≠ y`.)
+along with negations of inequalities.
 
 We decompose the sides of the inequalities as linear combinations of atoms.
 
-If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxilliary variables
+If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxiliary variables
 and the relevant inequalities.
 
 On the first pass, we do not perform case splits on natural subtraction.
