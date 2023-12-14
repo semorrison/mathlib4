@@ -1,4 +1,6 @@
-import Std
+import Std.Data.List.Lemmas
+import Std.Data.Int.Lemmas
+import Std.Tactic.LeftRight
 
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
