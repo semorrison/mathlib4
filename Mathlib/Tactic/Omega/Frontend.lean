@@ -1,6 +1,12 @@
-import Mathlib.Tactic.Omega.LinearCombo
-import Mathlib.Tactic.Omega.Int
+/-
+Copyright (c) 2023 Lean FRO, LLC. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Scott Morrison
+-/
 import Mathlib.Tactic.Omega.Core
+import Mathlib.Tactic.Omega.LinearCombo
+import Mathlib.Tactic.Omega.Logic
+import Mathlib.Tactic.Omega.Int
 
 /-!
 # `omega`

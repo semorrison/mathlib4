@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2023 Lean FRO, LLC. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Scott Morrison
+-/
 import Std
 
 import Mathlib.Tactic.LibrarySearch
@@ -7,8 +12,7 @@ set_option relaxedAutoImplicit true
 
 open Lean (HashSet)
 
-alias ⟨and_not_not_of_not_or, _⟩ := not_or
-alias ⟨Decidable.or_not_not_of_not_and, _⟩ := Decidable.not_and_iff_or_not
+
 
 
 -- https://github.com/leanprover/std4/pull/448
