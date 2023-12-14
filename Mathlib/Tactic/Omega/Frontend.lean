@@ -53,11 +53,6 @@ structure MetaProblem where
 def mkEqReflWithExpectedType (a b : Expr) : MetaM Expr := do
   mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
 
-instance : ToExpr LinearCombo where
-  toExpr lc :=
-    (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
-  toTypeExpr := .const ``LinearCombo []
-
 /-- Construct the `rfl` proof that `lc.eval atoms = e`. -/
 def mkEvalRflProof (e : Expr) (lc : LinearCombo) : OmegaM Expr := do
   mkEqReflWithExpectedType e (mkApp2 (.const ``LinearCombo.eval []) (toExpr lc) (← atomsList))

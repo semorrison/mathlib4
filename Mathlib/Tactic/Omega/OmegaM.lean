@@ -5,17 +5,9 @@ set_option autoImplicit true
 
 open Lean Meta
 
-instance [BEq α] [Hashable α] : Singleton α (HashSet α) := ⟨fun x => HashSet.empty.insert x⟩
-instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.insert a⟩
-
-instance name_collision : ToExpr Int where
-  toTypeExpr := .const ``Int []
-  toExpr i := match i with
-    | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
-    | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
-
 namespace Std.Tactic.Omega
 
+/-- The internal state for the `OmegaM` monad, recording previously encountered atoms. -/
 structure State where
   /-- The atoms up-to-defeq encountered so far. -/
   atoms : Array Expr := #[]
@@ -23,15 +15,16 @@ structure State where
 abbrev OmegaM' := StateRefT State MetaM
 
 /--
-Cache of expressions that have been visited
+Cache of expressions that have been visited, and their reflection as a linear combination.
 -/
 def Cache : Type := HashMap Expr (LinearCombo × OmegaM' Expr)
 
 abbrev OmegaM := StateRefT Cache OmegaM'
 
-/-- Run a computation in the `OmegaM` monad. -/
+/-- Run a computation in the `OmegaM` monad, starting with no recorded atoms. -/
 def OmegaM.run (m : OmegaM α) : MetaM α := m.run' HashMap.empty |>.run' {}
 
+/-- Retrieve the list of atoms. -/
 def atoms : OmegaM (List Expr) := return (← getThe State).atoms.toList
 
 /-- Return the `Expr` representing the list of atoms. -/
@@ -61,7 +54,6 @@ def int? (n : Expr) : Option Int :=
   | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
   | _ => n.int?
 
-
 /--
 Analyzes a newly recorded atom,
 returning a collection of interesting facts about it that should be added to the context.
@@ -69,15 +61,18 @@ returning a collection of interesting facts about it that should be added to the
 def analyzeAtom (e : Expr) : MetaM (HashSet Expr) := do
   match e.getAppFnArgs with
   | (``Nat.cast, #[_, _, e']) =>
+    -- Casts of natural numbers are non-negative.
     let r := {Expr.app (.const ``Int.ofNat_nonneg []) e'}
     return match e'.getAppFnArgs with
     | (``HSub.hSub, #[_, _, _, _, a, b]) =>
+      -- `((a - b : Nat) : Int)` gives a dichotomy
       r.insert (mkApp2 (.const ``Int.ofNat_sub_dichotomy []) a b)
     | _ => r
   | (`HDiv.hDiv, #[_, _, _, _, x, k]) => match nat? k with
     | none
     | some 0 => pure ∅
     | some _ =>
+      -- `k * x/k ≤ x < k * x/k + k`
       let ne_zero := mkApp3 (.const ``Ne [.succ .zero]) (.const ``Int []) k (toExpr (0 : Int))
       let pos := mkApp4 (.const ``LT.lt [.zero]) (.const ``Int []) (.const ``Int.instLTInt [])
         (toExpr (0 : Int)) k
@@ -92,7 +87,7 @@ Look up an expression in the atoms, recording it if it has not previously appear
 Return its index, and, if it is new, a collection of interesting facts about the atom.
 * for each new atom `a` of the form `((x : Nat) : Int)`, the fact that `0 ≤ a`
 * for each new atom `a` of the form `x / k`, for `k` a positive numeral, the facts that
-  `k * a ≤ x < (k + 1) * a`
+  `k * a ≤ x < k * a + k`
 * for each new atom of the form `((a - b : Nat) : Int)`, the fact:
   `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`
 -/

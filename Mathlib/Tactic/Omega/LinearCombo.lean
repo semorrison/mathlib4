@@ -12,10 +12,17 @@ structure LinearCombo where
   coeffs : Coeffs := {}
 deriving DecidableEq, Repr
 
-instance : ToString LinearCombo where
-  toString lc := s!"{lc.const}{String.join <| lc.coeffs.toList.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
-
 namespace LinearCombo
+
+instance : ToString LinearCombo where
+  toString lc :=
+    s!"{lc.const}{String.join <| lc.coeffs.toList.enum.map fun ⟨i, c⟩ => s!" + {c} * x{i+1}"}"
+
+open Lean in
+instance : ToExpr LinearCombo where
+  toExpr lc :=
+    (Expr.const ``LinearCombo.mk []).app (toExpr lc.const) |>.app (toExpr lc.coeffs)
+  toTypeExpr := .const ``LinearCombo []
 
 instance : Inhabited LinearCombo := ⟨{const := 1}⟩
 

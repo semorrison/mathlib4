@@ -5,16 +5,22 @@ import Mathlib.Tactic.LibrarySearch
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
+open Lean (HashSet)
+
+-- https://github.com/leanprover/std4/pull/448
+instance [BEq α] [Hashable α] : Singleton α (HashSet α) := ⟨fun x => HashSet.empty.insert x⟩
+instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.insert a⟩
+
+-- https://github.com/leanprover/std4/pull/449
+open Lean in
+instance name_collision : ToExpr Int where
+  toTypeExpr := .const ``Int []
+  toExpr i := match i with
+    | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
+    | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
+
 alias ⟨and_not_not_of_not_or, _⟩ := not_or
 alias ⟨Decidable.or_not_not_of_not_and, _⟩ := Decidable.not_and_iff_or_not
-
-/-- A type synonym to equip a type with its lexicographic order. -/
-def Lex' (α : Type _) := α
-
-@[inherit_doc] notation:35 α " ×ₗ " β:34 => Lex' (Prod α β)
-
-instance Prod.Lex.instLT' (α β : Type _) [LT α] [LT β] : LT (α ×ₗ β) where
-  lt := Prod.Lex (· < ·) (· < ·)
 
 -- Next three in https://github.com/leanprover/std4/pull/438
 /-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
