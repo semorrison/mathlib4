@@ -7,6 +7,7 @@ import Mathlib.Tactic.Omega.Core
 import Mathlib.Tactic.Omega.LinearCombo
 import Mathlib.Tactic.Omega.Logic
 import Mathlib.Tactic.Omega.Int
+import Mathlib.Lean.Meta -- https://github.com/leanprover/std4/pull/457 https://github.com/leanprover/std4/pull/458
 
 /-!
 # `omega`
@@ -18,14 +19,18 @@ The `MetaM` level `omega` tactic which takes a `List Expr` of facts,
 and tries to discharge the goal by proving `False`.
 
 The user-facing `omega` tactic first calls `false_or_by_contra`, and then invokes the `omega` tactic
-on all hypotheses. In the `false_or_by_contra` step, we:
+on all hypotheses.
+
+### Pre-processing
+
+In the `false_or_by_contra` step, we:
 * if the goal is `False`, do nothing,
 * if the goal is `¬ P`, introduce `P`,
 * if the goal is `x ≠ y`, introduce `x = y`,
 * otherwise, for a goal `P`, replace it with `¬ ¬ P` and introduce `¬ P`.
 
 The `omega` tactic pre-processes the hypotheses in the following ways:
-* Replace `x > y` with `x ≥ y + 1`.
+* Replace `x > y` for `x y : Nat` or `x y : Int` with `x ≥ y + 1`.
 * Given `x ≥ y` for `x : Nat`, replace it with `(x : Int) ≥ (y : Int)`.
 * Push `Nat`-to-`Int` coercions inwards across `+`, `*`, `/`, `%`.
 * Replace `k ∣ x` for a literal `k : Nat` with `x % k = 0`,
@@ -41,13 +46,15 @@ The `omega` tactic pre-processes the hypotheses in the following ways:
   `b ≤ a ∧ ((a - b : Nat) : Int) = a - b ∨ a < b ∧ ((a - b : Nat) : Int) = 0`.
   We don't immediately split this; see the discussion below for how disjunctions are handled.
 
-After this preprocessing stage, we have a collection of linear inequalities (all using `≤`)
-and equalities in some set of atoms.
+After this preprocessing stage, we have a collection of linear inequalities
+(all using `≤` rather than `<`) and equalities in some set of atoms.
 
 TODO: We should identify atoms up to associativity and commutativity,
 so that `omega` can handle problems such as `a * b < 0 && b * a > 0 → False`.
 This should be a relatively easy modification of the `lookup` function in `OmegaM`.
-After doing so, we should allow the preprocessor to distribute multiplication over addition.
+After doing so, we could allow the preprocessor to distribute multiplication over addition.
+
+### Normalization
 
 Throughout the remainder of the algorithm, we apply the following normalization steps to
 all linear constraints:
@@ -57,9 +64,13 @@ all linear constraints:
   check they are compatible. If they are tight, mark the pair of constraints as an equality.
   If they are inconsistent, stop further processing.
 
+### Solving equalities
+
 The next step is to solve all equalities.
+
 We first solve any equalities that have a `±1` coefficient;
 these allow us to eliminate that variable.
+
 After this, there may be equalities remaining with all coefficients having absolute value greater
 than one. We select an equality `c₀ + ∑ cᵢ * xᵢ = 0` with smallest minimal absolute value
 of the `cᵢ`, breaking ties by preferring equalities with smallest maximal absolute value.
@@ -69,34 +80,65 @@ Here `bmod` is "balanced mod", taking values in `[- m/2, (m - 1)/2]`.
 This equality holds (for some value of `α`) because the left hand side differs from the left hand
 side of the original equality by a multiple of `m`.
 Moreover, in this equality the coefficient of `xⱼ` is `±1`, so we can solve and eliminate `xⱼ`.
+
 So far this isn't progress: we've introduced a new variable and eliminated a variable.
 However, this process terminates, as the pair `(c, C)` lexicographically decreases,
 where `c` is the smallest minimal absolute value and `C` is the smallest maximal absolute value
 amongst those equalities with minimal absolute value `c`.
 (Happily because we're running this in metaprogramming code, we don't actually need to prove this
-termination!)
+termination! If we later want to upgrade to a decision procedure, or to produce counterexamples
+we would need to do this. It's certainly possible, and existed in an earlier prototype version.)
+
+### Solving inequalities
 
 After solving all equalities, we turn to the inequalities.
+
 We need to select a variable to eliminate; this choice is discussed below.
+
+#### Shadows
+
 The omega algorithm indicates we should consider three subproblems,
 called the "real", "dark", and "grey" shadows.
 (In fact the "grey" shadow is a disjunction of potentially many problems.)
 Our problem is satisfiable if and only if the real shadow is satisfiable
 and either the dark or grey shadow is satisfiable.
+
 Currently we do not implement either the dark or grey shadows, and thus if the real shadow is
 satisfiable we must fail, and report that we couldn't find a contradiction, even though the
 problem may be unsatisfiable.
-Fortunately, in many cases it is possible to choose a variable to eliminate that results in
-the real and dark shadows coinciding, and the grey shadows being empty. In this situation
-we don't lose anything by ignoring the dark and grey shadows.
 
 In practical problems, it appears to be relatively rare that we fail because of not handling the
 dark and grey shadows.
 
-The real shadow for a variable `i` is just the Fourier-Motzkin elimination.
-TODO: finish writing this description!
+Fortunately, in many cases it is possible to choose a variable to eliminate such that
+the real and dark shadows coincide, and the grey shadows are empty. In this situation
+we don't lose anything by ignoring the dark and grey shadows.
+We call this situation an exact elimination.
+A sufficient condition for exactness is that either all upper bounds on `xᵢ` have unit coefficient,
+or all lower bounds on `xᵢ` has unit coefficient.
+We always prefer to select the value of `i` so that this condition holds, if possible.
+We break ties by preferring to select a value of `i` that minimizes the number of new constraints
+introduced in the real shadow.
 
+#### The real shadow: Fourier-Motzkin elimination
+
+The real shadow for a variable `i` is just the Fourier-Motzkin elimination.
+
+We begin discard all inequalities involving the variable `i`.
+
+Then, for each pair of constraints `f ≤ c * xᵢ` and `c' * xᵢ ≤ f'`
+with both `c` and `c'` positive (i.e. for each pair of an upper and lower bound on `xᵢ`)
+we introduce the new constraint `c' * f - c * f' ≤ 0`.
+
+(Note that if there are only upper bounds on `xᵢ`, or only lower bounds on `xᵢ` this step
+simply discards inequalities.)
+
+#### The dark and grey shadows
+
+TODO: explain the shadows
 TODO: implement the dark and grey shadows.
+
+### Disjunctions
 
 TODO: explain how we handle disjunctions.
 
@@ -183,7 +225,7 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
--- TODO this can be removed after leanprover/lean4#2900
+-- https://github.com/leanprover/lean4/pull/2900
 @[inherit_doc mkAppN]
 macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
@@ -258,7 +300,7 @@ partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr ×
         (← mkEqSymm neg_eval)
     pure (-l, prf', facts)
   | (``HMul.hMul, #[_, _, _, _, n, e']) =>
-    match int? n with
+    match intCast? n with
     | some n' =>
       let (l, prf, facts) ← asLinearCombo e'
       let prf' : OmegaM Expr := do
@@ -388,7 +430,7 @@ partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
     | (``And, #[t₁, t₂]) => do
         (← p.addFact (mkApp3 (.const ``And.left []) t₁ t₂ h)).addFact
           (mkApp3 (.const ``And.right []) t₁ t₂ h)
-    | (``Or, #[_, _]) => return { p with disjunctions := p.disjunctions.insert' h }
+    | (``Or, #[_, _]) => return { p with disjunctions := p.disjunctions.insert h }
     | _ => pure p
 
 /--
@@ -453,6 +495,8 @@ and close the goal using that.
 def omega (facts : List Expr) (g : MVarId) : MetaM Unit := OmegaM.run do
   omegaImpl { facts } g
 
+-- `false_or_by_contra` has been PR'd as https://github.com/leanprover/std4/pull/460
+
 /--
 Changes the goal to `False`, retaining as much information as possible:
 
@@ -482,12 +526,12 @@ The `omega` tactic, for resolving integer and natural linear arithmetic problems
 It is not yet a full decision procedure (no "dark" or "grey" shadows),
 but should be effective on many problems.
 
-We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y` for `x y` in `Nat` or `Int`,
-along with negations of inequalities.
+We handle hypotheses of the form `x = y`, `x < y`, `x ≤ y`, and `k ∣ x` for `x y` in `Nat` or `Int`
+(and `k` a literal), along with negations of these statements.
 
 We decompose the sides of the inequalities as linear combinations of atoms.
 
-If we encounter `x / n` or `x % n` for literal integers `n` we introduce new auxiliary variables
+If we encounter `x / k` or `x % k` for literal integers `k` we introduce new auxiliary variables
 and the relevant inequalities.
 
 On the first pass, we do not perform case splits on natural subtraction.

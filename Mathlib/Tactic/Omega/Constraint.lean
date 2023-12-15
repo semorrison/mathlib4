@@ -186,8 +186,8 @@ theorem combo_sat (a) (w₁ : c₁.sat x₁) (b) (w₂ : c₂.sat x₂) : (combo
 
 /-- The conjunction of two constraints. -/
 def combine (x y : Constraint) : Constraint where
-  lowerBound := Option.max x.lowerBound y.lowerBound
-  upperBound := Option.min x.upperBound y.upperBound
+  lowerBound := max x.lowerBound y.lowerBound
+  upperBound := min x.upperBound y.upperBound
 
 theorem combine_sat : (c : Constraint) → (c' : Constraint) → (t : Int) →
     (c.combine c').sat t = (c.sat t ∧ c'.sat t) := by

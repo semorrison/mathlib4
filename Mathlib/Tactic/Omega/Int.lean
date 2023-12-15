@@ -3,7 +3,9 @@ Copyright (c) 2023 Lean FRO, LLC. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Scott Morrison
 -/
-import Std
+import Std.Classes.Order
+import Std.Data.Int.Lemmas
+import Std.Tactic.LeftRight
 
 /-!
 # Lemmas about `Nat` and `Int` needed internally by `omega`.
@@ -40,10 +42,6 @@ theorem sub_congr {a b c d : Int} (h₁ : a = b) (h₂ : c = d) : a - c = b - d 
 
 theorem neg_congr {a b : Int} (h₁ : a = b) : -a = -b := by
   subst h₁; rfl
-
-end Int
-
-namespace Int
 
 theorem lt_of_gt {x y : Int} (h : x > y) : y < x := gt_iff_lt.mp h
 theorem le_of_ge {x y : Int} (h : x ≥ y) : y ≤ x := ge_iff_le.mp h

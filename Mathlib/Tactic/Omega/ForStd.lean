@@ -5,19 +5,10 @@ Authors: Scott Morrison
 -/
 import Std
 
-import Mathlib.Tactic.LibrarySearch
-
 set_option autoImplicit true
 set_option relaxedAutoImplicit true
 
 open Lean (HashSet)
-
-
-
-
--- https://github.com/leanprover/std4/pull/448
-instance [BEq α] [Hashable α] : Singleton α (HashSet α) := ⟨fun x => HashSet.empty.insert x⟩
-instance [BEq α] [Hashable α] : Insert α (HashSet α) := ⟨fun a s => s.insert a⟩
 
 -- https://github.com/leanprover/std4/pull/449
 open Lean in
@@ -27,36 +18,9 @@ instance name_collision : ToExpr Int where
     | .ofNat n => mkApp (.const ``Int.ofNat []) (toExpr n)
     | .negSucc n => mkApp (.const ``Int.negSucc []) (toExpr n)
 
--- Next three in https://github.com/leanprover/std4/pull/438
-/-- A `dite` whose results do not actually depend on the condition may be reduced to an `ite`. -/
-@[simp] theorem dite_eq_ite' [Decidable P] : (dite P (fun _ ↦ a) fun _ ↦ b) = ite P a b :=
-  rfl
-
-@[simp] theorem ite_some_none_eq_none [Decidable P] :
-    (if P then some x else none) = none ↔ ¬ P := by
-  split <;> simp_all
-
-@[simp] theorem ite_some_none_eq_some [Decidable P] :
-    (if P then some x else none) = some y ↔ P ∧ x = y := by
-  split <;> simp_all
-
-namespace Nat
-
--- https://github.com/leanprover/std4/pull/436
-theorem emod_pos_of_not_dvd {a b : Nat} (h : ¬ a ∣ b) : 0 < b % a := by
-  rw [dvd_iff_mod_eq_zero] at h
-  exact Nat.pos_of_ne_zero h
-
-end Nat
 
 namespace Int
 
--- https://github.com/leanprover/std4/pull/436
-theorem emod_pos_of_not_dvd {a b : Int} (h : ¬ a ∣ b) : a = 0 ∨ 0 < b % a := by
-  rw [dvd_iff_emod_eq_zero] at h
-  by_cases w : a = 0
-  · simp_all
-  · exact Or.inr (Int.lt_iff_le_and_ne.mpr ⟨emod_nonneg b w, Ne.symm h⟩)
 
 -- theorem pow_two {x : Int} : x^2 = x * x := by
 --   change Int.pow _ _ = _
@@ -90,44 +54,6 @@ theorem add_nonnneg_iff_neg_le (a b : Int) : 0 ≤ a + b ↔ -b ≤ a := by
 theorem add_nonnneg_iff_neg_le' (a b : Int) : 0 ≤ a + b ↔ -a ≤ b := by
   rw [Int.add_comm, add_nonnneg_iff_neg_le]
 
--- Next three in https://github.com/leanprover/std4/pull/444
-protected theorem ne_iff_lt_or_gt {a b : Int} : a ≠ b ↔ a < b ∨ b < a := by
-  constructor
-  · intro h
-    rcases Int.lt_trichotomy a b with lt | rfl | gt
-    · exact Or.inl lt
-    · simp_all
-    · exact Or.inr gt
-  · rintro (lt | gt)
-    exact Int.ne_of_lt lt
-    exact Int.ne_of_gt gt
-
-protected alias ⟨lt_or_gt_of_ne, _⟩ := Int.ne_iff_lt_or_gt
-
-protected theorem eq_iff_le_and_ge {x y : Int} : x = y ↔ x ≤ y ∧ y ≤ x := by
-  constructor
-  · simp_all
-  · rintro ⟨h₁, h₂⟩
-    exact Int.le_antisymm h₁ h₂
-
-
-
--- In https://github.com/leanprover/std4/pull/442
-attribute [simp] sign_eq_zero_iff_zero
-
-@[simp] theorem sign_sign : sign (sign x) = sign x := by
-  match x with
-  | 0 => rfl
-  | .ofNat (_ + 1) => rfl
-  | .negSucc _ => rfl
-
-@[simp] theorem sign_nonneg : 0 ≤ sign x ↔ 0 ≤ x := by
-  match x with
-  | 0 => rfl
-  | .ofNat (_ + 1) =>
-    simp (config := { decide := true }) only [sign, true_iff]
-    exact Int.le_add_one (ofNat_nonneg _)
-  | .negSucc _ => simp (config := {decide := true}) [sign]
 
 end Int
 
@@ -194,15 +120,6 @@ end List
 -- end UInt64
 
 
-namespace List
-
--- https://github.com/leanprover/std4/pull/440
-/-- Variant of `List.insert` using `BEq` instead of `DecidableEq`. -/
-@[inline] protected def insert' [BEq α] (a : α) (l : List α) : List α :=
-  if l.elem a then l else a :: l
-
-end List
-
 -- namespace Std.HashMap
 
 -- def all [BEq α] [Hashable α] (m : HashMap α β) (f : α → β → Bool) : Bool :=
@@ -230,26 +147,5 @@ end List
 
 -- end Std.AssocList
 
--- These are in https://github.com/leanprover/std4/pull/439
-namespace Option
-
-@[simp] theorem all_none : Option.all p none = true := rfl
-@[simp] theorem all_some : Option.all p (some x) = p x := rfl
-
-@[simp]
-def min [Min α] : Option α → Option α → Option α
-  | some x, some y => some (Min.min x y)
-  | some x, none => some x
-  | none, some y => some y
-  | none, none => none
-
-@[simp]
-def max [Max α] : Option α → Option α → Option α
-  | some x, some y => some (Max.max x y)
-  | some x, none => some x
-  | none, some y => some y
-  | none, none => none
-
-end Option
 
 def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "

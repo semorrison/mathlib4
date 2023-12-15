@@ -5,6 +5,7 @@ Authors: Scott Morrison
 -/
 import Mathlib.Tactic.Omega.Int
 import Mathlib.Tactic.Omega.LinearCombo
+import Mathlib.Lean.Expr.Basic -- https://github.com/leanprover/std4/pull/456
 
 /-!
 # The `OmegaM` state monad.
@@ -74,15 +75,15 @@ def savingState (t : OmegaM α) : OmegaM α := do
   pure r
 
 /-- Wrapper around `Expr.nat?` that also allows `Nat.cast`. -/
-def nat? (n : Expr) : Option Nat :=
+def natCast? (n : Expr) : Option Nat :=
   match n.getAppFnArgs with
-  | (``Nat.cast, #[.const ``Int [], _, n]) => n.nat?
+  | (``Nat.cast, #[_, _, n]) => n.nat?
   | _ => n.nat?
 
 /-- Wrapper around `Expr.int?` that also allows `Nat.cast`. -/
-def int? (n : Expr) : Option Int :=
+def intCast? (n : Expr) : Option Int :=
   match n.getAppFnArgs with
-  | (``Nat.cast, #[.const ``Int [], _, n]) => n.int?
+  | (``Nat.cast, #[_, _, n]) => n.nat?
   | _ => n.int?
 
 /--
@@ -99,7 +100,7 @@ def analyzeAtom (e : Expr) : MetaM (HashSet Expr) := do
       -- `((a - b : Nat) : Int)` gives a dichotomy
       r.insert (mkApp2 (.const ``Int.ofNat_sub_dichotomy []) a b)
     | _ => r
-  | (`HDiv.hDiv, #[_, _, _, _, x, k]) => match nat? k with
+  | (`HDiv.hDiv, #[_, _, _, _, x, k]) => match natCast? k with
     | none
     | some 0 => pure ∅
     | some _ =>

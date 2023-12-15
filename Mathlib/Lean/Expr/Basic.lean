@@ -226,7 +226,6 @@ def nat? (e : Expr) : Option Nat := do
   let lit (.natVal n) := e.appFn!.appArg! | none
   n
 
-
 /--
 Check if an expression is an "integer in normal form",
 i.e. either a natural number in normal form, or the negation of one,
