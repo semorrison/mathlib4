@@ -127,21 +127,58 @@ The real shadow for a variable `i` is just the Fourier-Motzkin elimination.
 We begin discard all inequalities involving the variable `i`.
 
 Then, for each pair of constraints `f ≤ c * xᵢ` and `c' * xᵢ ≤ f'`
-with both `c` and `c'` positive (i.e. for each pair of an upper and lower bound on `xᵢ`)
-we introduce the new constraint `c' * f - c * f' ≤ 0`.
+with both `c` and `c'` positive (i.e. for each pair of an lower and upper bound on `xᵢ`)
+we introduce the new constraint `c * f' - c' * f ≥ 0`.
 
 (Note that if there are only upper bounds on `xᵢ`, or only lower bounds on `xᵢ` this step
 simply discards inequalities.)
 
 #### The dark and grey shadows
 
-TODO: explain the shadows
-TODO: implement the dark and grey shadows.
+For each such new constraint `c' * f - c * f' ≤ 0`, we either have the strengthening
+`c * f' - c' * f ≥ c * c' - c - c' + 1`
+or we do not, i.e.
+`c * f' - c' * f ≤ c * c' - c - c'`.
+In the latter case, combining this inequality with `f' ≥ c' * xᵢ` we obtain
+`c' * (c * xᵢ - f) ≤ c * c' - c - c'`
+and as we already have `c * xᵢ - f ≥ 0`,
+we conclude that `c * xᵢ - f = j` for some `j = 0, 1, ..., (c * c' - c - c')/c'`
+(with, as usual the division rounded down).
+
+Note that the largest possible value of `j` occurs with `c'` is as large as possible.
+
+Thus the "dark" shadow is the variant of the real shadow where we replace each new inequality
+with its strengthening.
+The "grey" shadows are the union of the problems obtained by taking
+a lower bound `f ≤ c * xᵢ` for `xᵢ` and some `j = 0, 1, ..., (c * m - c - m)/m`, where `m`
+is the largest coefficient `c'` appearing in an upper bound `c' * xᵢ ≤ f'` for `xᵢ`,
+and adding to the original problem (i.e. without doing any Fourier-Motzkin elimination) the single
+new equation `c * xᵢ - f = j`.
+
+As stated above, the satisfiability of the original problem is in fact equivalent to
+the satisfiability of the real shadow, *and* the satisfiability of *either* the dark shadow,
+or at least one of the grey shadows.
+
+TODO: implement the dark and grey shadows!
 
 ### Disjunctions
 
-TODO: explain how we handle disjunctions.
+The omega algorithm as described above accumulates various disjunctions,
+either coming from natural subtraction, or from the dark and grey shadows.
 
+When we encounter such a disjunction, we store it in a list of disjunctions,
+but do not immediately split it.
+
+Instead we first try to find a contradiction (i.e. by eliminating equalities and inequalities)
+without the disjunctive hypothesis.
+If this fails, we then retrieve the first disjunction from the list, split it,
+and try to find a contradiction in both branches.
+
+(Note that we make no attempt to optimize the order in which we split disjunctions:
+it's currently on a first in last out basis.)
+
+The work done eliminating equalities can be reused when splitting disjunctions,
+but we need to redo all the work eliminating inequalities in each branch.
 -/
 
 set_option autoImplicit true
@@ -227,7 +264,7 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
 
 -- https://github.com/leanprover/lean4/pull/2900
 @[inherit_doc mkAppN]
-macro_rules
+local macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
 
 mutual
