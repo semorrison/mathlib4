@@ -146,6 +146,3 @@ end List
 --   l.partitionMapRev fun a b => bif f a b then .inl b else .inr b
 
 -- end Std.AssocList
-
-
-def _root_.String.bullet (s : String) := "• " ++ s.replace "\n" "\n  "

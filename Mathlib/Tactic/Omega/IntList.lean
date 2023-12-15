@@ -514,42 +514,6 @@ theorem trim_spec {xs : IntList} : xs.trim = (xs.reverse.dropWhile (· == 0)).re
     split <;>
     simp_all [List.reverse_map]
 
--- def sign : IntList → Int
---   | [] => 0
---   | 0 :: xs => sign xs
---   | x :: _ => Int.sign x
-
--- @[simp] theorem sign_nil : sign [] = 0 := rfl
--- theorem sign_cons : sign (x :: xs) = if x = 0 then sign xs else Int.sign x := by
---   split <;> rename_i h
---   · subst h; simp [sign]
---   · rwa [sign]
-
--- theorem sign_neg : sign (-xs) = - sign xs := by
---   induction xs with
---   | nil => simp
---   | cons h t ih =>
---     simp only [neg_cons, sign_cons]
---     split <;> simp_all
-
--- open Classical in
--- theorem sign_eq_zero_iff : sign xs = 0 ↔ xs.trim = [] := by
---   induction xs with
---   | nil => simp
---   | cons h t ih =>
---     simp only [sign_cons, trim_cons]
---     split <;> simp_all [not_not, imp_false]
-
--- theorem sign_mul_self_nonneg {xs : IntList} : 0 ≤ sign ((sign xs) * xs) := by
---   induction xs with
---   | nil => simp
---   | cons h t ih =>
---     simp only [sign_cons, smul_cons, Int.sign_mul]
---     split
---     · simp_all only [Int.mul_zero, Int.sign_zero, ite_true]
---     · simp_all only [Int.mul_eq_zero, Int.sign_eq_zero_iff_zero, or_self, Int.sign_sign, ite_false]
---       exact Int.mul_self_nonneg
-
 abbrev bmod (x : IntList) (m : Nat) : IntList := x.map (Int.bmod · m)
 
 theorem bmod_length (x : IntList) (m) : (bmod x m).length ≤ x.length := Nat.le_of_eq (List.length_map _ _)

@@ -262,7 +262,9 @@ def mkAtomLinearCombo (e : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet
   let (n, facts) ← lookup e
   return ⟨LinearCombo.coordinate n, mkCoordinateEvalAtomsEq e n, facts.getD ∅⟩
 
+-- This has been PR'd as
 -- https://github.com/leanprover/lean4/pull/2900
+-- and can be removed when that is merged.
 @[inherit_doc mkAppN]
 local macro_rules
   | `(mkAppN $f #[$xs,*]) => (xs.getElems.foldlM (fun x e => `(Expr.app $x $e)) f : MacroM Term)
@@ -359,6 +361,10 @@ partial def asLinearComboImpl (e : Expr) : OmegaM (LinearCombo × OmegaM Expr ×
     | _ => mkAtomLinearCombo e
   | _ => mkAtomLinearCombo e
 where
+  /--
+  Apply a rewrite rule to an expression, and interpret the result as a `LinearCombo`.
+  (We're not rewriting any subexpressions here, just the top level, for efficiency.)
+  -/
   rewrite (lhs rw : Expr) : OmegaM (LinearCombo × OmegaM Expr × HashSet Expr) := do
     trace[omega] "rewriting {lhs} via {rw} : {← inferType rw}"
     match (← inferType rw).eq? with
@@ -380,8 +386,9 @@ instance : Inhabited MetaProblem := ⟨trivial⟩
 
 /--
 Add an integer equality to the `Problem`.
+
+We solve equalities as they are discovered, as this often results in an earlier contradiction.
 -/
--- TODO ambitiously, we could be solving easy equalities as we add them ...
 def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
   let (lc, prf, facts) ← asLinearCombo x
   let newFacts : HashSet Expr := facts.fold (init := ∅) fun s e =>
@@ -390,8 +397,8 @@ def addIntEquality (p : MetaProblem) (h x : Expr) : OmegaM MetaProblem := do
   pure <|
   { p with
     facts := newFacts.toList ++ p.facts
-    problem := p.problem.addEquality lc.const lc.coeffs
-      (some do mkEqTrans (← mkEqSymm (← prf)) h) }
+    problem := ← (p.problem.addEquality lc.const lc.coeffs
+      (some do mkEqTrans (← mkEqSymm (← prf)) h)) |>.solveEqualities }
 
 /--
 Add an integer inequality to the `Problem`.
@@ -432,8 +439,9 @@ def pushNot (h P : Expr) : Option Expr := do
       (.app (.const ``Classical.propDecidable []) P₂) h)
   | _ => none
 
+/-- Parse an `Expr` and extract facts. -/
 partial def addFact (p : MetaProblem) (h : Expr) : OmegaM MetaProblem := do
-  if ¬ p.problem.possible then
+  if ! p.problem.possible then
     return p
   else
     let t ← instantiateMVars (← inferType h)
@@ -488,13 +496,13 @@ partial def processFacts (p : MetaProblem) : OmegaM MetaProblem := do
 
 end MetaProblem
 
+/-- Implementation of the `omega` algorithm, and handling disjunctions. -/
 partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withContext do
   let m' ← m.processFacts
   guard m'.facts.isEmpty
   let p := m'.problem
   trace[omega] "Extracted linear arithmetic problem:\n{← atomsList}\n{p}"
   let p' ← if p.possible then p.solveEqualities else pure p
-  trace[omega] "After solving equalities:\n{← atomsList}\n{p'}"
   let p'' ← if p'.possible then p'.run' else pure p'
   trace[omega] "After elimination:\n{← atomsList}\n{p''}"
   if p''.possible then
@@ -519,7 +527,7 @@ partial def omegaImpl (m : MetaProblem) (g : MVarId) : OmegaM Unit := g.withCont
     match p''.proveFalse? with
     | none => throwError "omega found a contradiction, but didn't produce a proof of False"
     | some prf =>
-      trace[omega] "Justification:\n{p''.explanation?.get!}"
+      trace[omega] "Justification:\n{p''.explanation?.get}"
       let prf ← instantiateMVars (← prf)
       trace[omega] "omega found a contradiction, proving {← inferType prf}"
       trace[omega] "{prf}"

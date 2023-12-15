@@ -1,3 +1,4 @@
+import Mathlib.Tactic.Omega.Frontend
 
 -- This would need a nonlinear preprocessor, as nlinarith is for linarith
 -- example (u v x y A B : Int)

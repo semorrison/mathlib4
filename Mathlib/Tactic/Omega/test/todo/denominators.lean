@@ -1,3 +1,5 @@
+import Mathlib.Tactic.Omega.Frontend
+
 -- TODO needs fixing?
 -- example (x : Int) (h : x < 0) : 0 < x/(-1) := by omega
 

@@ -1,3 +1,5 @@
+import Mathlib.Tactic.Omega.Frontend
+
 -- TODO: AC normalization in atoms
 -- example (u v r s t : Int) (h : 0 < u*(t*v + t*r + s)) : 0 < (t*(r + v) + s)*3*u := by
 --   simp only [Int.add_mul, Int.mul_add] at *
